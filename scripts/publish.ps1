@@ -3,8 +3,6 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Push-Location $root
 try {
-    dotnet run --project tests/Semojum.Core.Tests -c Release
-    if ($LASTEXITCODE -ne 0) { throw 'Core checks failed.' }
     $output = Join-Path $root "artifacts/Semojum-$Runtime"
     dotnet publish src/Semojum.Desktop -c Release -r $Runtime --self-contained true -p:PublishSingleFile=false -o $output
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }

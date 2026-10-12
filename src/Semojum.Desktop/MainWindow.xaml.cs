@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.Input;
@@ -101,7 +102,7 @@ public partial class MainWindow : Window
         var decision = changed && autoTranslate ? ChooseTranslation(previous!) : ManualEditDecision.Keep;
         if (decision == ManualEditDecision.Cancel)
         {
-            switching = true; BlockPicker.SelectedItem = previous; switching = false; return;
+            switching = true; BlockPicker.SetCurrentValue(Selector.SelectedItemProperty, previous); switching = false; return;
         }
         session.ActiveBlock = next;
         if (changed && autoTranslate) await TranslateAsync(previous!, decision);
@@ -218,7 +219,7 @@ public partial class MainWindow : Window
     private void MoveBlock(int delta)
     {
         var index = session.ActiveBlock is null ? 0 : session.Blocks.IndexOf(session.ActiveBlock);
-        BlockPicker.SelectedItem = session.Blocks[Math.Clamp(index + delta, 0, session.Blocks.Count - 1)];
+        BlockPicker.SetCurrentValue(Selector.SelectedItemProperty, session.Blocks[Math.Clamp(index + delta, 0, session.Blocks.Count - 1)]);
     }
     internal void InsertTag(string tag)
     {
