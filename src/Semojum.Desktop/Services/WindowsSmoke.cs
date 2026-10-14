@@ -92,6 +92,10 @@ internal static class WindowsSmoke
         Check(window.SourceEditor.Text == unsaved && window.Session.IsDirty, "Opening an already open path retains unsaved edits");
         await CaptureDialogAsync(new WorkFolderDialog(directory) { Owner = window }, directory, "08-work-folder.png");
         await CaptureDialogAsync(new ExportRangeDialog([1, 2, 3, 4], () => Task.FromResult(7)) { Owner = window }, directory, "13-export-range.png");
+        var statusDocument = new DocumentSession(); statusDocument.PageStatuses[1] = "COMPLETED";
+        statusDocument.PageStatuses[2] = "FAILED"; statusDocument.PageStatuses[3] = "BLOCKED";
+        statusDocument.Add(new EditorBlock { Id = 1, Page = 1, ServerId = "status-fixture" });
+        await CaptureDialogAsync(new PageStatusDialog(statusDocument) { Owner = window }, directory, "14-page-status.png");
         var searchWindow = new MainWindow(smoke: true);
         try
         {

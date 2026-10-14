@@ -218,6 +218,11 @@ public partial class MainWindow : Window
                 case "serverOpen": await OpenServerAsync(); break;
                 case "upload": await UploadAsync(); break;
                 case "cancelJob": if (session.JobId is { } jobId) { await jobs.CancelAsync(jobId); session.Status = "변환 중단을 요청했습니다. 처리 중인 쪽이 마무리되면 반영됩니다."; } break;
+                case "pageStatus":
+                    var pageStatus = new PageStatusDialog(session) { Owner = this };
+                    if (pageStatus.ShowDialog() == true && session.Blocks.FirstOrDefault(b => b.Page == pageStatus.SelectedPage && b.ServerId is not null) is { } pageBlock)
+                        BlockPicker.SetCurrentValue(Selector.SelectedItemProperty, pageBlock);
+                    break;
                 case "close": Close(); break;
                 case "undo": (lastEditor ?? SourceEditor).Undo(); break;
                 case "redo": (lastEditor ?? SourceEditor).Redo(); break;

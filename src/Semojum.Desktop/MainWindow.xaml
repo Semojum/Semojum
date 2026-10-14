@@ -14,6 +14,7 @@
             <MenuItem Header="문서 업로드·AI 변환…" Tag="upload" Click="Action_Click"/>
             <MenuItem Header="서버 작업 열기…" Tag="serverOpen" Click="Action_Click"/>
             <MenuItem Header="현재 작업 변환 중단" Tag="cancelJob" Click="Action_Click"/>
+            <MenuItem Header="쪽별 변환 상태…" Tag="pageStatus" Click="Action_Click"/>
             <Separator/><MenuItem Header="저장" InputGestureText="Ctrl+S" Tag="save" Click="Action_Click"/>
             <MenuItem Header="다른 이름으로 저장…" Tag="saveAs" Click="Action_Click"/>
             <MenuItem Header="문서 내보내기…" Tag="export" Click="Action_Click"/>
