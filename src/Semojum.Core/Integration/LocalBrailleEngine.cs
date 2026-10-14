@@ -24,6 +24,8 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         if (metadata.Type == "table")
         {
             if (metadata.TableSource is null) throw new SidecarException("표 구조 데이터가 없어 표를 점역할 수 없습니다.", "MISSING_TABLE_SOURCE");
+            if (metadata.TableDisplayText is { } original && original != text)
+                throw new SidecarException("표의 표시 텍스트가 바뀌었습니다. 표 구조 편집 규칙이 확정되기 전에는 기존 표를 그대로 재점역할 수 없습니다.", "TABLE_STRUCTURE_CHANGED");
             response = await sidecar.InvokeAsync("table", new
             {
                 table_source = metadata.TableSource, render_mode = metadata.RenderMode ?? "",

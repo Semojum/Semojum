@@ -52,6 +52,7 @@ public partial class MainWindow
         if (smoke) return;
         OriginalEmpty.Visibility = Visibility.Visible;
         OriginalImage.Source = null; OriginalText.Text = "원본 미리보기 없음";
+        OriginalSelection.Visibility = Visibility.Collapsed;
         if (!session.OriginalPages.TryGetValue(page, out var original)) return;
         if (original.Type == "text") { OriginalText.Text = string.Join("\n", original.Lines ?? []); return; }
         if (original.Type == "pdf") { OriginalText.Text = "PDF 원본이 작업 파일에 보존되어 있습니다. 쪽 이미지 미리보기는 서버에서 제공되지 않았습니다."; return; }
@@ -62,6 +63,17 @@ public partial class MainWindow
             var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
             image.DecodePixelWidth = 1800; image.StreamSource = stream; image.EndInit(); image.Freeze();
             OriginalImage.Source = image; OriginalText.Text = $"원본 {page}쪽";
+            var width = original.Width > 0 ? original.Width : image.PixelWidth;
+            var height = original.Height > 0 ? original.Height : image.PixelHeight;
+            OriginalImageGrid.Width = width; OriginalImageGrid.Height = height;
+            if (session.ActiveBlock?.Metadata.BoundingBox is { Length: 4 } box && box.All(double.IsFinite))
+            {
+                var x = Math.Clamp(box[0], 0, width); var y = Math.Clamp(box[1], 0, height);
+                OriginalSelection.Width = Math.Max(0, Math.Clamp(box[2], 0, width) - x);
+                OriginalSelection.Height = Math.Max(0, Math.Clamp(box[3], 0, height) - y);
+                System.Windows.Controls.Canvas.SetLeft(OriginalSelection, x); System.Windows.Controls.Canvas.SetTop(OriginalSelection, y);
+                OriginalSelection.Visibility = Visibility.Visible;
+            }
         }
         catch (Exception ex) when (ex is NotSupportedException or System.IO.FileFormatException or ArgumentException)
         { OriginalText.Text = "원본 이미지를 표시할 수 없습니다."; }

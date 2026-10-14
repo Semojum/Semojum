@@ -100,7 +100,7 @@
       <Grid.ColumnDefinitions><ColumnDefinition x:Name="OriginalColumn" Width="0.82*" MinWidth="260"/><ColumnDefinition x:Name="OriginalSplitterColumn" Width="6"/><ColumnDefinition Width="*" MinWidth="340"/><ColumnDefinition Width="6"/><ColumnDefinition Width="*" MinWidth="340"/></Grid.ColumnDefinitions>
       <Border x:Name="OriginalPanel" BorderBrush="{StaticResource Line}" BorderThickness="1"><Grid>
         <local:OriginalPreview x:Name="Original"/>
-        <Border x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer><StackPanel><Image x:Name="OriginalImage" Stretch="Uniform"/><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
+        <Border x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel><Viewbox Stretch="Uniform"><Grid x:Name="OriginalImageGrid"><Image x:Name="OriginalImage" Stretch="Fill"/><Canvas><Rectangle x:Name="OriginalSelection" Stroke="#4D85C8" Fill="#205287C1" StrokeThickness="3" Visibility="Collapsed"/></Canvas></Grid></Viewbox><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
       </Grid></Border>
       <GridSplitter Grid.Column="1" ResizeBehavior="PreviousAndNext"/>
       <Border Grid.Column="2" BorderBrush="{StaticResource Line}" BorderThickness="1" Background="White">

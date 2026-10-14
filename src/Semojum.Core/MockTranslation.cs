@@ -52,7 +52,7 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
                 return TranslationOutcome.Superseded;
             }
             block.Braille = result.Cells;
-            block.Translation = result;
+            block.Translation = result with { SourceText = block.Source };
             block.HasManualBraille = false;
             block.IsBrailleLocked = false;
             block.State = result.Blocked ? "점역 불가 · 원문 확인" : result.Dropped.Length != 0 ? "누락 문자 · 검토 필요" : "점역됨 · 검수 전";
@@ -72,11 +72,11 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
             if (generations[block] == generation) block.State = "점역 취소됨";
             return TranslationOutcome.Cancelled;
         }
-        catch
+        catch (Exception ex)
         {
             if (!IsCurrent()) return TranslationOutcome.Superseded;
             block.IsBrailleLocked = true;
-            block.State = "점역 실패 · 점자 잠김";
+            block.State = ex is Semojum.Core.Integration.SidecarException ? ex.Message : "점역 실패 · 점자 잠김";
             return TranslationOutcome.Failed;
         }
     }

@@ -33,6 +33,16 @@ public partial class MainWindow
         if (dialog.ShowDialog(this) != true || !await ConfirmDiscardAsync()) return;
         if (dialog.FileNames.Sum(p => new FileInfo(p).Length) > JobClient.MaximumUploadBytes)
             throw new InvalidDataException("업로드 전체 크기는 100 MB까지입니다.");
+        var defaults = await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/braille-options", cancellationToken: documentLifetime.Token);
+        var settings = new DocumentSession { Options = JobClient.ReadOptions(defaults) };
+        if (defaults.TryGetProperty("pageNumberLine", out var pageLine))
+            settings.Layout = settings.Layout with { PageNumbers = pageLine.GetString() switch { "none" => "출력 안 함", "every" => "모든 페이지", _ => "홀수 페이지" } };
+        var options = new TranslationOptionsDialog(autoTranslate, settings.Options) { Owner = this };
+        if (options.ShowDialog() != true) return;
+        settings.Options = options.Result;
+        var layout = new LayoutDialog(settings.Layout) { Owner = this };
+        if (layout.ShowDialog() != true) return;
+        settings.Layout = layout.Result;
         if (MessageBox.Show(this, $"{dialog.FileNames.Length}개 파일을 서버에 업로드해 AI 변환합니다. 성공한 쪽에 크레딧이 사용됩니다.\n\n진행하시겠습니까?", "AI 변환", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
         fileBusy = true;
         try
@@ -40,7 +50,7 @@ public partial class MainWindow
             var files = new List<UploadFile>();
             foreach (var path in dialog.FileNames) files.Add(new(Path.GetFileName(path), await File.ReadAllBytesAsync(path)));
             session.Status = "파일 업로드 중…";
-            var job = await jobs.UploadAsync(files, session, documentLifetime.Token);
+            var job = await jobs.UploadAsync(files, settings, documentLifetime.Token);
             await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(dialog.FileNames[0]) + ".smj", files);
         }
         finally { fileBusy = false; }

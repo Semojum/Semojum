@@ -117,7 +117,8 @@ public sealed class JobClient(SemojumApiClient api)
                     Metadata = new(type, Number(item, "heading_level"), Bool(item, "math_page") || Bool(result, "math_page"),
                         Text(item, "table_source"), Text(item, "render_mode"), Text(item, "tn_text"), Number(item, "table_box_level"),
                         boxes.TryGetValue(id, out var box) ? [Number(box, "x"), Number(box, "y"), Number(box, "x2"), Number(box, "y2")] : null,
-                        item.TryGetProperty("selected_idx", out var index) && index.ValueKind == JsonValueKind.Number && index.TryGetInt32(out var i) ? i : null),
+                        item.TryGetProperty("selected_idx", out var index) && index.ValueKind == JsonValueKind.Number && index.TryGetInt32(out var i) ? i : null,
+                        type == "table" ? source : null),
                     // A restored server result may contain manual edits. Do not overwrite on open.
                     HasManualBraille = braille.ContainsKey(id)
                 };

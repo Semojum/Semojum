@@ -48,6 +48,7 @@ public sealed class AccountDialog : Window
                 }
             }
             catch (Exception ex) when (ex is HttpRequestException or ArgumentException) { error.Text = ex.Message; }
+            catch (Exception) { error.Text = "로그인 응답을 처리하지 못했습니다. 다시 시도해 주세요."; }
             finally { submit.IsEnabled = true; }
         };
         Loaded += (_, _) => login.Focus();

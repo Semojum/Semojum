@@ -77,7 +77,7 @@ public partial class BraillePane : UserControl, IDisposable
         var lineNumber = Math.Clamp(Editor.TextArea.Caret.Line, 1, Editor.Document.LineCount);
         var line = Editor.Document.GetLineByNumber(lineNumber);
         Editor.Foreground = active.HasManualBraille ? Brushes.Firebrick : Brushes.Black;
-        if (line.Length > session.Layout.Columns) StateLabel.Text = $"판면 초과 +{line.Length - session.Layout.Columns}칸";
+        if (line.Length > session.Layout.Columns) StateLabel.Text += $" · 판면 초과 +{line.Length - session.Layout.Columns}칸";
     }
     public void SetLinePreview(int line, string cells) { LineLabel.Text = $"텍스트 줄번역 · {line}줄"; LinePreview.Text = cells; }
     public void SetLinePreviewVisible(bool visible) { LinePreview.Visibility = visible ? Visibility.Visible : Visibility.Collapsed; }

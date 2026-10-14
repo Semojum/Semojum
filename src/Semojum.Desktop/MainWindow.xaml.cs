@@ -85,7 +85,8 @@ public partial class MainWindow : Window
             documents.Dispose(); documents = new(); translator = new(engine); translatedRevisions.Clear();
             previewGeneration++; debounce?.Cancel(); pendingSourceTranslation = false;
             session = model; filePath = path;
-            foreach (var block in session.Blocks) translatedRevisions[block] = block.Braille.Length != 0 ? block.SourceRevision : -1;
+            foreach (var block in session.Blocks) translatedRevisions[block] = block.Braille.Length != 0
+                && (block.Translation?.SourceText is null || block.Translation.SourceText == block.Source) ? block.SourceRevision : -1;
             DataContext = session;
             session.PropertyChanged += SessionChanged;
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
@@ -151,7 +152,7 @@ public partial class MainWindow : Window
             TranslationOutcome.Kept => $"블록 {block.Id} · 직접 수정한 점자를 유지했습니다.",
             TranslationOutcome.Superseded => "점역 대기 중 내용이 바뀌었습니다. 현재 편집 내용을 유지합니다.",
             TranslationOutcome.TimedOut => "점역 응답 지연 · 이 블록의 점자가 잠겼습니다. 원문 편집과 저장은 가능합니다.",
-            TranslationOutcome.Failed => "점역에 실패했습니다. 원문 편집과 저장은 가능합니다.",
+            TranslationOutcome.Failed => block.State + " · 원문 편집과 저장은 가능합니다.",
             _ => "점역을 취소했습니다."
         };
         if (interactive && result is (TranslationOutcome.TimedOut or TranslationOutcome.Failed))
@@ -209,7 +210,9 @@ public partial class MainWindow : Window
                 case "zoomReset": SetFontSize(18); break;
                 case "translate": if (session.ActiveBlock is { } block) await TranslateAsync(block, ChooseTranslation(block)); break;
                 case "translateAll":
-                    foreach (var item in session.Blocks.ToArray()) { var choice = ChooseTranslation(item); if (choice == ManualEditDecision.Cancel) break; await TranslateAsync(item, choice); }
+                    var translationSession = session;
+                    foreach (var item in translationSession.Blocks.ToArray())
+                    { if (translationSession != session) break; var choice = ChooseTranslation(item); if (choice == ManualEditDecision.Cancel) break; await TranslateAsync(item, choice); }
                     break;
                 case "footer":
                     var footer = new TextValueDialog("꼬리말", "꼬리말 묵자", session.FooterText, 200) { Owner = this };
