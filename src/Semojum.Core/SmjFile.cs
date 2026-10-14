@@ -90,7 +90,7 @@ public static class SmjFile
         SmjManifest manifest;
         await using (var stream = metadata.Open())
         {
-            manifest = await JsonSerializer.DeserializeAsync<SmjManifest>(stream, Json, cancellationToken)
+            manifest = JsonSerializer.Deserialize<SmjManifest>(await ReadBoundedAsync(stream, metadata.Length, cancellationToken), Json)
                 ?? throw new InvalidDataException("작업 정보를 읽을 수 없습니다.");
         }
         Validate(manifest);
@@ -101,9 +101,7 @@ public static class SmjFile
             var entry = zip.GetEntry(original.Entry) ?? throw new InvalidDataException("원본 파일이 누락되었습니다.");
             if (entry.Length != original.Length) throw new InvalidDataException("원본 파일 크기가 일치하지 않습니다.");
             await using var stream = entry.Open();
-            using var buffer = new MemoryStream();
-            await stream.CopyToAsync(buffer, cancellationToken);
-            var bytes = buffer.ToArray();
+            var bytes = await ReadBoundedAsync(stream, original.Length, cancellationToken);
             if (Convert.ToHexString(SHA256.HashData(bytes)) != original.Sha256) throw new InvalidDataException("원본 파일 검증에 실패했습니다.");
             model.OriginalFiles.Add(original.FileName, bytes);
         }
@@ -165,5 +163,18 @@ public static class SmjFile
     {
         await using var stream = zip.CreateEntry(name, CompressionLevel.Optimal).Open();
         await stream.WriteAsync(data, cancellationToken);
+    }
+
+    private static async Task<byte[]> ReadBoundedAsync(Stream stream, long declaredLength, CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920]; int read;
+        while ((read = await stream.ReadAsync(chunk, cancellationToken)) != 0)
+        {
+            if (buffer.Length + read > declaredLength) throw new InvalidDataException("압축 파일의 실제 크기가 명시된 크기를 초과합니다.");
+            buffer.Write(chunk, 0, read);
+        }
+        if (buffer.Length != declaredLength) throw new InvalidDataException("압축 파일이 완전하지 않습니다.");
+        return buffer.ToArray();
     }
 }
