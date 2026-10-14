@@ -4,6 +4,27 @@ if (args.Contains("--sidecar-fixture")) return await IntegrationChecks.RunFixtur
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("Document search keeps literal offsets across blocks and wraps at the end", () => Sync(() =>
+    {
+        var first = new EditorBlock { Id = 1, Page = 1, Source = "😀Ab aaA", Braille = "⠁⠃" };
+        var second = new EditorBlock { Id = 2, Page = 2, Source = "ab\nab", Braille = "⠿" };
+        EditorBlock[] blocks = [first, second];
+        var matches = DocumentSearch.FindAll(blocks, SearchPanel.Text, "AB");
+        Equal(3, matches.Count); Equal(2, matches[0].Offset); Equal(3, matches[2].Offset);
+        Equal(second, DocumentSearch.Next(blocks, SearchPanel.Text, "ab", first, 4)!.Block);
+        Equal(3, DocumentSearch.Next(blocks, SearchPanel.Text, "ab", second, 2)!.Offset);
+        Equal(first, DocumentSearch.Next(blocks, SearchPanel.Text, "ab", second, 5)!.Block);
+        Equal<SearchMatch?>(null, DocumentSearch.Next(blocks, SearchPanel.Text, "missing", first, 0));
+        Equal(0, DocumentSearch.FindAll(blocks, SearchPanel.Text, "").Count);
+        Equal(1, DocumentSearch.FindAll(blocks, SearchPanel.Text, "aa").Count);
+        Equal(0, DocumentSearch.FindAll(blocks, SearchPanel.Text, ".*").Count);
+        Equal(second, DocumentSearch.FindAll(blocks, SearchPanel.Braille, "⠿").Single().Block);
+    })),
+    ("Braille replacement accepts cells and whitespace without allowing prose", () => Sync(() =>
+    {
+        True(DocumentSearch.IsBrailleText("⠁⣿⠀ \n\r\t")); True(DocumentSearch.IsBrailleText(""));
+        True(!DocumentSearch.IsBrailleText("abc")); True(!DocumentSearch.IsBrailleText("점자"));
+    })),
     ("Six-dot chord emits once after all releases", () => Sync(() =>
     {
         var input = new SixDotInput(); input.Press('F'); input.Press('J'); input.Press('F');

@@ -91,6 +91,33 @@ internal static class WindowsSmoke
         await window.OpenAsync(path);
         Check(window.SourceEditor.Text == unsaved && window.Session.IsDirty, "Opening an already open path retains unsaved edits");
         await CaptureDialogAsync(new WorkFolderDialog(directory) { Owner = window }, directory, "08-work-folder.png");
+        var searchWindow = new MainWindow(smoke: true);
+        try
+        {
+            searchWindow.Show();
+            var locked = searchWindow.Session.Blocks[0]; var editable = searchWindow.Session.Blocks[1];
+            locked.Braille = "⠿⠯"; locked.IsBrailleLocked = true; editable.Braille = "⠿⠯⠿⠯";
+            searchWindow.Session.Blocks[2].Braille = "⠁";
+            await searchWindow.FindNextAsync("⠿⠯", SearchPanel.Braille);
+            await searchWindow.FindNextAsync("⠿⠯", SearchPanel.Braille);
+            Check(searchWindow.Session.ActiveBlock == editable && searchWindow.Braille.Editor.SelectedText == "⠿⠯",
+                "Find next traverses blocks in the requested panel");
+            await searchWindow.ReplaceMatchesAsync("⠿⠯", "⠃", SearchPanel.Braille, true);
+            Check(locked.Braille == "⠿⠯" && editable.Braille == "⠃⠃" && editable.HasManualBraille,
+                "Replace all protects locked braille and marks corrections in editable blocks");
+            searchWindow.Braille.Editor.Undo();
+            Check(editable.Braille == "⠿⠯⠿⠯", "Replace all in a block is one undo operation");
+            await searchWindow.ReplaceMatchesAsync("⠿⠯", "abc", SearchPanel.Braille, true);
+            Check(editable.Braille == "⠿⠯⠿⠯", "Replace rejects non-braille content without changing buffers");
+            searchWindow.Braille.Editor.Select(0, 2);
+            await searchWindow.ReplaceMatchesAsync("⠿⠯", "⠃", SearchPanel.Braille, false);
+            Check(editable.Braille == "⠃⠿⠯", "Single replace changes only the selected occurrence");
+            await CaptureDialogAsync(new FindDialog(SearchPanel.Braille, "⠿⠯", true,
+                q => searchWindow.FindNextAsync(q, SearchPanel.Braille),
+                (q, r, all) => searchWindow.ReplaceMatchesAsync(q, r, SearchPanel.Braille, all)) { Owner = searchWindow },
+                directory, "12-find-replace.png");
+        }
+        finally { searchWindow.PrepareSmokeShutdown(); searchWindow.Close(); }
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
         var real = new MainWindow();
@@ -108,6 +135,9 @@ internal static class WindowsSmoke
             var actual = await SmjFile.LoadAsync(actualPath);
             Check(actual.Blocks[0].Translation?.SourceText == "가", "Production translation and original source survive SMJ round trip");
             await RenderAsync(real, Path.Combine(directory, "07-real-engine.png"));
+            await real.ReplaceMatchesAsync("가", "나", SearchPanel.Text, true);
+            Check(real.Session.ActiveBlock.Source == "나" && real.Session.ActiveBlock.Translation?.SourceText == "나"
+                && real.Session.ActiveBlock.Braille.Trim('⠀') != "⠫", "Source replacement retranslates with production engine");
         }
         finally { real.PrepareSmokeShutdown(); real.Close(); }
         window.Session.IsDirty = false;

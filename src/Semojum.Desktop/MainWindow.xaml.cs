@@ -224,7 +224,12 @@ public partial class MainWindow : Window
                 case "cut": (lastEditor ?? SourceEditor).Cut(); break;
                 case "copy": (lastEditor ?? SourceEditor).Copy(); break;
                 case "paste": (lastEditor ?? SourceEditor).Paste(); break;
-                case "find": new FindDialog(SourceEditor) { Owner = this }.ShowDialog(); break;
+                case "find": await ShowSearchAsync(false); break;
+                case "replace": await ShowSearchAsync(true); break;
+                case "findNext":
+                    if (searchQuery.Length == 0) await ShowSearchAsync(false);
+                    else session.Status = await FindNextAsync(searchQuery, ActiveSearchPanel);
+                    break;
                 case "previous": MoveBlock(-1); break;
                 case "next": MoveBlock(1); break;
                 case "detach": ToggleDetached(); break;

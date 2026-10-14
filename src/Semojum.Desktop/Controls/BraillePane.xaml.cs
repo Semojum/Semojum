@@ -35,7 +35,7 @@ public partial class BraillePane : UserControl, IDisposable
         };
         Editor.TextArea.TextEntering += (_, e) =>
         {
-            if (e.Text.Any(c => !IsBraille(c)))
+            if (!DocumentSearch.IsBrailleText(e.Text))
             {
                 e.Handled = true;
                 if (session is not null) session.Status = "점자는 6점 입력을 켜거나 유니코드 점자를 붙여 넣어 주세요.";
@@ -43,11 +43,10 @@ public partial class BraillePane : UserControl, IDisposable
         };
         DataObject.AddPastingHandler(Editor, (_, e) =>
         {
-            if (!e.DataObject.GetDataPresent(DataFormats.UnicodeText) || e.DataObject.GetData(DataFormats.UnicodeText) is not string text || text.Any(c => !IsBraille(c)))
+            if (!e.DataObject.GetDataPresent(DataFormats.UnicodeText) || e.DataObject.GetData(DataFormats.UnicodeText) is not string text || !DocumentSearch.IsBrailleText(text))
                 e.CancelCommand();
         });
     }
-    private static bool IsBraille(char c) => c is >= '\u2800' and <= '\u28ff' || c is ' ' or '\n' or '\r' or '\t';
     public void Attach(DocumentSession model, EditorDocuments store)
     {
         Dispose(); session = model; documents = store;

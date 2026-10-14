@@ -24,6 +24,8 @@
             <MenuItem Header="되돌리기" InputGestureText="Ctrl+Z" Tag="undo" Click="Action_Click"/><MenuItem Header="다시 실행" InputGestureText="Ctrl+Y" Tag="redo" Click="Action_Click"/>
             <Separator/><MenuItem Header="잘라내기" Tag="cut" Click="Action_Click"/><MenuItem Header="복사" Tag="copy" Click="Action_Click"/><MenuItem Header="붙여넣기" Tag="paste" Click="Action_Click"/>
             <Separator/><MenuItem Header="찾아 바꾸기…" InputGestureText="Ctrl+F" Tag="find" Click="Action_Click"/>
+            <MenuItem Header="다음 찾기" InputGestureText="F3" Tag="findNext" Click="Action_Click"/>
+            <MenuItem Header="바꾸기…" InputGestureText="Ctrl+H" Tag="replace" Click="Action_Click"/>
             <MenuItem Header="현재 줄 메모…" Tag="memo" Click="Action_Click"/>
             <MenuItem Header="표 점역 초안…" Tag="drafts" Click="Action_Click"/>
           </MenuItem>

@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using ICSharpCode.AvalonEdit;
 using Semojum.Core;
 using WpfMath.Controls;
 
@@ -171,34 +170,51 @@ public sealed class MathDialog : EditorDialog
 
 public sealed class FindDialog : Window
 {
-    public FindDialog(TextEditor editor)
+    public FindDialog(SearchPanel target, string initialQuery, bool showReplacement,
+        Func<string, Task<string>> findNext, Func<string, string, bool, Task<string>> replaceMatches)
     {
-        Title = "현재 블록에서 찾아 바꾸기"; Width = 500; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Title = target == SearchPanel.Text ? "문서 텍스트 찾기·바꾸기" : "문서 점자 찾기·바꾸기";
+        Width = 540; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(24) }; Content = panel;
-        var query = new TextBox { Margin = new Thickness(0, 6, 0, 14) };
+        var query = new TextBox { Text = initialQuery, Margin = new Thickness(0, 6, 0, 14) };
         var replacement = new TextBox { Margin = new Thickness(0, 6, 0, 14) };
-        var result = new TextBlock { Margin = new Thickness(0, 14, 0, 0) };
-        panel.Children.Add(new TextBlock { Text = "찾을 내용" }); panel.Children.Add(query); panel.Children.Add(new TextBlock { Text = "바꿀 내용" }); panel.Children.Add(replacement);
+        var result = new TextBlock { Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap };
+        panel.Children.Add(new TextBlock { Text = "범위: 문서의 모든 " + (target == SearchPanel.Text ? "텍스트" : "점자") + " 블록 · 대소문자 구분 없이 찾기", TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "찾을 내용", Margin = new Thickness(0, 14, 0, 0) }); panel.Children.Add(query);
+        panel.Children.Add(new TextBlock { Text = "바꿀 내용" }); panel.Children.Add(replacement);
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
-        var find = new Button { Content = "다음 찾기", Margin = new Thickness(0, 0, 8, 0) };
-        find.Click += (_, _) =>
+        var busy = false;
+        async Task RunAsync(Func<Task<string>> action)
         {
-            if (query.Text.Length == 0) { result.Text = "찾을 내용을 입력해 주세요."; return; }
-            var index = editor.Text.IndexOf(query.Text, Math.Min(editor.SelectionStart + editor.SelectionLength, editor.Text.Length), StringComparison.OrdinalIgnoreCase);
-            if (index < 0) index = editor.Text.IndexOf(query.Text, StringComparison.OrdinalIgnoreCase);
-            if (index < 0) { result.Text = "일치하는 내용이 없습니다."; return; }
-            editor.Select(index, query.Text.Length); editor.ScrollToLine(editor.Document.GetLineByOffset(index).LineNumber); result.Text = "일치하는 내용을 선택했습니다.";
-        };
-        var replace = new Button { Content = "모두 바꾸기" };
-        replace.Click += (_, _) =>
+            if (busy) return;
+            busy = true; panel.IsEnabled = false;
+            try { result.Text = await action(); }
+            catch (Exception ex) { result.Text = ex.Message; }
+            finally { panel.IsEnabled = true; busy = false; }
+        }
+        foreach (var (label, action) in new (string, Func<Task<string>>)[]
         {
-            if (query.Text.Length == 0) { result.Text = "찾을 내용을 입력해 주세요."; return; }
-            var text = editor.Text;
-            var updated = text.Replace(query.Text, replacement.Text, StringComparison.OrdinalIgnoreCase);
-            if (text == updated) { result.Text = "변경할 내용이 없습니다."; return; }
-            editor.Document.Replace(0, editor.Document.TextLength, updated); result.Text = "현재 블록의 일치하는 내용을 바꿨습니다.";
+            ("다음 찾기", () => findNext(query.Text)),
+            ("바꾸기", () => replaceMatches(query.Text, replacement.Text, false)),
+            ("모두 바꾸기", () => replaceMatches(query.Text, replacement.Text, true))
+        })
+        {
+            var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 0) };
+            button.Click += async (_, _) => await RunAsync(action); actions.Children.Add(button);
+        }
+        panel.Children.Add(actions); panel.Children.Add(result);
+        PreviewKeyDown += async (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.F3) { e.Handled = true; await RunAsync(() => findNext(query.Text)); }
+            else if (e.Key == System.Windows.Input.Key.Escape && !busy) Close();
         };
-        actions.Children.Add(find); actions.Children.Add(replace); panel.Children.Add(actions); panel.Children.Add(result);
+        Closing += (_, e) => { if (busy) e.Cancel = true; };
+        Loaded += (_, _) =>
+        {
+            if (showReplacement && query.Text.Length > 0) replacement.Focus();
+            else { query.Focus(); query.SelectAll(); }
+        };
     }
 }
 

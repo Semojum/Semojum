@@ -13,9 +13,10 @@ public partial class MainWindow
 
     private void BindCommonKeys(Window target)
     {
-        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find") })
+        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace") })
             target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync(action)), new KeyGesture(key, ModifierKeys.Control)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("findNext")), new KeyGesture(Key.F3)));
     }
 
     internal void ToggleSourcePanel() => TogglePanel(SourcePanel, "텍스트");
