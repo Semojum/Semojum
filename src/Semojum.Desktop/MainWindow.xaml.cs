@@ -457,27 +457,6 @@ public partial class MainWindow : Window
         }
         finally { IsEnabled = true; fileBusy = false; }
     }
-    private async Task ExportAsync()
-    {
-        if (session.Blocks.Count == 0) return;
-        var dialog = new SaveFileDialog { Title = "문서 내보내기", FileName = Path.GetFileNameWithoutExtension(session.Title), Filter = "BRF 점자문서|*.brf|원문 텍스트|*.txt|유니코드 점자 텍스트|*.txt", DefaultExt = ".brf" };
-        if (dialog.ShowDialog(this) != true) return;
-        string text;
-        if (dialog.FilterIndex == 1)
-        {
-            if (session.Blocks.Any(b => b.Braille.Length == 0 && b.Source.Length > 0 || b.IsBrailleLocked))
-                throw new InvalidOperationException("점역하지 못한 블록이 있습니다. 전체 재점역 후 내보내 주세요.");
-            if (session.Blocks.Any(b => !b.HasManualBraille && translatedRevisions.GetValueOrDefault(b, -1) != b.SourceRevision))
-                throw new InvalidOperationException("원문이나 옵션 변경 후 아직 점역하지 않은 블록이 있습니다. 전체 재점역 후 내보내 주세요.");
-            if (session.Blocks.Any(b => b.Translation?.NeedsReview == true)
-                && MessageBox.Show(this, "누락 문자 또는 점역 불가 표시가 있는 블록이 있습니다. 현재 점자로 내보내시겠습니까?", "점역 결과 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-            if (engine is not LocalBrailleEngine local) throw new InvalidOperationException("샘플 엔진에서는 BRF를 만들 수 없습니다.");
-            text = await local.BuildBrfAsync(session, documentLifetime.Token);
-        }
-        else text = string.Join("\r\n", session.Blocks.Select(b => dialog.FilterIndex == 2 ? b.Source : b.Braille));
-        await File.WriteAllTextAsync(dialog.FileName, text, new System.Text.UTF8Encoding(false));
-        session.Status = "문서를 내보냈습니다. 작업 파일 저장은 Ctrl+S를 눌러 주세요.";
-    }
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (allowClose) return;

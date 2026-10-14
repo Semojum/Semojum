@@ -91,6 +91,7 @@ internal static class WindowsSmoke
         await window.OpenAsync(path);
         Check(window.SourceEditor.Text == unsaved && window.Session.IsDirty, "Opening an already open path retains unsaved edits");
         await CaptureDialogAsync(new WorkFolderDialog(directory) { Owner = window }, directory, "08-work-folder.png");
+        await CaptureDialogAsync(new ExportRangeDialog([1, 2, 3, 4], () => Task.FromResult(7)) { Owner = window }, directory, "13-export-range.png");
         var searchWindow = new MainWindow(smoke: true);
         try
         {

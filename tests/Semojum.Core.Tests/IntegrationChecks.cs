@@ -362,6 +362,17 @@ internal static class IntegrationChecks
         var model = new DocumentSession(); model.Add(new EditorBlock { Id = 1, Page = 1, Source = "가", Braille = grade2.Cells, Translation = grade2 });
         var brf = await engine.BuildBrfAsync(model); True(brf.All(c => c < 128)); True(brf.EndsWith('\f'));
         var pages = await engine.ReadBrfAsync(brf); True(pages[0].Any(line => line.Contains('⠫')));
+        var multi = new DocumentSession { Layout = new(Columns: 16, Lines: 4, StartPage: 7, PageNumbers: "모든 페이지", ShowSourcePageNumber: false), FooterText = "Ⅳ" };
+        multi.Add(new EditorBlock { Id = 1, Page = 1, Braille = string.Join("\n", Enumerable.Repeat("⠁⠃", 9)), HasManualBraille = true });
+        var whole = await engine.BuildBrfAsync(multi);
+        Equal(3, DocumentExport.BrfPages(whole).Length);
+        var wholePages = await engine.ReadBrfAsync(whole);
+        var selected = await engine.ReadBrfAsync(DocumentExport.SelectBraille(whole, new(ExportScope.BraillePages, 2, 3)));
+        Equal(2, selected.Length);
+        Equal(string.Join("|", wholePages[1]), string.Join("|", selected[0]));
+        Equal(string.Join("|", wholePages[2]), string.Join("|", selected[1]));
+        True(DocumentExport.BrailleText(selected).StartsWith("⠁⠃\r\n"));
+        True(wholePages[0][^1] != selected[0][^1]); // Printed page numbers remain 8 and 9, rather than restarting at 7.
         var footer = await engine.TranslateElementAsync("Ⅳ", new(Type: "header_footer"), new()); True(footer.Cells.StartsWith('⠴'));
         var priority = await engine.ReviewPriorityAsync(grade1.Cells, "가", new(), new(KoreanGrade1: true));
         True(new[] { "먼저 확인", "확인", "나중에 확인" }.Contains(priority));

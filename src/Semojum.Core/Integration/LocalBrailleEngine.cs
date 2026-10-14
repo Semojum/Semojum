@@ -72,15 +72,16 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         };
     }
 
-    public async Task<string> BuildBrfAsync(DocumentSession session, CancellationToken cancellationToken = default)
+    public Task<string> BuildBrfAsync(DocumentSession session, CancellationToken cancellationToken = default) =>
+        BuildBrfAsync(SmjFile.Snapshot(session).Manifest, cancellationToken);
+
+    public async Task<string> BuildBrfAsync(SmjManifest snapshot, CancellationToken cancellationToken = default)
     {
-        // Freeze all editor values before the first await, including manual edits.
-        var snapshot = SmjFile.Snapshot(session).Manifest;
         var settings = snapshot.Options;
-        var layout = session.Layout;
+        var layout = snapshot.Layout;
         layout.Validate();
-        var footer = string.IsNullOrEmpty(session.FooterText) ? "" :
-            (await TranslateElementAsync(session.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
+        var footer = string.IsNullOrEmpty(snapshot.FooterText) ? "" :
+            (await TranslateElementAsync(snapshot.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
         var pages = snapshot.Blocks.GroupBy(b => b.Page).Select(page => new
         {
             orig_page_no = page.Key,

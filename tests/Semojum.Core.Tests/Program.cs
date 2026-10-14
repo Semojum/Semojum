@@ -4,6 +4,35 @@ if (args.Contains("--sidecar-fixture")) return await IntegrationChecks.RunFixtur
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("Export validates ranges and retains exact BRF page bytes including blanks", () => Sync(() =>
+    {
+        var brf = "a\r\n#a\r\n\f\r\n\fbc\r\n#c\r\n\f";
+        Equal(3, DocumentExport.BrfPages(brf).Length);
+        Equal("\r\n\fbc\r\n#c\r\n\f", DocumentExport.SelectBraille(brf, new(ExportScope.BraillePages, 2, 3)));
+        Equal(brf, DocumentExport.SelectBraille(brf, new()));
+        Throws<ArgumentException>(() => DocumentExport.SelectBraille(brf, new(ExportScope.BraillePages, 0, 2)));
+        Throws<ArgumentException>(() => DocumentExport.SelectBraille(brf, new(ExportScope.BraillePages, 3, 2)));
+        Throws<ArgumentException>(() => DocumentExport.SelectBraille(brf, new(ExportScope.BraillePages, 1, 4)));
+        Throws<InvalidDataException>(() => DocumentExport.BrfPages("a\r\n"));
+        Equal("⠁\r\n⠼⠃\r\n\f⠉\r\n\r\n\f", DocumentExport.BrailleText([["⠁", "⠼⠃"], ["⠉", ""]]));
+    })),
+    ("Original-page export retains numbering and rejects incomplete pages", () => Sync(() =>
+    {
+        var model = new DocumentSession { Layout = new(CoverPages: 1, SourcePageStart: 10) };
+        for (var page = 1; page <= 4; page++)
+        {
+            model.Add(new EditorBlock { Id = page, Page = page, Source = "원문 " + page, Braille = "⠁" });
+            model.PageStatuses[page] = page == 4 ? "FAILED" : "COMPLETED";
+        }
+        var snapshot = SmjFile.Snapshot(model).Manifest;
+        Throws<InvalidOperationException>(() => DocumentExport.RequireCompletedPages(snapshot));
+        var selected = DocumentExport.SelectOriginal(snapshot, new(ExportScope.OriginalPages, 2, 3));
+        DocumentExport.RequireCompletedPages(selected);
+        Equal(2, selected.Blocks.Length); Equal("원문 2", selected.Blocks[0].Source);
+        Equal(0, selected.Layout.CoverPages); Equal(10, selected.Layout.SourcePageStart);
+        Equal(11, DocumentExport.SelectOriginal(snapshot, new(ExportScope.OriginalPages, 3, 3)).Layout.SourcePageStart);
+        Equal(4, snapshot.Blocks.Length); Equal(1, snapshot.Layout.CoverPages);
+    })),
     ("Document search keeps literal offsets across blocks and wraps at the end", () => Sync(() =>
     {
         var first = new EditorBlock { Id = 1, Page = 1, Source = "😀Ab aaA", Braille = "⠁⠃" };
