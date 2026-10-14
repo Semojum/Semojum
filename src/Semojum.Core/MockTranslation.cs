@@ -2,7 +2,12 @@ namespace Semojum.Core;
 
 public enum ManualEditDecision { Keep, Overwrite, Cancel }
 public enum TranslationOutcome { Applied, Kept, Cancelled, Superseded, TimedOut, Failed }
-public interface ITranslationEngine { Task<string> TranslateAsync(string text, int blockId, CancellationToken cancellationToken); }
+public interface ITranslationEngine
+{
+    Task<string> TranslateAsync(string text, int blockId, CancellationToken cancellationToken);
+    async Task<BrailleTranslation> TranslateBlockAsync(EditorBlock block, CancellationToken cancellationToken) =>
+        BrailleTranslation.Plain(await TranslateAsync(block.Source, block.Id, cancellationToken));
+}
 
 public sealed class MockTranslationEngine : ITranslationEngine
 {
@@ -17,6 +22,7 @@ public sealed class MockTranslationEngine : ITranslationEngine
 public sealed class TranslationCoordinator(ITranslationEngine engine)
 {
     private readonly Dictionary<EditorBlock, long> generations = [];
+    public void Invalidate(EditorBlock block) => generations[block] = generations.GetValueOrDefault(block) + 1;
 
     public async Task<TranslationOutcome> TranslateAsync(EditorBlock block, ManualEditDecision decision,
         TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -32,21 +38,24 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
         }
         var sourceRevision = block.SourceRevision;
         var brailleRevision = block.BrailleRevision;
-        block.State = "샘플 점역 중…";
+        var metadataRevision = block.MetadataRevision;
+        block.State = "점역 중…";
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        bool IsCurrent() => generations[block] == generation && block.SourceRevision == sourceRevision && block.BrailleRevision == brailleRevision;
+        bool IsCurrent() => generations[block] == generation && block.SourceRevision == sourceRevision
+            && block.BrailleRevision == brailleRevision && block.MetadataRevision == metadataRevision;
         try
         {
-            var result = await engine.TranslateAsync(block.Source, block.Id, linked.Token).WaitAsync(timeout, cancellationToken);
+            var result = await engine.TranslateBlockAsync(block, linked.Token).WaitAsync(timeout, cancellationToken);
             if (!IsCurrent())
             {
                 if (generations[block] == generation) block.State = "수정됨 · 재점역 필요";
                 return TranslationOutcome.Superseded;
             }
-            block.Braille = result;
+            block.Braille = result.Cells;
+            block.Translation = result;
             block.HasManualBraille = false;
             block.IsBrailleLocked = false;
-            block.State = "샘플 점역";
+            block.State = result.Blocked ? "점역 불가 · 원문 확인" : result.Dropped.Length != 0 ? "누락 문자 · 검토 필요" : "점역됨 · 검수 전";
             return TranslationOutcome.Applied;
         }
         catch (TimeoutException)

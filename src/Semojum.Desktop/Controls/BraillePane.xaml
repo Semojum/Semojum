@@ -15,7 +15,7 @@
     </DockPanel></Border>
     <StackPanel Grid.Row="3" Margin="14,7">
       <TextBlock x:Name="LinePreview" FontFamily="Segoe UI Symbol" FontSize="24" TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="목업 점자 샘플 · 실제 점역 결과가 아닙니다" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/>
+      <TextBlock Text="텍스트 입력 중인 줄의 점역 결과" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/>
     </StackPanel>
   </Grid>
 </UserControl>

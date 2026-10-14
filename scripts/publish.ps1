@@ -6,6 +6,8 @@ try {
     $output = Join-Path $root "artifacts/Semojum-$Runtime"
     dotnet publish src/Semojum.Desktop -c Release -r $Runtime --self-contained true -p:PublishSingleFile=false -o $output
     if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
+    if ($Runtime -ne 'win-x64') { throw 'The bundled engine has only been configured for win-x64.' }
+    & "$PSScriptRoot/build-engine.ps1" -Output "$output/engine"
     Copy-Item README.md, THIRD-PARTY-NOTICES.md -Destination $output
     Copy-Item licenses -Destination $output -Recurse -Force
     Compress-Archive -Path "$output/*" -DestinationPath "artifacts/Semojum-$Runtime.zip" -Force

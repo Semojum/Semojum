@@ -1,4 +1,4 @@
-name: Windows mockup
+name: Windows editor
 on:
   push:
     branches: [main, 'codex/**']
@@ -11,18 +11,27 @@ concurrency:
 jobs:
   verify:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Build
         run: dotnet build Semojum.sln -c Release
       - name: Core behavior checks
         run: dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
       - name: Publish portable Windows app
         run: ./scripts/publish.ps1
+      - name: Real engine integration checks
+        shell: pwsh
+        run: |
+          $env:SEMOJUM_ENGINE_PYTHON = Join-Path $PWD 'artifacts/engine-build/venv/Scripts/python.exe'
+          $env:SEMOJUM_ENGINE_EXECUTABLE = Join-Path $PWD 'artifacts/Semojum-win-x64/engine/semojum-engine.exe'
+          dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
       - name: WPF runtime smoke and screenshots
         shell: pwsh
         run: |

@@ -1,5 +1,7 @@
 using Semojum.Core;
 
+if (args.Contains("--sidecar-fixture")) return await IntegrationChecks.RunFixtureAsync();
+
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("Six-dot chord emits once after all releases", () => Sync(() =>
@@ -113,12 +115,13 @@ var tests = new (string Name, Func<Task> Run)[]
     })
 };
 var failures = 0;
-foreach (var (name, run) in tests)
+var allTests = tests.Concat(IntegrationChecks.Tests()).ToArray();
+foreach (var (name, run) in allTests)
 {
     try { await run(); Console.WriteLine("PASS " + name); }
     catch (Exception ex) { failures++; Console.Error.WriteLine($"FAIL {name}\n{ex}"); }
 }
-Console.WriteLine($"{tests.Length - failures}/{tests.Length} passed");
+Console.WriteLine($"{allTests.Length - failures}/{allTests.Length} passed");
 return failures == 0 ? 0 : 1;
 
 static Task Sync(Action action) { action(); return Task.CompletedTask; }

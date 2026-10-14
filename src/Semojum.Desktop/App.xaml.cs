@@ -8,7 +8,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var window = new MainWindow();
+        var window = new MainWindow(e.Args.Contains("--smoke-test"));
         MainWindow = window;
         if (e.Args.Length == 2 && e.Args[0] == "--smoke-test")
         {

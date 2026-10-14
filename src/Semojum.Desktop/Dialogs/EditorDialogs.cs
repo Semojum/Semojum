@@ -38,22 +38,33 @@ public abstract class EditorDialog : Window
 
 public sealed class LayoutDialog : EditorDialog
 {
-    private readonly TextBox columns, lines, start;
-    private readonly ComboBox numbers, footer;
+    private readonly TextBox columns, lines, start, sourceStart, cover;
+    private readonly ComboBox numbers, align;
+    private readonly CheckBox sourceNumber, brailleNumber, changeLine;
     public PageLayout Result { get; private set; }
     public LayoutDialog(PageLayout layout) : base("편집용 점자문서 페이지설정")
     {
         Result = layout;
         lines = new() { Text = layout.Lines.ToString() }; columns = new() { Text = layout.Columns.ToString() }; start = new() { Text = layout.StartPage.ToString() };
-        numbers = Choices(layout.PageNumbers); footer = Choices(layout.Footer);
-        Row("페이지당 줄 수", lines); Row("줄당 칸 수", columns); Row("시작 페이지 번호", start); Row("페이지 번호 출력", numbers); Row("꼬리말 출력", footer);
-        Note("칸 수를 넘는 줄은 편집기에 표시합니다. 이 목업에서는 문서 내용을 자동으로 다시 배치하지 않습니다."); Fields.Children.Add(Error);
+        numbers = Choices(layout.PageNumbers);
+        sourceStart = new() { Text = layout.SourcePageStart.ToString() }; cover = new() { Text = layout.CoverPages.ToString() };
+        align = new() { ItemsSource = new[] { "가운데", "오른쪽" }, SelectedIndex = layout.FooterAlign == "right" ? 1 : 0 };
+        sourceNumber = new() { Content = "원본 쪽 번호", IsChecked = layout.ShowSourcePageNumber };
+        brailleNumber = new() { Content = "점자 면 번호", IsChecked = layout.ShowBraillePageNumber };
+        changeLine = new() { Content = "묵자 쪽 전환선", IsChecked = layout.ShowChangeLine };
+        Row("페이지당 줄 수", lines); Row("줄당 칸 수", columns); Row("점자 시작 면", start); Row("원본 시작 쪽", sourceStart);
+        Row("표지 면 수", cover); Row("페이지행 출력", numbers); Row("꼬리말 정렬", align);
+        Fields.Children.Add(sourceNumber); Fields.Children.Add(brailleNumber); Fields.Children.Add(changeLine);
+        Note("BRF 내보내기에 적용합니다. 원시 점자와 직접 수정한 내용은 작업 파일에 보존됩니다."); Fields.Children.Add(Error);
     }
-    private static ComboBox Choices(string selected) => new() { ItemsSource = new[] { "홀수 페이지", "짝수 페이지", "모든 페이지", "출력 안 함" }, SelectedItem = selected };
+    private static ComboBox Choices(string selected) => new() { ItemsSource = new[] { "홀수 페이지", "모든 페이지", "출력 안 함" }, SelectedItem = selected };
     protected override bool Apply()
     {
-        if (!int.TryParse(columns.Text, out var c) || !int.TryParse(lines.Text, out var l) || !int.TryParse(start.Text, out var s)) throw new ArgumentException("숫자로 입력해 주세요.");
-        var value = new PageLayout(c, l, s, numbers.SelectedItem?.ToString() ?? "출력 안 함", footer.SelectedItem?.ToString() ?? "출력 안 함");
+        if (!int.TryParse(columns.Text, out var c) || !int.TryParse(lines.Text, out var l) || !int.TryParse(start.Text, out var s)
+            || !int.TryParse(sourceStart.Text, out var original) || !int.TryParse(cover.Text, out var covers)) throw new ArgumentException("숫자로 입력해 주세요.");
+        var value = Result with { Columns = c, Lines = l, StartPage = s, PageNumbers = numbers.SelectedItem?.ToString() ?? "출력 안 함",
+            SourcePageStart = original, CoverPages = covers, FooterAlign = align.SelectedIndex == 1 ? "right" : "center",
+            ShowSourcePageNumber = sourceNumber.IsChecked == true, ShowBraillePageNumber = brailleNumber.IsChecked == true, ShowChangeLine = changeLine.IsChecked == true };
         value.Validate(); Result = value; return true;
     }
 }
@@ -90,20 +101,47 @@ public sealed class MemoDialog : EditorDialog
         input = new() { Text = block.Memo, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Fields.Children.Add(input); Note("메모는 현재 블록에 저장됩니다.");
     }
+    public MemoDialog(string title, string text) : base(title)
+    {
+        input = new() { Text = text, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Fields.Children.Add(input); Note("현재 패널의 블록 안 줄에 메모를 남깁니다. 내용을 비우면 메모가 삭제됩니다.");
+    }
     protected override bool Apply() => true;
+}
+
+public sealed class DraftDialog : EditorDialog
+{
+    private readonly ComboBox choice;
+    public int SelectedIndex => choice.SelectedIndex;
+    public DraftDialog(BrailleDraft[] drafts) : base("표 점역 초안 선택", 700)
+    {
+        choice = new() { ItemsSource = drafts.Select(d => d.Label).ToArray(), SelectedIndex = 0 };
+        var preview = new TextBox { IsReadOnly = true, AcceptsReturn = true, Height = 250, FontSize = 22, FontFamily = new FontFamily("Segoe UI Symbol"), VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Text = drafts[0].Cells };
+        choice.SelectionChanged += (_, _) => { if (choice.SelectedIndex >= 0) preview.Text = drafts[choice.SelectedIndex].Cells; };
+        Row("초안", choice); Fields.Children.Add(preview);
+    }
+    protected override bool Apply() => choice.SelectedIndex >= 0;
 }
 
 public sealed class TranslationOptionsDialog : EditorDialog
 {
     private readonly CheckBox auto;
+    private readonly CheckBox korean, english;
+    private readonly ComboBox wrap;
+    public BrailleOptions Result { get; private set; }
     public bool AutoTranslate => auto.IsChecked == true;
-    public TranslationOptionsDialog(bool enabled) : base("기본 점역 옵션")
+    public TranslationOptionsDialog(bool enabled, BrailleOptions? options = null) : base("작업 점역 옵션")
     {
-        auto = new() { Content = "블록을 떠날 때 변경한 원문을 자동으로 점역", IsChecked = enabled };
+        Result = options ?? new();
+        korean = new() { Content = "한글 정자 (해제하면 약자)", IsChecked = Result.KoreanGrade1 };
+        english = new() { Content = "영문 정자 (해제하면 약자)", IsChecked = Result.EnglishGrade1 };
+        wrap = new() { ItemsSource = new[] { "음절", "어절" }, SelectedIndex = Result.LineBreakUnit == "word" ? 1 : 0 };
+        Fields.Children.Add(korean); Fields.Children.Add(english); Row("BRF 줄바꿈", wrap);
+        auto = new() { Content = "텍스트 입력이 멈추면 자동으로 점역", IsChecked = enabled };
         Fields.Children.Add(auto);
-        Note("직접 수정한 점자는 항상 유지 여부를 확인합니다.\n목업 엔진은 원문 내용과 관계없이 블록별 고정 샘플을 반환합니다.");
+        Note("직접 수정한 점자는 유지 여부를 확인합니다. 옵션 변경 후 전체 재점역을 실행하면 적용됩니다. 저장은 Ctrl+S를 누를 때만 합니다.");
     }
-    protected override bool Apply() => true;
+    protected override bool Apply() { Result = Result with { KoreanGrade1 = korean.IsChecked == true, EnglishGrade1 = english.IsChecked == true, LineBreakUnit = wrap.SelectedIndex == 1 ? "word" : "syllable" }; return true; }
 }
 
 public sealed class MathDialog : EditorDialog
@@ -126,7 +164,7 @@ public sealed class MathDialog : EditorDialog
         input = new() { Text = @"\frac{a+b}{2}=\sqrt{c}", FontFamily = new FontFamily("Consolas"), AcceptsReturn = true, Height = 80, Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap };
         input.TextChanged += (_, _) => { preview.Formula = input.Text; };
         Fields.Children.Add(input);
-        Note("LaTeX 미리보기입니다. 넣으면 원문에 수식 태그가 삽입됩니다. 수식 점역은 연동 전입니다.");
+        Note("LaTeX 미리보기입니다. 넣으면 원문에 수식 태그가 삽입됩니다. 점역 결과를 확인해 주세요.");
     }
     protected override bool Apply() => !string.IsNullOrWhiteSpace(input.Text);
 }
@@ -172,7 +210,7 @@ public sealed class ManualEditDialog : Window
         Title = "직접 수정한 점자"; Width = 580; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(26) }; Content = panel;
         panel.Children.Add(new TextBlock { Text = "직접 고친 점자를 지우고 다시 점역하시겠습니까?", FontSize = 17, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "유지하면 이 블록은 다시 점역되지 않습니다.\n목업에서는 덮어쓰기를 선택하면 샘플 점자로 돌아갑니다.", Margin = new Thickness(0, 14, 0, 24), TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "유지하면 직접 고친 점자가 남습니다. 덮어쓰면 현재 원문으로 다시 점역합니다.", Margin = new Thickness(0, 14, 0, 24), TextWrapping = TextWrapping.Wrap });
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; panel.Children.Add(buttons);
         foreach (var (label, decision) in new[] { ("유지", ManualEditDecision.Keep), ("덮어쓰기", ManualEditDecision.Overwrite), ("취소", ManualEditDecision.Cancel) })
         {

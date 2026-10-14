@@ -49,9 +49,9 @@ internal static class WindowsSmoke
         await CaptureDialogAsync(new MathDialog { Owner = window }, directory, "05-math.png");
         await CaptureDialogAsync(new ManualEditDialog { Owner = window }, directory, "06-manual-correction.png");
         checks.Add("PASS Layout, six-dot, math, and manual-correction dialogs render");
-        var path = Path.Combine(directory, "roundtrip.mock.smi");
-        await WorkFile.SaveAsync(path, WorkFile.Snapshot(window.Session));
-        var loaded = await WorkFile.LoadAsync(path);
+        var path = Path.Combine(directory, "roundtrip.smj");
+        await SmjFile.SaveAsync(path, SmjFile.Snapshot(window.Session));
+        var loaded = await SmjFile.LoadAsync(path);
         Check(loaded.Blocks[0].Braille == block.Braille && loaded.Blocks[0].HasManualBraille, "Saved file preserves detached manual edits");
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);

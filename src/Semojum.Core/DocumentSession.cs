@@ -9,22 +9,29 @@ public sealed partial class EditorBlock : ObservableObject
     public int Page { get; init; }
     public string Label => $"{Id:00}  {Heading}";
     public string Heading { get; init; } = "";
+    public string? ServerId { get; set; }
+    [ObservableProperty] private BlockMetadata metadata = new();
+    [ObservableProperty] private BrailleTranslation? translation;
+    public ObservableCollection<LineMemo> Memos { get; } = [];
     [ObservableProperty] private string source = "";
     [ObservableProperty] private string braille = "";
     [ObservableProperty] private string memo = "";
     [ObservableProperty] private bool hasManualBraille;
     [ObservableProperty] private bool isBrailleLocked;
-    [ObservableProperty] private string state = "샘플 점역";
+    [ObservableProperty] private string state = "점역 전";
     public int SourceRevision { get; private set; }
     public int BrailleRevision { get; private set; }
+    public int MetadataRevision { get; private set; }
 
     partial void OnSourceChanged(string value) => SourceRevision++;
     partial void OnBrailleChanged(string value) => BrailleRevision++;
+    partial void OnMetadataChanged(BlockMetadata value) => MetadataRevision++;
     public void EditBraille(string value)
     {
         if (IsBrailleLocked || Braille == value) return;
         Braille = value;
         HasManualBraille = true;
+        Translation = null;
         State = "직접 수정";
     }
 }
@@ -32,24 +39,36 @@ public sealed partial class EditorBlock : ObservableObject
 public sealed partial class DocumentSession : ObservableObject
 {
     public ObservableCollection<EditorBlock> Blocks { get; } = [];
+    public Dictionary<string, byte[]> OriginalFiles { get; } = [];
     public long ChangeVersion { get; private set; }
     [ObservableProperty] private EditorBlock? activeBlock;
-    [ObservableProperty] private string title = "2026_수능특강_사회문화.mock.smi";
+    [ObservableProperty] private string title = "제목 없음.smj";
     [ObservableProperty] private bool isDirty;
-    [ObservableProperty] private string status = "준비 · 샘플 문서";
+    [ObservableProperty] private string status = "준비";
     [ObservableProperty] private PageLayout layout = new();
+    [ObservableProperty] private BrailleOptions options = new();
+    [ObservableProperty] private string footerText = "";
+    public string? JobId { get; set; }
+    public string? OwnerLoginId { get; set; }
+    public string JobStatus { get; set; } = "COMPLETED";
+    public Dictionary<int, string> PageStatuses { get; } = [];
+    public Dictionary<int, OriginalPage> OriginalPages { get; } = [];
     public string WindowTitle => $"{(IsDirty ? "● " : "")}{Title} — 세모점";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnLayoutChanged(PageLayout value) { ChangeVersion++; IsDirty = true; }
+    partial void OnOptionsChanged(BrailleOptions value) { ChangeVersion++; IsDirty = true; }
+    partial void OnFooterTextChanged(string value) { ChangeVersion++; IsDirty = true; }
 
     public void Add(EditorBlock block)
     {
         Blocks.Add(block);
+        block.Memos.CollectionChanged += (_, _) => { ChangeVersion++; IsDirty = true; };
         block.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Braille)
-                or nameof(EditorBlock.Memo) or nameof(EditorBlock.HasManualBraille)) { ChangeVersion++; IsDirty = true; }
+                or nameof(EditorBlock.Memo) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata)
+                or nameof(EditorBlock.Translation)) { ChangeVersion++; IsDirty = true; }
         };
         ActiveBlock ??= block;
     }
@@ -63,7 +82,7 @@ public sealed partial class DocumentSession : ObservableObject
 
     public static DocumentSession Sample()
     {
-        var session = new DocumentSession();
+        var session = new DocumentSession { Title = "2026_수능특강_사회문화.smj", Status = "샘플 문서" };
         session.Add(new EditorBlock { Id = 1, Page = 12, Heading = "한국지리 · 기후 특성", Source = SampleData.Sources[0], Braille = SampleData.Braille[0] });
         session.Add(new EditorBlock { Id = 2, Page = 12, Heading = "선택지 · 네 지역 비교", Source = SampleData.Sources[1], Braille = SampleData.Braille[1] });
         session.Add(new EditorBlock { Id = 3, Page = 13, Heading = "자료 해설 · 연교차", Source = SampleData.Sources[2], Braille = SampleData.Braille[2] });
@@ -72,12 +91,17 @@ public sealed partial class DocumentSession : ObservableObject
     }
 }
 
-public sealed record PageLayout(int Columns = 32, int Lines = 25, int StartPage = 1, string PageNumbers = "홀수 페이지", string Footer = "홀수 페이지")
+public sealed record OriginalPage(string Type, string? AssetName, string[]? Lines = null, int Width = 0, int Height = 0);
+
+public sealed record PageLayout(int Columns = 32, int Lines = 26, int StartPage = 1, string PageNumbers = "홀수 페이지", string Footer = "홀수 페이지",
+    int CoverPages = 0, int SourcePageStart = 1, bool ShowSourcePageNumber = true, bool ShowBraillePageNumber = true,
+    bool ShowChangeLine = true, string FooterAlign = "center", string EditScope = "all", bool AdvancedAi = false)
 {
     public void Validate()
     {
-        if (Columns is < 8 or > 80 || Lines is < 8 or > 60 || StartPage < 1)
-            throw new ArgumentException("줄당 칸 수 8–80, 페이지당 줄 수 8–60, 시작 페이지 1 이상으로 입력해 주세요.");
+        if (Columns is < 8 or > 100 || Lines is < 4 or > 100 || StartPage < 1 || SourcePageStart < 1 || CoverPages < 0
+            || FooterAlign is not ("center" or "right") || EditScope is not ("all" or "page"))
+            throw new ArgumentException("줄당 칸 수 8–100, 페이지당 줄 수 4–100, 시작 페이지 1 이상으로 입력해 주세요.");
     }
 
     public IReadOnlyList<string> Wrap(string text)

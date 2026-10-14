@@ -6,5 +6,5 @@ artifacts/
 *.user
 *.suo
 *.mock.smi
+*.smj
 .DS_Store
-
