@@ -53,6 +53,25 @@ internal static class WindowsSmoke
         await SmjFile.SaveAsync(path, SmjFile.Snapshot(window.Session));
         var loaded = await SmjFile.LoadAsync(path);
         Check(loaded.Blocks[0].Braille == block.Braille && loaded.Blocks[0].HasManualBraille, "Saved file preserves detached manual edits");
+        // Exercise the production constructor and input debounce against the bundled engine.
+        // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
+        var real = new MainWindow();
+        try
+        {
+            real.Show();
+            real.SourceEditor.Focus();
+            real.SourceEditor.Text = "가";
+            var deadline = DateTime.UtcNow.AddSeconds(25);
+            while (real.Session.ActiveBlock!.Braille.Trim('⠀') != "⠫" && DateTime.UtcNow < deadline)
+                await Task.Delay(100);
+            Check(real.Session.ActiveBlock!.Braille.Trim('⠀') == "⠫", "Production text input automatically translates with packaged engine");
+            var actualPath = Path.Combine(directory, "real-engine.smj");
+            await SmjFile.SaveAsync(actualPath, SmjFile.Snapshot(real.Session));
+            var actual = await SmjFile.LoadAsync(actualPath);
+            Check(actual.Blocks[0].Translation?.SourceText == "가", "Production translation and original source survive SMJ round trip");
+            await RenderAsync(real, Path.Combine(directory, "07-real-engine.png"));
+        }
+        finally { real.PrepareSmokeShutdown(); real.Close(); }
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
     }

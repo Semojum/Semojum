@@ -302,6 +302,8 @@ internal static class IntegrationChecks
         var brf = await engine.BuildBrfAsync(model); True(brf.All(c => c < 128)); True(brf.EndsWith('\f'));
         var pages = await engine.ReadBrfAsync(brf); True(pages[0].Any(line => line.Contains('⠫')));
         var footer = await engine.TranslateElementAsync("Ⅳ", new(Type: "header_footer"), new()); True(footer.Cells.StartsWith('⠴'));
+        var priority = await engine.ReviewPriorityAsync(grade1.Cells, "가", new(), new(KoreanGrade1: true));
+        True(new[] { "먼저 확인", "확인", "나중에 확인" }.Contains(priority));
         True((await engine.DecodeAsync(grade1.Cells, new(KoreanGrade1: true))).Contains('가'));
     }
 
