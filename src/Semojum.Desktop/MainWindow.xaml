@@ -8,6 +8,9 @@
           <MenuItem Header="파일(_F)">
             <MenuItem Header="새 문서" InputGestureText="Ctrl+N" Tag="new" Click="Action_Click"/>
             <MenuItem Header="열기…" InputGestureText="Ctrl+O" Tag="open" Click="Action_Click"/>
+            <MenuItem x:Name="RecentFilesMenu" Header="최근 문서" SubmenuOpened="RecentFiles_Opened"><MenuItem Header="최근 작업 파일이 없습니다" IsEnabled="False"/></MenuItem>
+            <MenuItem Header="작업 폴더 선택…" Tag="workFolder" Click="Action_Click"/>
+            <MenuItem Header="마지막 작업 폴더 열기…" Tag="lastFolder" Click="Action_Click"/>
             <MenuItem Header="문서 업로드·AI 변환…" Tag="upload" Click="Action_Click"/>
             <MenuItem Header="서버 작업 열기…" Tag="serverOpen" Click="Action_Click"/>
             <MenuItem Header="현재 작업 변환 중단" Tag="cancelJob" Click="Action_Click"/>

@@ -13,6 +13,7 @@ public partial class BraillePane : UserControl, IDisposable
     private DocumentSession? session;
     private EditorDocuments? documents;
     private EditorBlock? active;
+    private bool switchingBlock;
     private readonly SixDotInput chord = new();
     public bool SixDotEnabled { get; set; }
     public bool SpaceEnabled { get; set; } = true;
@@ -27,7 +28,11 @@ public partial class BraillePane : UserControl, IDisposable
         Editor.PreviewKeyDown += HandleKeyDown;
         Editor.PreviewKeyUp += HandleKeyUp;
         Editor.LostKeyboardFocus += (_, _) => chord.Reset();
-        Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshIndicators();
+        Editor.TextArea.Caret.PositionChanged += (_, _) =>
+        {
+            if (!switchingBlock && active is not null) active.BrailleCaret = Editor.CaretOffset;
+            RefreshIndicators();
+        };
         Editor.TextArea.TextEntering += (_, e) =>
         {
             if (e.Text.Any(c => !IsBraille(c)))
@@ -62,8 +67,15 @@ public partial class BraillePane : UserControl, IDisposable
         active = session?.ActiveBlock;
         if (active is not null && documents is not null)
         {
-            Editor.Document = documents.Braille(active);
-            active.PropertyChanged += BlockChanged;
+            switchingBlock = true;
+            try
+            {
+                Editor.Document = documents.Braille(active);
+                Editor.CaretOffset = Math.Clamp(active.BrailleCaret, 0, Editor.Document.TextLength);
+                Editor.ScrollToLine(Editor.TextArea.Caret.Line);
+                active.PropertyChanged += BlockChanged;
+            }
+            finally { switchingBlock = false; }
         }
         RefreshIndicators();
     }

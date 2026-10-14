@@ -56,15 +56,23 @@ public partial class MainWindow : Window
         SourceEditor.Options.HighlightCurrentLine = true;
         SourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 248, 177));
         SourceEditor.TextArea.TextView.CurrentLineBorder = null;
-        SourceEditor.TextArea.Caret.PositionChanged += (_, _) => { RefreshSourcePosition(); QueuePreview(false); };
+        SourceEditor.TextArea.Caret.PositionChanged += (_, _) =>
+        {
+            if (!switching && session?.ActiveBlock is { } active) active.SourceCaret = SourceEditor.CaretOffset;
+            RefreshSourcePosition(); QueuePreview(false);
+        };
         SourceEditor.TextChanged += (_, _) => QueuePreview(true);
         SourceEditor.GotKeyboardFocus += (_, _) => lastEditor = SourceEditor;
         Braille.Editor.GotKeyboardFocus += (_, _) => lastEditor = Braille.Editor;
         Braille.DetachRequested += (_, _) => ToggleDetached();
         SetSession(smoke ? DocumentSession.Sample() : BlankDocument(), null, smoke);
+        RestorePreferences();
+        if (!smoke && preferences.WorkFolder is not null)
+            Loaded += async (_, _) => { try { await OpenWorkFolderAsync(false); } catch (Exception ex) { ShowError(ex); } };
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find") })
             InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync(action)), new KeyGesture(key, ModifierKeys.Control)));
+        InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
         Closed += async (_, _) => { documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); documents.Dispose(); http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
@@ -107,10 +115,17 @@ public partial class MainWindow : Window
     private void ShowActiveBlock()
     {
         if (session.ActiveBlock is not { } block) return;
-        SourceEditor.Document = documents.Source(block);
-        Original.SelectBlock(block.Id, block.Page);
-        ShowOriginal(block.Page);
-        RefreshSourcePosition();
+        var wasSwitching = switching; switching = true;
+        try
+        {
+            SourceEditor.Document = documents.Source(block);
+            SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
+            SourceEditor.ScrollToLine(SourceEditor.TextArea.Caret.Line);
+            Original.SelectBlock(block.Id, block.Page);
+            ShowOriginal(block.Page);
+            RefreshSourcePosition();
+        }
+        finally { switching = wasSwitching; }
     }
 
     private void RefreshSourcePosition()
@@ -187,6 +202,8 @@ public partial class MainWindow : Window
                     break;
                 case "sample": if (await ConfirmDiscardAsync()) SetSession(DocumentSession.Sample(), null, true); break;
                 case "open": await OpenAsync(); break;
+                case "workFolder": await OpenWorkFolderAsync(true); break;
+                case "lastFolder": await OpenWorkFolderAsync(false); break;
                 case "save": await SaveAsync(false); break;
                 case "saveAs": await SaveAsync(true); break;
                 case "export": await ExportAsync(); break;
@@ -268,6 +285,8 @@ public partial class MainWindow : Window
                         sixDotKeys = sixdot.Keys; Braille.ConfigureKeys(sixDotKeys);
                         Braille.SpaceEnabled = sixdot.Space; Braille.EnterEnabled = sixdot.Enter;
                         CopyBrailleSettings(); session.Status = $"6점키 · {sixDotKeys}";
+                        preferences = preferences with { SixDotKeys = sixDotKeys, SpaceEnabled = sixdot.Space, EnterEnabled = sixdot.Enter };
+                        await PersistPreferencesAsync();
                     }
                     break;
                 case "translationOptions":
@@ -359,6 +378,7 @@ public partial class MainWindow : Window
             var owner = session; var version = owner.ChangeVersion; var snapshot = SmjFile.Snapshot(owner);
             await SmjFile.SaveAsync(path, snapshot);
             filePath = path; owner.Title = Path.GetFileName(path);
+            await RememberFileAsync(path);
             if (owner.JobId is not null)
             {
                 try
@@ -393,27 +413,34 @@ public partial class MainWindow : Window
             _ => false
         };
     }
-    private async Task OpenAsync()
+    internal async Task OpenAsync(string? requestedPath = null)
     {
         if (fileBusy) return;
-        var dialog = new OpenFileDialog { Title = "작업 파일 또는 텍스트 열기", Filter = "지원 파일|*.smj;*.mock.smi;*.txt|세모점 작업|*.smj|UTF-8 텍스트|*.txt|이전 목업 파일|*.mock.smi" };
-        if (dialog.ShowDialog(this) != true || !await ConfirmDiscardAsync()) return;
+        if (requestedPath is null)
+        {
+            var dialog = new OpenFileDialog { Title = "작업 파일 또는 텍스트 열기", Filter = "지원 파일|*.smj;*.mock.smi;*.txt|세모점 작업|*.smj|UTF-8 텍스트|*.txt|이전 목업 파일|*.mock.smi", InitialDirectory = preferences.WorkFolder ?? "" };
+            if (dialog.ShowDialog(this) != true) return;
+            requestedPath = dialog.FileName;
+        }
+        if (filePath is not null && LocalWorkspace.SamePath(filePath, requestedPath))
+        { Activate(); SourceEditor.Focus(); return; }
+        if (!await ConfirmDiscardAsync()) return;
         fileBusy = true; IsEnabled = false;
         try
         {
             DocumentSession model;
-            if (Path.GetExtension(dialog.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase))
+            if (Path.GetExtension(requestedPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
             {
-                if (new FileInfo(dialog.FileName).Length > 20 * 1024 * 1024) throw new InvalidDataException("텍스트 파일은 20 MB까지 열 수 있습니다.");
-                var text = await File.ReadAllTextAsync(dialog.FileName, new System.Text.UTF8Encoding(false, true));
-                model = new DocumentSession { Title = Path.GetFileNameWithoutExtension(dialog.FileName) + ".smj" };
+                if (new FileInfo(requestedPath).Length > 20 * 1024 * 1024) throw new InvalidDataException("텍스트 파일은 20 MB까지 열 수 있습니다.");
+                var text = await File.ReadAllTextAsync(requestedPath, new System.Text.UTF8Encoding(false, true));
+                model = new DocumentSession { Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj" };
                 model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "불러온 텍스트", Source = text, State = "점역 전" });
-                model.OriginalFiles[Path.GetFileName(dialog.FileName)] = await File.ReadAllBytesAsync(dialog.FileName);
+                model.OriginalFiles[Path.GetFileName(requestedPath)] = await File.ReadAllBytesAsync(requestedPath);
                 model.IsDirty = true; SetSession(model, null, false);
             }
-            else if (dialog.FileName.EndsWith(".mock.smi", StringComparison.OrdinalIgnoreCase))
-            { model = await WorkFile.LoadAsync(dialog.FileName); model.Title = Path.GetFileNameWithoutExtension(dialog.FileName) + ".smj"; SetSession(model, null, false); }
-            else { model = await SmjFile.LoadAsync(dialog.FileName); SetSession(model, dialog.FileName, false); }
+            else if (requestedPath.EndsWith(".mock.smi", StringComparison.OrdinalIgnoreCase))
+            { model = await WorkFile.LoadAsync(requestedPath); model.Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj"; SetSession(model, null, false); }
+            else { model = await SmjFile.LoadAsync(requestedPath); SetSession(model, requestedPath, false); await RememberFileAsync(requestedPath); }
             session.Status = "문서를 열었습니다. 자동 저장은 사용하지 않습니다.";
         }
         finally { IsEnabled = true; fileBusy = false; }

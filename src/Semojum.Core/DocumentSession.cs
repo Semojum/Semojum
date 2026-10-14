@@ -22,6 +22,9 @@ public sealed partial class EditorBlock : ObservableObject
     public int SourceRevision { get; private set; }
     public int BrailleRevision { get; private set; }
     public int MetadataRevision { get; private set; }
+    // Navigation state is captured on explicit save; moving the caret is not a content edit.
+    public int SourceCaret { get; set; }
+    public int BrailleCaret { get; set; }
 
     partial void OnSourceChanged(string value) => SourceRevision++;
     partial void OnBrailleChanged(string value) => BrailleRevision++;

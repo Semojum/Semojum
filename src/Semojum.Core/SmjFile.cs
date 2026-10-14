@@ -6,7 +6,8 @@ namespace Semojum.Core;
 
 public sealed record LineMemo(string LocalId, long? ServerId, string Panel, int LineIndex, string LineText, string Body, DateTimeOffset CreatedAt);
 public sealed record SmjBlock(int Id, string? ServerId, int Page, string Heading, string Source, string Braille,
-    string Memo, bool HasManualBraille, BlockMetadata Metadata, BrailleTranslation? Translation, LineMemo[] Memos);
+    string Memo, bool HasManualBraille, BlockMetadata Metadata, BrailleTranslation? Translation, LineMemo[] Memos,
+    int SourceCaret = 0, int BrailleCaret = 0);
 public sealed record OriginalAsset(string Entry, string FileName, long Length, string Sha256);
 public sealed record SmjManifest(string Format, int Version, string? JobId, string? OwnerLoginId, string JobStatus,
     PageLayout Layout, BrailleOptions Options, string FooterText, int? ActiveBlockId, SmjBlock[] Blocks, OriginalAsset[] Originals,
@@ -32,7 +33,7 @@ public static class SmjFile
             return new OriginalAsset(entry, pair.Key, bytes.LongLength, Convert.ToHexString(SHA256.HashData(bytes)));
         }).ToArray();
         var blocks = session.Blocks.Select(b => new SmjBlock(b.Id, b.ServerId, b.Page, b.Heading, b.Source, b.Braille,
-            b.Memo, b.HasManualBraille, b.Metadata, b.Translation, b.Memos.ToArray())).ToArray();
+            b.Memo, b.HasManualBraille, b.Metadata, b.Translation, b.Memos.ToArray(), b.SourceCaret, b.BrailleCaret)).ToArray();
         var manifest = new SmjManifest(Format, Version, session.JobId, session.OwnerLoginId, session.JobStatus,
             session.Layout, session.Options, session.FooterText, session.ActiveBlock?.Id, blocks, originals,
             new(session.PageStatuses), new(session.OriginalPages));
@@ -124,6 +125,7 @@ public static class SmjFile
             {
                 Id = b.Id, ServerId = b.ServerId, Page = b.Page, Heading = b.Heading, Source = b.Source, Braille = b.Braille,
                 Memo = b.Memo, HasManualBraille = b.HasManualBraille, Metadata = b.Metadata, Translation = b.Translation,
+                SourceCaret = Math.Clamp(b.SourceCaret, 0, b.Source.Length), BrailleCaret = Math.Clamp(b.BrailleCaret, 0, b.Braille.Length),
                 State = b.HasManualBraille ? "직접 수정" : b.Translation?.NeedsReview == true ? "검토 필요" : "저장된 점자"
             };
             foreach (var memo in b.Memos) block.Memos.Add(memo);

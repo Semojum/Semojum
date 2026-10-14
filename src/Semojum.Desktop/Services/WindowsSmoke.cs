@@ -44,6 +44,9 @@ internal static class WindowsSmoke
         Check(window.SourceEditor.Text == window.Session.Blocks[1].Source, "Active block updates source editor");
         Check(window.Braille.Editor.Text == window.Session.Blocks[1].Braille, "Active block updates braille editor");
         window.Session.ActiveBlock = block;
+        window.SourceEditor.CaretOffset = 8; window.Braille.Editor.CaretOffset = 3;
+        window.Session.ActiveBlock = window.Session.Blocks[1]; window.Session.ActiveBlock = block;
+        Check(window.SourceEditor.CaretOffset == 8 && window.Braille.Editor.CaretOffset == 3, "Block navigation restores each panel caret");
         await CaptureDialogAsync(new LayoutDialog(window.Session.Layout) { Owner = window }, directory, "03-page-settings.png");
         await CaptureDialogAsync(new SixDotDialog("F D S J K L", true, true) { Owner = window }, directory, "04-six-dot-settings.png");
         await CaptureDialogAsync(new MathDialog { Owner = window }, directory, "05-math.png");
@@ -53,6 +56,14 @@ internal static class WindowsSmoke
         await SmjFile.SaveAsync(path, SmjFile.Snapshot(window.Session));
         var loaded = await SmjFile.LoadAsync(path);
         Check(loaded.Blocks[0].Braille == block.Braille && loaded.Blocks[0].HasManualBraille, "Saved file preserves detached manual edits");
+        window.Session.IsDirty = false;
+        await window.OpenAsync(path);
+        Check(window.SourceEditor.CaretOffset == 8 && window.Braille.Editor.CaretOffset == 3, "Reopening SMJ restores saved editor carets");
+        window.SourceEditor.Document.Insert(0, "편집 중 ");
+        var unsaved = window.SourceEditor.Text;
+        await window.OpenAsync(path);
+        Check(window.SourceEditor.Text == unsaved && window.Session.IsDirty, "Opening an already open path retains unsaved edits");
+        await CaptureDialogAsync(new WorkFolderDialog(directory) { Owner = window }, directory, "08-work-folder.png");
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
         var real = new MainWindow();

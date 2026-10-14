@@ -23,6 +23,9 @@ internal static class IntegrationChecks
         yield return ("Multipart uploads use repeated file parts and reject mixed documents", JobUpload);
         yield return ("SMJ round trip preserves original, options, table metadata and manual edits", SmjRoundTrip);
         yield return ("SMJ cancellation preserves prior file and foreign version is rejected", SmjFailure);
+        yield return ("Recent files stay ordered, capped, deduplicated and separate from document contents", WorkspacePreferences);
+        yield return ("Work folder lists only SMJ files and explicit subdirectories", WorkspaceFolder);
+        yield return ("SMJ restores saved block and carets without treating navigation as editing", SavedCarets);
         yield return ("Braille folding respects syllables, empty lines and note indicators", Folding);
         yield return ("Tags distinguish pairs, singletons and layout-only footer", Tags);
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_PYTHON") is { Length: > 0 } python)
@@ -267,6 +270,64 @@ internal static class IntegrationChecks
             await Reject<InvalidDataException>(() => SmjFile.SaveAsync(path, snapshot with { Manifest = snapshot.Manifest with { Version = 999 } }));
             using (var zip = ZipFile.Open(path, ZipArchiveMode.Update)) zip.CreateEntry("manifest.json");
             await Reject<InvalidDataException>(() => SmjFile.LoadAsync(path));
+        }
+        finally { File.Delete(path); }
+    }
+
+    private static async Task WorkspacePreferences()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
+        try
+        {
+            var path = Path.Combine(folder, "preferences.json"); var store = new LocalWorkspace(path);
+            var state = store.Load(); Equal(0, state.RecentFiles?.Length ?? 0);
+            for (var i = 0; i < 12; i++) state = LocalWorkspace.Remember(state, Path.Combine(folder, $"{i}.smj"));
+            state = LocalWorkspace.Remember(state, Path.Combine(folder, "4.smj"));
+            Equal(10, state.RecentFiles!.Length); Equal("4.smj", Path.GetFileName(state.RecentFiles[0]));
+            Equal(1, state.RecentFiles.Count(p => p.EndsWith("4.smj", StringComparison.Ordinal)));
+            state = state with { WorkFolder = folder, SixDotKeys = "A S D J K L", SpaceEnabled = false };
+            await store.SaveAsync(state);
+            var loaded = store.Load(); Equal(folder, loaded.WorkFolder); Equal("A S D J K L", loaded.SixDotKeys); True(!loaded.SpaceEnabled);
+            var json = await File.ReadAllTextAsync(path); True(!json.Contains("source", StringComparison.OrdinalIgnoreCase)); True(!json.Contains("token", StringComparison.OrdinalIgnoreCase));
+            var before = await File.ReadAllBytesAsync(path);
+            using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+            await Reject<OperationCanceledException>(() => store.SaveAsync(new(), cancelled.Token));
+            var after = await File.ReadAllBytesAsync(path); True(before.SequenceEqual(after));
+            await File.WriteAllTextAsync(path, "{\"version\":1,\"sixDotKeys\":null}");
+            Equal("F D S J K L", store.Load().SixDotKeys); True(store.LoadWarning is not null);
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    private static async Task WorkspaceFolder()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(folder, "nested"));
+            await File.WriteAllTextAsync(Path.Combine(folder, "one.smj"), "contents");
+            await File.WriteAllTextAsync(Path.Combine(folder, "two.txt"), "hidden");
+            await File.WriteAllTextAsync(Path.Combine(folder, "nested", "child.smj"), "nested");
+            var entries = LocalWorkspace.ListFolder(folder); Equal(2, entries.Length); True(entries[0].IsDirectory);
+            Equal("one.smj", entries[1].Name); Equal(8L, entries[1].Size);
+            File.Delete(entries[1].Path); Equal(1, LocalWorkspace.ListFolder(folder).Length);
+            Equal("child.smj", LocalWorkspace.ListFolder(entries[0].Path).Single().Name);
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    private static async Task SavedCarets()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".smj");
+        try
+        {
+            var model = DocumentSession.Sample(); var version = model.ChangeVersion;
+            model.ActiveBlock = model.Blocks[1]; model.ActiveBlock.SourceCaret = 9; model.ActiveBlock.BrailleCaret = 2;
+            Equal(version, model.ChangeVersion); True(!model.IsDirty);
+            await SmjFile.SaveAsync(path, SmjFile.Snapshot(model));
+            model.ActiveBlock.SourceCaret = 0;
+            var restored = await SmjFile.LoadAsync(path);
+            Equal(2, restored.ActiveBlock!.Id); Equal(9, restored.ActiveBlock.SourceCaret); Equal(2, restored.ActiveBlock.BrailleCaret);
         }
         finally { File.Delete(path); }
     }
