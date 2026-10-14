@@ -36,6 +36,33 @@ internal static class WindowsSmoke
         await RenderAsync(window.DetachedWindow!, Path.Combine(directory, "02-detached.png"));
         window.ToggleDetached();
         Check(window.Braille.Editor.Text.StartsWith("⠿"), "Reattached panel retains detached edits");
+        var versionBeforeDetach = window.Session.ChangeVersion;
+        var sourceDocument = window.SourceEditor.Document;
+        window.ToggleSourcePanel(); window.ToggleOriginalPanel(); window.UpdateLayout();
+        Check(Math.Abs(window.BrailleContainer.ActualWidth - window.PanelGrid.ActualWidth) < 2,
+            "Remaining panel fills main window after source and original detach");
+        Check(ReferenceEquals(sourceDocument, window.SourceEditor.Document) && window.DetachedSourceWindow!.IsVisible,
+            "Source detachment retains editor document and undo history");
+        Check(window.Session.ChangeVersion == versionBeforeDetach, "Detaching panels does not change document state");
+        window.SourceEditor.Document.Insert(0, "분리 편집 ");
+        Check(block.Source.StartsWith("분리 편집 "), "Detached source edits reach shared model");
+        window.SourceEditor.Undo();
+        Check(block.Source == source, "Detached source edit can be undone");
+        window.Session.ActiveBlock = window.Session.Blocks[1];
+        Check(window.SourceEditor.Text == window.Session.Blocks[1].Source
+            && window.Braille.Editor.Text == window.Session.Blocks[1].Braille
+            && window.Original.PageLabel.Text.StartsWith(window.Session.Blocks[1].Page + " /"),
+            "Active block stays synchronized across independently detached panels");
+        window.Session.ActiveBlock = block;
+        await RenderAsync(window.DetachedSourceWindow!, Path.Combine(directory, "09-detached-source.png"));
+        await RenderAsync(window.DetachedOriginalWindow!, Path.Combine(directory, "10-detached-original.png"));
+        await RenderAsync(window, Path.Combine(directory, "11-remaining-panel.png"));
+        var versionBeforeRestore = window.Session.ChangeVersion;
+        window.DetachedSourceWindow!.Close(); window.DetachedOriginalWindow!.Close(); window.UpdateLayout();
+        Check(window.PanelGrid.Children.Contains(window.SourcePanel) && window.PanelGrid.Children.Contains(window.OriginalPanel)
+            && window.SourceEditor.ActualWidth > 250 && window.Braille.ActualWidth > 250
+            && window.Session.ChangeVersion == versionBeforeRestore,
+            "Closing detached windows restores usable panels without changing document state");
         block.IsBrailleLocked = true;
         Check(window.Braille.Editor.IsReadOnly && !window.SourceEditor.IsReadOnly, "Translation lock affects only braille editor");
         block.IsBrailleLocked = false;

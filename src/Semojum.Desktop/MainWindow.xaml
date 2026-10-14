@@ -30,6 +30,8 @@
           <MenuItem Header="보기(_V)">
             <MenuItem x:Name="OriginalToggle" Header="원본 패널" IsCheckable="True" IsChecked="True" Click="OriginalToggle_Click"/>
             <MenuItem Header="점자 창 분리 / 합치기" Tag="detach" Click="Action_Click"/>
+            <MenuItem Header="텍스트 창 분리 / 합치기" Tag="detachSource" Click="Action_Click"/>
+            <MenuItem Header="원본 창 분리 / 합치기" Tag="detachOriginal" Click="Action_Click"/>
             <MenuItem x:Name="LinePreviewToggle" Header="줄번역" IsCheckable="True" IsChecked="True" Click="LinePreviewToggle_Click"/>
             <Separator/><MenuItem Header="글자 크게" Tag="zoomIn" Click="Action_Click"/><MenuItem Header="글자 작게" Tag="zoomOut" Click="Action_Click"/><MenuItem Header="글자 크기 초기화" Tag="zoomReset" Click="Action_Click"/>
           </MenuItem>
@@ -99,22 +101,23 @@
         <TextBlock Text="{Binding Status}" FontSize="11" TextTrimming="CharacterEllipsis"/>
       </DockPanel>
     </Border>
-    <Grid Margin="8,8,8,6">
+    <Grid x:Name="PanelGrid" Margin="8,8,8,6">
       <Grid.ColumnDefinitions><ColumnDefinition x:Name="OriginalColumn" Width="0.82*" MinWidth="260"/><ColumnDefinition x:Name="OriginalSplitterColumn" Width="6"/><ColumnDefinition Width="*" MinWidth="340"/><ColumnDefinition Width="6"/><ColumnDefinition Width="*" MinWidth="340"/></Grid.ColumnDefinitions>
       <Border x:Name="OriginalPanel" BorderBrush="{StaticResource Line}" BorderThickness="1"><Grid>
         <local:OriginalPreview x:Name="Original"/>
         <Border x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel><Viewbox Stretch="Uniform"><Grid x:Name="OriginalImageGrid"><Image x:Name="OriginalImage" Stretch="Fill"/><Canvas><Rectangle x:Name="OriginalSelection" Stroke="#4D85C8" Fill="#205287C1" StrokeThickness="3" Visibility="Collapsed"/></Canvas></Grid></Viewbox><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
+        <Button Content="↗" Tag="detachOriginal" Click="Action_Click" ToolTip="원본 창 분리 / 합치기" AutomationProperties.Name="원본 창 분리 또는 합치기" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6"/>
       </Grid></Border>
       <GridSplitter Grid.Column="1" ResizeBehavior="PreviousAndNext"/>
-      <Border Grid.Column="2" BorderBrush="{StaticResource Line}" BorderThickness="1" Background="White">
+      <Border x:Name="SourcePanel" Grid.Column="2" BorderBrush="{StaticResource Line}" BorderThickness="1" Background="White">
         <Grid><Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition Height="*"/><RowDefinition Height="40"/></Grid.RowDefinitions>
-          <Border Style="{StaticResource PanelHeader}"><DockPanel><TextBlock x:Name="SourcePosition" DockPanel.Dock="Right" FontSize="11" Foreground="{StaticResource Muted}"/><TextBlock Text="❷  텍스트" FontWeight="SemiBold"/></DockPanel></Border>
+          <Border Style="{StaticResource PanelHeader}"><DockPanel><Button DockPanel.Dock="Right" Content="↗" Tag="detachSource" Click="Action_Click" Style="{StaticResource ToolButton}" ToolTip="텍스트 창 분리 / 합치기" AutomationProperties.Name="텍스트 창 분리 또는 합치기"/><TextBlock x:Name="SourcePosition" DockPanel.Dock="Right" FontSize="11" Foreground="{StaticResource Muted}"/><TextBlock Text="❷  텍스트" FontWeight="SemiBold"/></DockPanel></Border>
           <ae:TextEditor Grid.Row="1" x:Name="SourceEditor" FontFamily="Malgun Gothic" FontSize="18" ShowLineNumbers="True" WordWrap="True" Padding="7,14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="원문 텍스트 편집기"/>
           <Border Grid.Row="2" Background="#F7F8FA" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="10,0"><TextBlock Text="태그는 파란색으로 표시됩니다. 블록별 편집 이력이 유지됩니다." FontSize="11" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/></Border>
         </Grid>
       </Border>
       <GridSplitter Grid.Column="3" ResizeBehavior="PreviousAndNext"/>
-      <Border Grid.Column="4" BorderBrush="{StaticResource Line}" BorderThickness="1"><Grid>
+      <Border x:Name="BrailleContainer" Grid.Column="4" BorderBrush="{StaticResource Line}" BorderThickness="1"><Grid>
         <local:BraillePane x:Name="Braille"/>
         <Border x:Name="DetachedPlaceholder" Visibility="Collapsed" Background="#F4F6F8"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="점자 창이 분리되어 있습니다" FontSize="17"/><TextBlock Text="독립 창에서도 같은 블록을 편집합니다." Foreground="{StaticResource Muted}" Margin="0,12,0,20"/><Button Content="이 창으로 합치기" Tag="detach" Click="Action_Click" Style="{StaticResource PrimaryButton}"/></StackPanel></Border>
       </Grid></Border>

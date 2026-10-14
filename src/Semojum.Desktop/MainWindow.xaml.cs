@@ -70,9 +70,8 @@ public partial class MainWindow : Window
         if (!smoke && preferences.WorkFolder is not null)
             Loaded += async (_, _) => { try { await OpenWorkFolderAsync(false); } catch (Exception ex) { ShowError(ex); } };
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find") })
-            InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync(action)), new KeyGesture(key, ModifierKeys.Control)));
-        InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
+        BindCommonKeys(this);
+        UpdatePanelLayout();
         Closed += async (_, _) => { documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); documents.Dispose(); http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
@@ -96,6 +95,12 @@ public partial class MainWindow : Window
             foreach (var block in session.Blocks) translatedRevisions[block] = block.Braille.Length != 0
                 && (block.Translation?.SourceText is null || block.Translation.SourceText == block.Source) ? block.SourceRevision : -1;
             DataContext = session;
+            foreach (var window in detachedPanels.Values)
+            {
+                window.DataContext = session;
+                window.Title = $"{window.Tag} — {session.Title}";
+            }
+            if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
             session.PropertyChanged += SessionChanged;
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
             OriginalEmpty.Visibility = showOriginal ? Visibility.Collapsed : Visibility.Visible;
@@ -110,6 +115,7 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(DocumentSession.Options))
             foreach (var block in session.Blocks) { translator.Invalidate(block); translatedRevisions[block] = -1; block.State = "옵션 변경 · 재점역 필요"; }
         if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
+        foreach (var window in detachedPanels.Values) window.Title = $"{window.Tag} — {session.Title}";
     }
 
     private void ShowActiveBlock()
@@ -222,6 +228,8 @@ public partial class MainWindow : Window
                 case "previous": MoveBlock(-1); break;
                 case "next": MoveBlock(1); break;
                 case "detach": ToggleDetached(); break;
+                case "detachSource": ToggleSourcePanel(); break;
+                case "detachOriginal": ToggleOriginalPanel(); break;
                 case "zoomIn": SetFontSize(SourceEditor.FontSize + 2); break;
                 case "zoomOut": SetFontSize(SourceEditor.FontSize - 2); break;
                 case "zoomReset": SetFontSize(18); break;
@@ -333,8 +341,10 @@ public partial class MainWindow : Window
         {
             detachedPane?.Dispose(); detachedPane = null; detachedWindow = null;
             DetachedPlaceholder.Visibility = Visibility.Collapsed; Braille.Visibility = Visibility.Visible; lastEditor = Braille.Editor;
+            UpdatePanelLayout();
         };
         DetachedPlaceholder.Visibility = Visibility.Visible; Braille.Visibility = Visibility.Collapsed;
+        BindCommonKeys(detachedWindow); UpdatePanelLayout();
         detachedWindow.Show(); detachedPane.Editor.Focus();
     }
     private void CopyBrailleSettings()
@@ -355,11 +365,8 @@ public partial class MainWindow : Window
     }
     private void OriginalToggle_Click(object sender, RoutedEventArgs e)
     {
-        var show = OriginalToggle.IsChecked;
-        OriginalPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        OriginalColumn.MinWidth = show ? 260 : 0;
-        OriginalColumn.Width = show ? new GridLength(.82, GridUnitType.Star) : new GridLength(0);
-        OriginalSplitterColumn.Width = new GridLength(show ? 6 : 0);
+        if (detachedPanels.TryGetValue(OriginalPanel, out var window)) window.Close();
+        UpdatePanelLayout();
     }
 
     private async Task<bool> SaveAsync(bool saveAs)
