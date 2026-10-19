@@ -23,10 +23,10 @@ public static class SmjFile
     private const long MaximumManifestBytes = 64L * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public static SmjSnapshot Snapshot(DocumentSession session)
+    public static SmjSnapshot Snapshot(DocumentSession session, bool includeOriginals = true)
     {
         var assets = new Dictionary<string, byte[]>();
-        var originals = session.OriginalFiles.Select((pair, index) =>
+        var originals = (includeOriginals ? session.OriginalFiles : new Dictionary<string, byte[]>()).Select((pair, index) =>
         {
             var entry = $"originals/{index:D4}";
             var bytes = pair.Value.ToArray(); assets.Add(entry, bytes);

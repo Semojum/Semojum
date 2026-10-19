@@ -31,10 +31,13 @@ internal static class RemainingChecks
     {
         await Rejected(() => { FooterRange.Validate([new(1, 3, "가"), new(3, null, "나")]); return Task.CompletedTask; });
         await Rejected(() => { FooterRange.Validate([new(2, 1, "가")]); return Task.CompletedTask; });
-        var session = new DocumentSession { FooterRanges = [new(2, 3, ""), new(4, null, "단원")], Layout = new(FooterAlign: "left") };
+        await Rejected(() => { PageNumberRange.Parse("1-3, 3-7"); return Task.CompletedTask; });
+        await Rejected(() => { PageNumberRange.Parse("0, 2-"); return Task.CompletedTask; });
+        await Rejected(() => { FooterRange.Validate([new(1, null, "가", "invalid")]); return Task.CompletedTask; });
+        var session = new DocumentSession { FooterRanges = [new(2, 3, ""), new(4, null, "단원", "right")], Layout = new(FooterAlign: "left", NumberRanges: PageNumberRange.Parse("1-3, 7-")) };
         session.Add(new EditorBlock { Id = 1, Page = 1 });
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".smj");
-        try { await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path); Check(restored.FooterRanges.SequenceEqual(session.FooterRanges) && restored.Layout.FooterAlign == "left"); }
+        try { await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path); Check(restored.FooterRanges.SequenceEqual(session.FooterRanges) && restored.Layout.FooterAlign == "left" && PageNumberRange.Format(restored.Layout.NumberRanges) == "1-3, 7-"); }
         finally { File.Delete(path); }
     }
     private static async Task PartialRanges()

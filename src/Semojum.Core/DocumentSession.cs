@@ -121,10 +121,11 @@ public sealed record ConversionProgress(int Total, int Completed, int Failed, st
 
 public sealed record PageLayout(int Columns = 32, int Lines = 26, int StartPage = 1, string PageNumbers = "홀수 페이지", string Footer = "홀수 페이지",
     int CoverPages = 0, int SourcePageStart = 1, bool ShowSourcePageNumber = true, bool ShowBraillePageNumber = true,
-    bool ShowChangeLine = true, string FooterAlign = "center", string EditScope = "all", bool AdvancedAi = false, bool PadToEven = false)
+    bool ShowChangeLine = true, string FooterAlign = "center", string EditScope = "all", bool AdvancedAi = false, bool PadToEven = false, PageNumberRange[]? NumberRanges = null)
 {
     public void Validate()
     {
+        PageNumberRange.Validate(NumberRanges);
         if (Columns is < 8 or > 100 || Lines is < 4 or > 100 || StartPage < 1 || SourcePageStart < 1 || CoverPages < 0
             || FooterAlign is not ("center" or "right" or "left") || EditScope is not ("all" or "page"))
             throw new ArgumentException("줄당 칸 수 8–100, 페이지당 줄 수 4–100, 시작 페이지 1 이상으로 입력해 주세요.");

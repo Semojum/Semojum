@@ -7,7 +7,7 @@ namespace Semojum.Desktop;
 public partial class MainWindow
 {
     private string searchQuery = "";
-    private SearchPanel ActiveSearchPanel => lastEditor is not null && lastEditor != SourceEditor ? SearchPanel.Braille : SearchPanel.Text;
+    private SearchPanel ActiveSearchPanel => lastEditor is not null && lastEditor != SourceEditor && lastEditor != PageEditor.Editor ? SearchPanel.Braille : SearchPanel.Text;
     private TextEditor SearchEditor(SearchPanel panel) => panel == SearchPanel.Text ? SourceEditor : detachedPane?.Editor ?? Braille.Editor;
 
     private async Task ShowSearchAsync(bool replace)

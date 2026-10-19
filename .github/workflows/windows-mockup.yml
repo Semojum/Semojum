@@ -31,6 +31,8 @@ jobs:
         run: |
           $env:SEMOJUM_ENGINE_PYTHON = Join-Path $PWD 'artifacts/engine-build/venv/Scripts/python.exe'
           $env:SEMOJUM_ENGINE_EXECUTABLE = Join-Path $PWD 'artifacts/Semojum-win-x64/engine/semojum-engine.exe'
+          & $env:SEMOJUM_ENGINE_PYTHON tests/engine/test_editor_composition.py
+          if ($LASTEXITCODE -ne 0) { throw "Composition parity checks failed." }
           dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
       - name: WPF runtime smoke and screenshots
         shell: pwsh

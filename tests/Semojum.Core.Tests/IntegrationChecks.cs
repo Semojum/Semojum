@@ -351,7 +351,7 @@ internal static class IntegrationChecks
 
     private static async Task RealEngine(string python, bool packaged = false)
     {
-        await using var sidecar = new BrailleSidecar(new(python, packaged ? [] : ["-m", "semojum_braille.sidecar"]));
+        await using var sidecar = new BrailleSidecar(new(python, packaged ? [] : ["-u", Path.Combine(AppContext.BaseDirectory, "engine-adapter", "engine-entry.py")]));
         var engine = new LocalBrailleEngine(sidecar);
         var grade2 = await engine.TranslateElementAsync("가", new(), new()); Equal("⠫", grade2.Cells.Trim('⠀'));
         Equal("3.4.24", sidecar.EngineVersion);
@@ -411,6 +411,23 @@ internal static class IntegrationChecks
         headerDoc.Blocks[1].Braille = anchored.Cells; headerDoc.Blocks[1].Translation = anchored; headerDoc.Blocks[1].HasManualBraille = false;
         headerPages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(headerDoc));
         True(headerPages[0][0].Contains('⠿') && headerPages[1][0].Trim('⠀', ' ') == headerCells); // Prefix inside a translated block maps to the current face.
+        var composed = await engine.ComposeAsync(SmjFile.Snapshot(multi).Manifest);
+        var projected = BrailleGrid.FromComposition(composed, multi.Blocks, multi.Layout);
+        Equal(string.Join("|", (await engine.ReadBrfAsync(composed.Brf)).SelectMany(p => p)),
+            string.Join("|", projected.SelectMany(f => f.Text!)));
+        True(projected.Any(f => f.Kinds!.Contains("page")));
+        foreach (var face in projected)
+            for (var row = 0; row < face.Rows.Length; row++)
+                if (face.Kinds![row] == "page") True(face.Rows[row].All(c => c is null));
+        multi.Blocks[0].Braille = "⠙";
+        await Reject<InvalidDataException>(() => { BrailleGrid.FromComposition(composed, multi.Blocks, multi.Layout); return Task.CompletedTask; });
+        var inline = await engine.TranslateElementAsync("가<!쪽바꿈><!쪽바꿈>나", new(), new());
+        var inlineDoc = new DocumentSession { Layout = new(Columns: 16, Lines: 4, PageNumbers: "출력 안 함", Footer: "출력 안 함") };
+        inlineDoc.Add(new EditorBlock { Id = 1, Page = 1, Source = "가<!쪽바꿈><!쪽바꿈>나", Braille = inline.Cells, Translation = inline });
+        var inlineResult = await engine.ComposeAsync(SmjFile.Snapshot(inlineDoc).Manifest);
+        Equal(3, inlineResult.Pages!.Length);
+        True(inlineResult.Pages[1].Lines.All(l => l.All(c => c == '⠀')));
+        _ = BrailleGrid.FromComposition(inlineResult, inlineDoc.Blocks, inlineDoc.Layout);
         headerDoc.Blocks[1].Source = "다<!머리말>가<!/머리말>나";
         await Reject<ArgumentException>(() => engine.BuildBrfAsync(headerDoc)); // Unknown manual position cannot silently become global.
     }

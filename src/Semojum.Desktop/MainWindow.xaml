@@ -195,6 +195,7 @@
             <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock Text="2" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
             <TextBlock Text="텍스트" FontSize="12"/>
           </DockPanel></Border>
+          <local:ContinuousSourceEditor Grid.Row="1" x:Name="PageEditor" Visibility="Collapsed"/>
           <ae:TextEditor Grid.Row="1" x:Name="SourceEditor" FontFamily="Malgun Gothic" FontSize="14" ShowLineNumbers="True" WordWrap="True" Padding="8,4" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="원문 텍스트 편집기"/>
         </Grid>
       </Border>

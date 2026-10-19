@@ -10,20 +10,34 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
-    private void SelectTextRange()
+    internal void SelectTextRange()
     {
-        if (session.ActiveBlock is not { } active) return;
-        var panel = ActiveSearchPanel; var page = active.Page;
-        new RangeSelectionDialog(() => session.Blocks.Where(b => b.Page == page).ToArray(), panel, async (spans, value) =>
+        if (session.ActiveBlock is null) return;
+        if (ActiveSearchPanel == SearchPanel.Braille)
+        { (detachedPane ?? Braille).GridView.Focus(); session.Status = "모눈에서 드래그 또는 Shift+클릭으로 선택하세요."; return; }
+        PageEditor.Visibility = Visibility.Visible; SourceEditor.Visibility = Visibility.Collapsed;
+        PageEditor.Refresh(); PageEditor.Editor.Focus();
+    }
+    private void InitializeContinuousEditor()
+    {
+        PageEditor.CloseRequested += () => { PageEditor.Visibility = Visibility.Collapsed; SourceEditor.Visibility = Visibility.Visible; SourceEditor.Focus(); };
+        PageEditor.Replay = redo => ReplayHistory(redo);
+        PageEditor.Replace = (spans, value) =>
         {
-            if (session.IsReadOnly) throw new InvalidOperationException("읽기 전용 문서입니다.");
+            if (spans.Length == 0 || session.IsReadOnly) return;
             var decision = ManualEditDecision.Overwrite;
-            if (panel == SearchPanel.Text && spans.Any(s => s.Block.HasManualBraille))
-            { decision = ChooseTranslation(spans.First(s => s.Block.HasManualBraille).Block); if (decision == ManualEditDecision.Cancel) return; }
-            EditorBlock? edited = null;
-            EditStructure(() => edited = BlockRange.Replace(session, spans, panel, value));
-            if (panel == SearchPanel.Text && edited is not null && autoTranslate) await TranslateAsync(edited, decision, false);
-        }) { Owner = this }.ShowDialog();
+            if (spans.Length > 1 && spans.FirstOrDefault(s => s.Block.HasManualBraille) is { } manual)
+            { decision = ChooseTranslation(manual.Block); if (decision == ManualEditDecision.Cancel) return; }
+            session.ActiveBlock = spans[0].Block;
+            EditStructure(() =>
+            {
+                var edited = BlockRange.Replace(session, spans, SearchPanel.Text, value);
+                if (spans.Length > 1 && decision == ManualEditDecision.Overwrite) edited.HasManualBraille = false;
+            });
+            if (decision == ManualEditDecision.Keep) translatedRevisions[spans[0].Block] = spans[0].Block.SourceRevision;
+            QueuePreview(decision != ManualEditDecision.Keep);
+        };
+        PageEditor.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(PageEditor.Editor);
     }
     private void InstallEditorMenu(TextEditor editor)
     {

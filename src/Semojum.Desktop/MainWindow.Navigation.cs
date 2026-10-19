@@ -14,7 +14,13 @@ public partial class MainWindow
 
     internal async Task<string> NavigateAsync(NavigationTarget target, string input, SearchPanel panel)
     {
-        if (target == NavigationTarget.BraillePage) { await ShowCompositionAsync(DocumentNavigation.Number(input, lastPreviewPage)); return "점자 면 미리보기를 열었습니다."; }
+        if (target == NavigationTarget.BraillePage)
+        {
+            var face = DocumentNavigation.Number(input, lastPreviewPage);
+            var pane = detachedPane ?? Braille;
+            if (!pane.GridView.GoToFace(face)) throw new ArgumentException($"점자 면은 1–{pane.GridView.Items.Count} 범위로 입력해 주세요.");
+            lastPreviewPage = face; return $"점자 {face}면으로 이동했습니다.";
+        }
         if (session.ActiveBlock is not { } active) return "열린 작업 블록이 없습니다.";
         var editor = SearchEditor(panel);
         var destination = DocumentNavigation.Resolve(session.Blocks, active, panel, editor.CaretOffset, target, input);
