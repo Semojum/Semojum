@@ -32,6 +32,13 @@ jobs:
           $env:SEMOJUM_ENGINE_PYTHON = Join-Path $PWD 'artifacts/engine-build/venv/Scripts/python.exe'
           $env:SEMOJUM_ENGINE_EXECUTABLE = Join-Path $PWD 'artifacts/Semojum-win-x64/engine/semojum-engine.exe'
           dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
+      - name: Build native shutdown diagnostics
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $setup = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
+          cmd /c "`"$setup`" -arch=x64 -host_arch=x64 && cl /nologo /LD /EHsc scripts/native-diagnostics.cpp /Fo:artifacts/native-diagnostics.obj /link /OUT:artifacts/Semojum-win-x64/semojum-native-diagnostics.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'Native diagnostics build failed.' }
       - name: WPF runtime smoke and screenshots
         shell: pwsh
         run: |

@@ -402,6 +402,15 @@ internal static class IntegrationChecks
         headerDoc.Blocks[0].Braille = "⠿\n⠿\n⠿";
         headerPages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(headerDoc));
         True(headerPages[0][0].Contains('⠿') && headerPages[1][0].Trim('⠀', ' ') == headerCells); // Earlier face unaffected.
+        headerDoc.Add(new EditorBlock { Id = 3, Page = 1, Source = "<!머리말><!/머리말>라", Braille = "⠐⠣", HasManualBraille = true });
+        headerPages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(headerDoc));
+        True(headerPages[0][0].Contains('⠿') && headerPages[1][0].Trim('⠀', ' ') == "⠉"); // Clearing on the same face wins from that face.
+        headerDoc.Blocks.RemoveAt(2);
+        headerDoc.Blocks[1].Source = "가나\n<!머리말>가<!/머리말>다라";
+        var anchored = await engine.TranslateElementAsync(headerDoc.Blocks[1].Source, new(), new());
+        headerDoc.Blocks[1].Braille = anchored.Cells; headerDoc.Blocks[1].Translation = anchored; headerDoc.Blocks[1].HasManualBraille = false;
+        headerPages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(headerDoc));
+        True(headerPages[0][0].Contains('⠿') && headerPages[1][0].Trim('⠀', ' ') == headerCells); // Prefix inside a translated block maps to the current face.
         headerDoc.Blocks[1].Source = "다<!머리말>가<!/머리말>나";
         await Reject<ArgumentException>(() => engine.BuildBrfAsync(headerDoc)); // Unknown manual position cannot silently become global.
     }
