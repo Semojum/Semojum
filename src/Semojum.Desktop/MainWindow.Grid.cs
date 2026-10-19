@@ -13,6 +13,7 @@ public partial class MainWindow
     private Task<ComposedBraille>? composing;
     private void ConnectGrid(BraillePane pane)
     {
+        pane.GridRefreshed += () => { if (lastGrid == pane.GridView) RefreshEditorStatus(); };
         var menu = new ContextMenu(); pane.GridView.ContextMenu = menu;
         menu.Opened += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); };
         foreach (var (label, action) in new[] { ("메모 추가·답글", "memo"), ("복사", "copy"), ("잘라내기", "cut"), ("붙여넣기", "paste"), ("현재 줄 지우기", "clearLine") })

@@ -266,6 +266,7 @@ internal static class WindowsSmoke
             Check(firstBlock.Braille.StartsWith(new string('⠿', 12)), "Rapid grid input is retained while asynchronous layout refreshes");
             await Task.Delay(300);
             await RenderAsync(real, Path.Combine(directory, "23-composed-grid.png"));
+            Check(real.CaretStatus.Text.Contains("줄"), "Grid status refreshes line and cell coordinates after asynchronous composition");
             real.ToggleDetached(); await Task.Delay(300);
             Check(real.DetachedPane!.GridView.Items.Cast<BrailleGridFace>().SelectMany(f => f.Text ?? []).SequenceEqual(
                 real.Braille.GridView.Items.Cast<BrailleGridFace>().SelectMany(f => f.Text ?? [])), "Detached grid composes the same shared document");

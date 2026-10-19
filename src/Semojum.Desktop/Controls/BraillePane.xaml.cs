@@ -31,6 +31,7 @@ public partial class BraillePane : UserControl, IDisposable
     public event EventHandler? DetachRequested;
     public event EventHandler? HideRequested;
     public event EventHandler? PreviewCloseRequested;
+    public event Action? GridRefreshed;
     public BraillePane()
     {
         InitializeComponent();
@@ -118,6 +119,8 @@ public partial class BraillePane : UserControl, IDisposable
                 : BrailleGrid.Project(owner.Blocks, owner.Layout);
             gridVersion = version; GridView.CoordinatesCurrent = true; GridView.IsReadOnly = owner.IsReadOnly;
             GridView.ActiveBlock = owner.ActiveBlock; GridView.CaretOffset = Editor.CaretOffset;
+            if (GridView.IsKeyboardFocusWithin) LayoutLabel.Text = GridView.DescribeCaret();
+            GridRefreshed?.Invoke();
         }
         catch (Exception ex)
         {
