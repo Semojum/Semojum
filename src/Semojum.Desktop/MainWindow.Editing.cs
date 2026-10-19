@@ -68,7 +68,7 @@ public partial class MainWindow
         else if ((e.Key is Key.Delete or Key.Insert) && atEnd && index + 1 < session.Blocks.Count && session.Blocks[index + 1].Page == block.Page)
         { e.Handled = true; await MergeBlocksAsync(block, session.Blocks[index + 1], panel); }
     };
-    private void EditStructure(Action action)
+    internal void EditStructure(Action action)
     {
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
         var before = StructureUndo.Capture(session, block.Page);
@@ -121,20 +121,20 @@ public partial class MainWindow
         Clipboard.SetText(string.Join("\n", blocks.Select(b => selectionPanel == SearchPanel.Text ? b.Source : b.Braille)));
         if (cut) EditStructure(() => { if (selectionPanel == SearchPanel.Braille) foreach (var block in blocks) block.EditBraille(""); else BlockEditing.Delete(session, blocks); }); return true;
     }
-    private bool PasteSelectedBlocks()
+    private async Task<bool> PasteSelectedBlocksAsync()
     {
         var blocks = SelectedBlocks(); if (blocks.Length == 0 || !Clipboard.ContainsText()) return false;
         var text = Clipboard.GetText();
         if (selectionPanel == SearchPanel.Braille && (!DocumentSearch.IsBrailleText(text) || blocks.Any(b => b.IsBrailleLocked)))
         { session.Status = "잠긴 점자 블록이 있거나 점자가 아닌 내용입니다."; return true; }
-        EditStructure(() =>
-        {
-            var first = blocks[0];
-            foreach (var b in blocks.Skip(1)) { if (selectionPanel == SearchPanel.Text) session.Blocks.Remove(b); else b.EditBraille(""); }
-            if (selectionPanel == SearchPanel.Text) { first.Source = text; first.Translation = null; }
-            else first.EditBraille(text);
-            session.ActiveBlock = first;
-        }); return true;
+        var decision = ManualEditDecision.Overwrite;
+        if (selectionPanel == SearchPanel.Text && blocks.FirstOrDefault(b => b.HasManualBraille) is { } manual)
+        { decision = ChooseTranslation(manual); if (decision == ManualEditDecision.Cancel) return true; }
+        var spans = blocks.Select(b => new BlockSpan(b, 0, BlockRange.Value(b, selectionPanel).Length)).ToArray();
+        EditorBlock? edited = null;
+        EditStructure(() => edited = BlockRange.Replace(session, spans, selectionPanel, text));
+        if (selectionPanel == SearchPanel.Text && edited is not null && autoTranslate) await TranslateAsync(edited, decision, false);
+        return true;
     }
     private void SelectionEdit(string action)
     {

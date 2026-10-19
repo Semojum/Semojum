@@ -168,6 +168,16 @@ internal static class WindowsSmoke
             Check(editing.Session.Blocks.Count == count, "Page history undoes structural insertion");
             editing.SourceEditor.Redo();
             Check(editing.Session.Blocks.Count == count + 1, "Page history redoes structural insertion");
+            editing.SourceEditor.Undo();
+            var rangeBlocks = editing.Session.Blocks.Take(2).ToArray();
+            var beforeRange = rangeBlocks.Select(b => b.Source).ToArray();
+            rangeBlocks[1].Memos.Add(new("range-memo", null, "TEXT", 0, beforeRange[1].Split('\n')[0], "붙여넣기 전 메모", DateTimeOffset.UtcNow));
+            editing.EditStructure(() => BlockRange.Replace(editing.Session, rangeBlocks.Select(b => new BlockSpan(b, 0, b.Source.Length)).ToArray(), SearchPanel.Text, "선택 구간 대체"));
+            Check(editing.Session.Blocks.Count == count - 1 && editing.Session.ActiveBlock!.Memos.Any(m => m.LocalId == "range-memo"), "Cross-block replacement retains memo provenance");
+            editing.SourceEditor.Undo();
+            Check(editing.Session.Blocks.Count == count && editing.Session.Blocks.Take(2).Select(b => b.Source).SequenceEqual(beforeRange), "Shared page history restores text and blocks after range replacement");
+            editing.SourceEditor.Redo();
+            Check(editing.Session.ActiveBlock!.Source == "선택 구간 대체", "Shared page history redoes range replacement");
             var revision = editing.Session.ChangeVersion;
             editing.ApplyAppearance(new(HighContrast: true, CursorWidth: 4, TextSize: 18, Bold: true));
             editing.UpdateLayout();
@@ -219,6 +229,7 @@ internal static class WindowsSmoke
         finally { await real.ReleaseResourcesAsync(); real.PrepareSmokeShutdown(); real.Close(); }
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
+        SmokeNativeDiagnostics.Install(directory);
     }
     private static byte[] PdfFixture()
     {

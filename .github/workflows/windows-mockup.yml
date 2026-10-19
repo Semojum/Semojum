@@ -41,6 +41,7 @@ jobs:
           if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'WPF smoke timed out.' }
           if ($process.ExitCode -ne 0) {
             Get-Content "$output/failure.txt" -ErrorAction SilentlyContinue
+            Get-Content "$output/native-stack.txt" -ErrorAction SilentlyContinue
             Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $started; Id = 1000, 1026 } -ErrorAction SilentlyContinue |
               Format-List TimeCreated, ProviderName, Message | Out-String | Tee-Object -FilePath "$output/windows-events.txt"
             throw "WPF smoke failed: $($process.ExitCode)"

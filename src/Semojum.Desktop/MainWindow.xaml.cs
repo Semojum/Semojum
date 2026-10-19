@@ -282,7 +282,7 @@ public partial class MainWindow : Window
                 case "redo": (lastEditor ?? SourceEditor).Redo(); break;
                 case "cut": if (!CopySelectedBlocks(true)) (lastEditor ?? SourceEditor).Cut(); break;
                 case "copy": if (!CopySelectedBlocks(false)) (lastEditor ?? SourceEditor).Copy(); break;
-                case "paste": if (!PasteSelectedBlocks()) (lastEditor ?? SourceEditor).Paste(); break;
+                case "paste": if (!await PasteSelectedBlocksAsync()) (lastEditor ?? SourceEditor).Paste(); break;
                 case "find": await ShowSearchAsync(false); break;
                 case "replace": await ShowSearchAsync(true); break;
                 case "findNext":
