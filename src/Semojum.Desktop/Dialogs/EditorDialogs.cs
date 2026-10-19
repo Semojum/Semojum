@@ -52,12 +52,12 @@ public sealed class LayoutDialog : EditorDialog
         align = new() { ItemsSource = new[] { "가운데", "오른쪽", "왼쪽" }, SelectedIndex = layout.FooterAlign switch { "right" => 1, "left" => 2, _ => 0 } };
         sourceNumber = new() { Content = "원본 쪽 번호", IsChecked = layout.ShowSourcePageNumber };
         brailleNumber = new() { Content = "점자 면 번호", IsChecked = layout.ShowBraillePageNumber };
-        changeLine = new() { Content = "묵자 쪽 전환선", IsChecked = layout.ShowChangeLine };
+        changeLine = new() { Content = "묵자 쪽 전환선 개별 설정 (준비 중)", IsChecked = layout.ShowChangeLine, IsEnabled = false };
         Row("페이지당 줄 수", lines); Row("줄당 칸 수", columns); Row("점자 시작 면", start); Row("원본 시작 쪽", sourceStart);
-        Row("표지 면 수", cover); Row("페이지행 출력", numbers); Row("꼬리말 정렬", align);
+        Row("표지 원본 쪽 수", cover); Row("페이지행 출력", numbers); Row("꼬리말 정렬", align);
         Row("꼬리말 출력", footerPages);
         Fields.Children.Add(sourceNumber); Fields.Children.Add(brailleNumber); Fields.Children.Add(changeLine);
-        Note("BRF 내보내기에 적용합니다. 꼬리말은 페이지행이 있는 면에 출력됩니다. 원시 점자와 직접 수정한 내용은 작업 파일에 보존됩니다."); Fields.Children.Add(Error);
+        Note("문서 전체의 BRF 내보내기에 적용합니다. 전환선은 원본 쪽 번호와 함께 표시되며, 꼬리말은 페이지행이 있는 면에 출력됩니다. 원시 점자와 직접 수정한 내용은 작업 파일에 보존됩니다."); Fields.Children.Add(Error);
     }
     private static ComboBox Choices(string selected) => new() { ItemsSource = new[] { "홀수 페이지", "모든 페이지", "출력 안 함" }, SelectedItem = selected };
     protected override bool Apply()

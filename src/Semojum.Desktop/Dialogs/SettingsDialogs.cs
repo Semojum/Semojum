@@ -21,7 +21,10 @@ public sealed class OptionsEditor : StackPanel
             if (d.ShowDialog() == true) visual = d.Result;
             return Task.CompletedTask;
         });
-        CompactDialog.Row(this, "시각 자료", button); Set(new());
+        CompactDialog.Row(this, "시각 자료", button);
+        Children.Add(new TextBlock { Text = "영어 문서·한영 혼용 규정·연속 공백 설정은 보존되지만 현재 로컬 재점역에는 적용되지 않습니다.",
+            TextWrapping = TextWrapping.Wrap, Foreground = System.Windows.Media.Brushes.DimGray, FontSize = 12, Margin = new(0, 8, 0, 4) });
+        Set(new());
     }
     private ComboBox Pair(string label, params string[] labels)
     { var box = CompactDialog.Choices(labels); CompactDialog.Row(this, label, box); return box; }

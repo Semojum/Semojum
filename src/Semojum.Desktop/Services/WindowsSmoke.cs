@@ -246,7 +246,6 @@ internal static class WindowsSmoke
         finally { await real.ReleaseResourcesAsync(); real.PrepareSmokeShutdown(); real.Close(); }
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
-        SmokeNativeDiagnostics.Install(directory);
     }
     private static byte[] PdfFixture()
     {
