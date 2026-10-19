@@ -10,6 +10,28 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private async Task TranslateImportedTextAsync(OpenDocument context)
+    {
+        if (smoke) return;
+        var model = context.Model; var ct = context.JobLifetime.Token;
+        var local = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
+        try
+        {
+            var blocks = model.Blocks.ToArray(); var count = 0;
+            foreach (var block in blocks)
+            {
+                ct.ThrowIfCancellationRequested();
+                var revision = block.SourceRevision;
+                var result = await local.TranslateAsync(block, ManualEditDecision.Keep, TimeSpan.FromSeconds(35), ct);
+                if (result is TranslationOutcome.Applied or TranslationOutcome.Kept)
+                { context.Translated[block] = revision; if (session == model) translatedRevisions[block] = revision; }
+                model.Status = $"TXT 로컬 점역 {++count}/{blocks.Length} · AI·크레딧 사용 없음";
+            }
+            model.Status = "TXT 점역 완료 · 오류 블록은 상태를 확인해 주세요 · Ctrl+S로 저장";
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { model.Status = "TXT 점역 실패 · 원문은 유지됩니다: " + ex.Message; }
+    }
     private void RefreshAccount() => AccountLabel.Text = api.Account is { } account ? account.LoginId : "로그인 안 됨";
     private bool EnsureAccount()
     {

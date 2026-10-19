@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace Semojum.Core;
 
 public sealed record EditorPreferences(int Version = 1, string[]? RecentFiles = null, string? WorkFolder = null,
-    string SixDotKeys = "F D S J K L", bool SpaceEnabled = true, bool EnterEnabled = true);
+    string SixDotKeys = "F D S J K L", bool SpaceEnabled = true, bool EnterEnabled = true, bool AutoCheckUpdates = true);
 public sealed record WorkspaceEntry(string Path, string Name, bool IsDirectory, DateTime ModifiedAt, long Size)
 {
     public string ModifiedLabel => ModifiedAt.ToString("yyyy-MM-dd HH:mm");

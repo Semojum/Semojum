@@ -31,7 +31,7 @@
             <MenuItem Header="다음 찾기" InputGestureText="F3" Tag="findNext" Click="Action_Click"/>
             <MenuItem Header="바꾸기…" InputGestureText="Ctrl+H" Tag="replace" Click="Action_Click"/>
             <MenuItem Header="이동…" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
-            <MenuItem Header="새 블록 추가" InputGestureText="Ctrl+Enter" Tag="addBlock" Click="Action_Click"/>
+            <MenuItem Header="새 블록 추가" Tag="addBlock" Click="Action_Click"/>
             <MenuItem Header="현재 쪽 블록 선택…" Tag="selectBlocks" Click="Action_Click"/>
             <MenuItem Header="블록 내용 비우기" Tag="clearBlock" Click="Action_Click"/>
             <MenuItem Header="블록 삭제" Tag="deleteBlock" Click="Action_Click"/>
@@ -51,6 +51,8 @@
             <MenuItem Header="텍스트 창 분리 / 합치기" Tag="detachSource" Click="Action_Click"/>
             <MenuItem Header="원본 창 분리 / 합치기" Tag="detachOriginal" Click="Action_Click"/>
             <MenuItem x:Name="LinePreviewToggle" Header="줄번역" IsCheckable="True" IsChecked="True" Click="LinePreviewToggle_Click"/>
+            <MenuItem x:Name="MemoToggle" Header="메모 표시" IsCheckable="True" IsChecked="True" Tag="showMemos" Click="Action_Click"/>
+            <MenuItem x:Name="OutlineToggle" Header="쪽 분리 윤곽선" IsCheckable="True" IsChecked="True" Tag="showOutlines" Click="Action_Click"/>
             <Separator/><MenuItem Header="글자 크게" Tag="zoomIn" Click="Action_Click"/><MenuItem Header="글자 작게" Tag="zoomOut" Click="Action_Click"/><MenuItem Header="글자 크기 초기화" Tag="zoomReset" Click="Action_Click"/>
           </MenuItem>
           <MenuItem Header="삽입(_I)">
@@ -59,7 +61,7 @@
             <MenuItem Header="꼬리말…" Tag="footer" Click="Action_Click"/><MenuItem Header="강조" Tag="tag:강조" Click="Action_Click"/><MenuItem Header="점역자 주" Tag="tag:주" Click="Action_Click"/>
             <MenuItem Header="상자" Tag="tag:상자" Click="Action_Click"/>
             <MenuItem Header="상자 끝" Tag="tag:상자끝" Click="Action_Click"/>
-            <MenuItem Header="쪽바꿈" Tag="tag:쪽바꿈" Click="Action_Click"/>
+            <MenuItem Header="쪽바꿈" InputGestureText="Ctrl+Enter" Tag="tag:쪽바꿈" Click="Action_Click"/>
             <MenuItem Header="장바꿈" Tag="tag:장바꿈" Click="Action_Click"/>
             <Separator/><MenuItem Header="수식 입력창…" Tag="math" Click="Action_Click"/>
           </MenuItem>
@@ -72,6 +74,7 @@
             <MenuItem Header="편집창 색상…" InputGestureText="Alt+C" Tag="colors" Click="Action_Click"/>
             <MenuItem Header="상용구…" Tag="snippets" Click="Action_Click"/>
             <MenuItem Header="문서 전체 재점역" Tag="translateAll" Click="Action_Click"/>
+            <MenuItem x:Name="AutoUpdateToggle" Header="실행 시 업데이트 자동 확인" IsCheckable="True" IsChecked="True" Tag="autoUpdate" Click="Action_Click"/>
           </MenuItem>
           <MenuItem Header="정보(_A)">
             <MenuItem Header="로그인…" Tag="login" Click="Action_Click"/>
@@ -155,6 +158,7 @@
       </StackPanel>
     </Border>
     <local:LineTranslation x:Name="LineStrip" DockPanel.Dock="Bottom"/>
+    <Grid>
     <Grid x:Name="PanelGrid" Margin="0">
       <Grid.ColumnDefinitions><ColumnDefinition x:Name="OriginalColumn" Width="380*" MinWidth="260"/><ColumnDefinition x:Name="OriginalSplitterColumn" Width="1"/><ColumnDefinition Width="484*" MinWidth="300"/><ColumnDefinition Width="1"/><ColumnDefinition Width="576*" MinWidth="300"/></Grid.ColumnDefinitions>
       <Border x:Name="OriginalPanel" BorderBrush="{StaticResource Line}" BorderThickness="0" Background="White"><Grid>
@@ -191,6 +195,12 @@
         <local:BraillePane x:Name="Braille"/>
         <Border x:Name="DetachedPlaceholder" Visibility="Collapsed" Background="#F4F6F8"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="점자 창이 분리되어 있습니다" FontSize="17"/><TextBlock Text="독립 창에서도 같은 블록을 편집합니다." Foreground="{StaticResource Muted}" Margin="0,12,0,20"/><Button Content="이 창으로 합치기" Tag="detach" Click="Action_Click" Style="{StaticResource PrimaryButton}"/></StackPanel></Border>
       </Grid></Border>
+    </Grid>
+    <Border x:Name="Welcome" Background="White" Visibility="Collapsed"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+      <TextBlock Text="작업 파일 없음" FontSize="24" HorizontalAlignment="Center" Margin="0,0,0,24"/>
+      <Button Content="파일 업로드" Tag="upload" Click="Action_Click" Style="{StaticResource PrimaryButton}"/>
+      <Button Content="새 문서" Tag="new" Click="Action_Click" Margin="0,8,0,0"/>
+    </StackPanel></Border>
     </Grid>
   </DockPanel>
 </Window>

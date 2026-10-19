@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)));
         Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
+        InstallEditorMenu(SourceEditor); InstallEditorMenu(Braille.Editor);
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         SourceEditor.Options.HighlightCurrentLine = true;
         SourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 245, 163));
@@ -70,6 +71,7 @@ public partial class MainWindow : Window
         Braille.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(Braille.Editor);
         Braille.DetachRequested += (_, _) => ToggleDetached();
         Braille.HideRequested += (_, _) => HidePanel("hideBraille");
+        Braille.NavigateGridAsync = cell => NavigateToAsync(new(cell.Block, SearchPanel.Braille, cell.Offset));
         Braille.Editor.TextArea.Caret.PositionChanged += (_, _) => { RefreshEditorStatus(); SpeakCaret(Braille.Editor); };
         LineStrip.CloseRequested += (_, _) => SetLinePreviewVisible(false);
         SourceEditor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
@@ -82,7 +84,7 @@ public partial class MainWindow : Window
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         BindCommonKeys(this);
         UpdatePanelLayout(); RefreshEditorStatus();
-        Closed += async (_, _) => { dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); } http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
+        Closed += async (_, _) => { appLifetime.Cancel(); dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); } http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
     private static DocumentSession BlankDocument()
@@ -136,6 +138,8 @@ public partial class MainWindow : Window
 
     private void ShowActiveBlock()
     {
+        Welcome.Visibility = !smoke && session.JobId is null && filePath is null && session.Blocks.Count == 1
+            && session.Blocks[0].Source.Length == 0 && session.Blocks[0].Braille.Length == 0 && !session.IsDirty ? Visibility.Visible : Visibility.Collapsed;
         if (session.ActiveBlock is not { } block) return;
         var wasSwitching = switching; switching = true;
         try
@@ -224,6 +228,15 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("읽기 전용 문서입니다. 다른 이름으로 저장한 뒤 편집해 주세요.");
             switch (action)
             {
+                case "autoUpdate": preferences = preferences with { AutoCheckUpdates = AutoUpdateToggle.IsChecked }; await PersistPreferencesAsync(); break;
+                case "showMemos":
+                    foreach (var editor in new[] { SourceEditor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
+                        foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.Visibility = MemoToggle.IsChecked ? Visibility.Visible : Visibility.Collapsed;
+                    break;
+                case "showOutlines":
+                    Braille.GridView.ShowOutlines = OutlineToggle.IsChecked; Braille.GridView.InvalidateFaces();
+                    if (detachedPane is not null) { detachedPane.GridView.ShowOutlines = OutlineToggle.IsChecked; detachedPane.GridView.InvalidateFaces(); }
+                    break;
                 case "new": await NewTextDocumentAsync(); break;
                 case "closeDocument": if (openDocument is not null) await CloseDocumentAsync(openDocument); break;
                 case "defaults": if (EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog(); break;
@@ -239,7 +252,7 @@ public partial class MainWindow : Window
                 case "optimize": await OptimizeDocumentAsync(); break;
                 case "composition": await ShowCompositionAsync(); break;
                 case "export": await ExportAsync(); break;
-                case "version": ShowVersion(); break;
+                case "version": await CheckVersionAsync(); break;
                 case "login": if (api.Account is not null) await LogoutAccountAsync(); else { EnsureAccount(); LoadAccountPreferences(); } break;
                 case "logout": await LogoutAccountAsync(); break;
                 case "serverOpen": await OpenServerAsync(); break;
@@ -341,6 +354,7 @@ public partial class MainWindow : Window
     }
     internal void InsertTag(string tag)
     {
+        if (session.IsReadOnly || SourceEditor.IsReadOnly) return;
         var selected = SourceEditor.SelectedText;
         var start = SourceEditor.SelectionStart;
         var definition = BrailleTags.Get(tag);
@@ -348,7 +362,7 @@ public partial class MainWindow : Window
         SourceEditor.SelectedText = definition.Insert(selected);
         SourceEditor.Select(start + open.Length, selected.Length); SourceEditor.Focus();
     }
-    private void InsertText(string value) { SourceEditor.SelectedText = value; SourceEditor.Focus(); }
+    private void InsertText(string value) { if (session.IsReadOnly || SourceEditor.IsReadOnly) return; SourceEditor.SelectedText = value; SourceEditor.Focus(); }
     private void SetFontSize(double size)
     {
         SourceEditor.FontSize = Math.Clamp(size, 10, 32);
@@ -363,6 +377,8 @@ public partial class MainWindow : Window
     {
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
         detachedPane = new BraillePane(); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
+        InstallEditorMenu(detachedPane.Editor);
+        detachedPane.NavigateGridAsync = cell => NavigateToAsync(new(cell.Block, SearchPanel.Braille, cell.Offset));
         detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
@@ -491,13 +507,16 @@ public partial class MainWindow : Window
             DocumentSession model;
             if (Path.GetExtension(requestedPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
             {
-                if (new FileInfo(requestedPath).Length > 20 * 1024 * 1024) throw new InvalidDataException("텍스트 파일은 20 MB까지 열 수 있습니다.");
+                if (new FileInfo(requestedPath).Length > JobClient.MaximumUploadBytes) throw new InvalidDataException("텍스트 파일은 100 MB까지 열 수 있습니다.");
                 var text = await File.ReadAllTextAsync(requestedPath, new System.Text.UTF8Encoding(false, true));
                 model = new DocumentSession { Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj" };
-                model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "불러온 텍스트", Source = text, State = "점역 전" });
+                var index = 0;
+                foreach (var chunk in TextImport.Split(text)) model.Add(new EditorBlock { Id = ++index, Page = 1, Heading = $"불러온 텍스트 {index}", Source = chunk, State = "점역 전" });
                 model.OriginalFiles[Path.GetFileName(requestedPath)] = await File.ReadAllBytesAsync(requestedPath);
-                if (!smoke) { var created = await jobs.CreateTextAsync(Path.GetFileNameWithoutExtension(requestedPath), model); model.JobId = created.JobId; model.OwnerLoginId = api.Account!.LoginId; }
+                await ConfigureTextJobAsync(model);
                 model.IsDirty = true; SetSession(model, null, false);
+                OriginalToggle.IsChecked = false; UpdatePanelLayout();
+                _ = TranslateImportedTextAsync(openDocument!);
             }
             else if (requestedPath.EndsWith(".mock.smi", StringComparison.OrdinalIgnoreCase))
             { model = await WorkFile.LoadAsync(requestedPath); model.Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj"; SetSession(model, null, false); }

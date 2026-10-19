@@ -28,6 +28,7 @@ public partial class MainWindow
     {
         if (smoke) return;
         preferences = workspace.Load();
+        AutoUpdateToggle.IsChecked = preferences.AutoCheckUpdates;
         sixDotKeys = preferences.SixDotKeys; Braille.ConfigureKeys(sixDotKeys);
         Braille.SpaceEnabled = preferences.SpaceEnabled; Braille.EnterEnabled = preferences.EnterEnabled;
         CopyBrailleSettings();

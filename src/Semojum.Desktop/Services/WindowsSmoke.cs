@@ -28,10 +28,14 @@ internal static class WindowsSmoke
             "Figma line translation strip spans all panels at 64px");
         Check(window.SourceHeader.ActualHeight == 32 && window.ZoomPicker.ActualHeight == 32,
             "Figma panel headers and toolbar controls retain compact geometry");
+        Check(window.Braille.GridView.Items.Count > 0 && window.Braille.GridView.ActualHeight > 100,
+            "Service plan braille grid renders editable block coordinates");
         foreach (var icon in new[] { window.CutIcon, window.DraftIcon, window.LinenoIcon })
         {
-            Check(Math.Abs(icon.ActualWidth - 16) < 0.01 && Math.Abs(icon.ActualHeight - 16) < 0.01 && icon.Drawings is { Bounds.IsEmpty: false },
-                $"Local Figma SVG loaded at native 16px: {icon.Name} ({icon.ActualWidth}×{icon.ActualHeight}, bounds={icon.Drawings?.Bounds})");
+            // Stretch=None keeps the painted SVG bounds (the cut glyph is 12×14 inside its 16×16 viewBox).
+            Check(icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16
+                && icon.ActualHeight > 0 && icon.ActualHeight <= 16 && icon.Drawings is { Bounds.IsEmpty: false },
+                $"Local Figma SVG loaded without scaling in its 16px slot: {icon.Name}");
         }
         var initialVersion = window.Session.ChangeVersion;
         window.HidePanel("hideOriginal"); window.UpdateLayout();
@@ -159,7 +163,7 @@ internal static class WindowsSmoke
             editing.Show();
             var count = editing.Session.Blocks.Count;
             await editing.AddBlockAsync();
-            Check(editing.Session.Blocks.Count == count + 1, "Ctrl+Enter action adds a paired block");
+            Check(editing.Session.Blocks.Count == count + 1, "Add-block menu adds a paired block");
             editing.SourceEditor.Undo();
             Check(editing.Session.Blocks.Count == count, "Page history undoes structural insertion");
             editing.SourceEditor.Redo();

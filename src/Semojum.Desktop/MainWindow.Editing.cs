@@ -9,6 +9,21 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private void InstallEditorMenu(TextEditor editor)
+    {
+        var menu = new ContextMenu(); editor.ContextMenu = menu;
+        menu.Opened += (_, _) => SetActiveEditor(editor);
+        foreach (var (label, action) in new[] { ("메모 추가·답글", "memo"), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules"), ("강조 넣기", "tag:강조"), ("쪽바꿈 넣기", "tag:쪽바꿈"), ("복사", "copy"), ("잘라내기", "cut"), ("붙여넣기", "paste") })
+        {
+            var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
+        }
+        var insert = new MenuItem { Header = "삽입" };
+        foreach (var definition in BrailleTags.All)
+        {
+            var item = new MenuItem { Header = definition.Name }; item.Click += (_, _) => InsertTag(definition.Name); insert.Items.Add(item);
+        }
+        menu.Items.Add(insert);
+    }
     private SearchPanel selectionPanel;
     private bool selectedWholeBlock;
     private bool draggingBlocks;
@@ -24,7 +39,7 @@ public partial class MainWindow
         }
         selectedWholeBlock = false;
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Enter)
-        { e.Handled = true; await AddBlockAsync(); return; }
+        { e.Handled = true; InsertTag("쪽바꿈"); return; }
         if (Keyboard.Modifiers != ModifierKeys.None || editor.SelectionLength != 0) return;
         var index = session.Blocks.IndexOf(block);
         var atStart = editor.CaretOffset == 0; var atEnd = editor.CaretOffset == editor.Document.TextLength;
@@ -39,7 +54,7 @@ public partial class MainWindow
     };
     private void EditStructure(Action action)
     {
-        if (session.ActiveBlock is not { } block) return;
+        if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
         var before = StructureUndo.Capture(session, block.Page);
         foreach (var b in session.Blocks.Where(b => b.Page == block.Page)) translator.Invalidate(b);
         previewGeneration++; debounce?.Cancel(); pendingSourceTranslation = false;

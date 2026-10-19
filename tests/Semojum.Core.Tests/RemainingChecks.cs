@@ -8,6 +8,10 @@ internal static class RemainingChecks
 {
     public static IEnumerable<(string Name, Func<Task> Run)> Tests()
     {
+        yield return ("Editing grid preserves text and reversible wrapped cell coordinates", GridCoordinates);
+        yield return ("Long TXT chunks preserve all characters and Unicode boundaries", TextChunks);
+        yield return ("Portable update rejects traversal, duplicate paths and incomplete packages atomically", Updates);
+        yield return ("Slow translation locks braille at 400ms and unlocks when the current result arrives", DelayedTranslation);
         yield return ("Table grid round trips cells and rejects nested structural markers", Tables);
         yield return ("Work file writer lease excludes a second writer and releases on close", Leases);
         yield return ("Resolved memo state survives explicit SMJ save", ResolvedMemos);
@@ -20,6 +24,59 @@ internal static class RemainingChecks
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
         yield return ("AI alternatives and rule evidence survive page parsing and SMJ persistence", Alternatives);
+    }
+    private sealed class DelayedEngine : ITranslationEngine
+    {
+        public TaskCompletionSource<string> Completion { get; } = new();
+        public Task<string> TranslateAsync(string text, int id, CancellationToken ct) => Completion.Task;
+    }
+    private static async Task DelayedTranslation()
+    {
+        var engine = new DelayedEngine(); var block = new EditorBlock { Source = "가", Braille = "⠿" };
+        var pending = new TranslationCoordinator(engine).TranslateAsync(block, ManualEditDecision.Overwrite, TimeSpan.FromSeconds(3));
+        await Task.Delay(550); Check(block.IsBrailleLocked && block.Braille == "⠿");
+        engine.Completion.SetResult("⠁"); Check(await pending == TranslationOutcome.Applied && !block.IsBrailleLocked && block.Braille == "⠁");
+    }
+    private static Task GridCoordinates()
+    {
+        var first = new EditorBlock { Id = 1, Page = 1, Braille = "⠁⠃⠉⠙⠑⠋⠛⠓⠊\n\n⠚" };
+        var second = new EditorBlock { Id = 2, Page = 2, Braille = "⠿" };
+        var original = first.Braille; var faces = BrailleGrid.Project([first, second], new(Columns: 8, Lines: 4));
+        Check(faces.Count == 2 && first.Braille == original);
+        Check(faces[0].Rows[1][0] is { Offset: 8, Value: '⠊' });
+        Check(faces[0].Rows[2][0] is { Offset: 10, Value: '⠀' });
+        Check(faces[1].Rows[0][0]?.Block == second);
+        var exact = BrailleGrid.Project([new() { Braille = "⠁⠁⠁⠁⠁⠁⠁⠁\n⠃" }], new(Columns: 8, Lines: 4));
+        Check(exact[0].Rows[1][0] is { Offset: 9, Value: '⠃' });
+        return Task.CompletedTask;
+    }
+    private static Task TextChunks()
+    {
+        var text = new string('가', 999) + "😀\r\n" + new string('나', 2001);
+        var chunks = TextImport.Split(text);
+        Check(string.Concat(chunks) == text && chunks.All(s => s.Length <= 1000 && !char.IsHighSurrogate(s[^1]) && !char.IsLowSurrogate(s[0])));
+        var tagged = "<!수식>" + new string('x', 1100) + "<!/수식>";
+        Check(TextImport.Split(tagged).SequenceEqual(new[] { tagged })); return Task.CompletedTask;
+    }
+    private static async Task Updates()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "semojum-update-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        try
+        {
+            foreach (var paths in new[] { new[] { "../escape.txt" }, new[] { "/absolute" }, new[] { "a.txt", "A.txt" }, new[] { "partial.txt" } })
+            {
+                var zipPath = Path.Combine(root, "test.zip");
+                using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
+                    foreach (var path in paths) { using var writer = new StreamWriter(zip.CreateEntry(path).Open()); writer.Write("data"); }
+                var rejected = false;
+                try { await PortableUpdate.StageAsync(zipPath, Path.Combine(root, "versions"), new(1, 0, 1)); }
+                catch (InvalidDataException) { rejected = true; }
+                Check(rejected && !File.Exists(Path.Combine(root, "versions", "pending.json")) && !File.Exists(Path.Combine(root, "escape.txt")));
+                Check(!Directory.EnumerateDirectories(Path.Combine(root, "versions"), ".staging-*").Any());
+                File.Delete(zipPath);
+            }
+        }
+        finally { Directory.Delete(root, true); }
     }
     private static async Task Tables()
     {

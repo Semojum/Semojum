@@ -45,7 +45,18 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
             && block.BrailleRevision == brailleRevision && block.MetadataRevision == metadataRevision;
         try
         {
-            var result = await engine.TranslateBlockAsync(block, linked.Token).WaitAsync(timeout, cancellationToken);
+            var pending = engine.TranslateBlockAsync(block, linked.Token);
+            // Surface a slow response at the service-plan threshold while allowing a cold engine to finish.
+            // Source editing and explicit saving remain available; the stale-result guards still apply.
+            var started = System.Diagnostics.Stopwatch.StartNew();
+            if (timeout > TimeSpan.FromMilliseconds(400))
+            {
+                var feedback = Task.Delay(TimeSpan.FromMilliseconds(400), linked.Token);
+                if (await Task.WhenAny(pending, feedback) == feedback && !pending.IsCompleted && IsCurrent())
+                { block.IsBrailleLocked = true; block.State = "응답 지연 · 점자 잠김 · 원문 편집과 저장 가능"; }
+            }
+            var remaining = timeout - started.Elapsed;
+            var result = await pending.WaitAsync(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, cancellationToken);
             if (!IsCurrent())
             {
                 if (generations[block] == generation) block.State = "수정됨 · 재점역 필요";
@@ -79,5 +90,6 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
             block.State = ex is Semojum.Core.Integration.SidecarException ? ex.Message : "점역 실패 · 점자 잠김";
             return TranslationOutcome.Failed;
         }
+        finally { linked.Cancel(); }
     }
 }

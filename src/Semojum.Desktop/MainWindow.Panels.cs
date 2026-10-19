@@ -27,6 +27,10 @@ public partial class MainWindow
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("colors")), new KeyGesture(Key.C, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("defaults")), new KeyGesture(Key.G, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("layout")), new KeyGesture(Key.Y, ModifierKeys.Alt)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("optimize")), new KeyGesture(Key.P, ModifierKeys.Alt)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("optimize")), new KeyGesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("symbol")), new KeyGesture(Key.F4)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("findNext")), new KeyGesture(Key.F3)));
     }
 
