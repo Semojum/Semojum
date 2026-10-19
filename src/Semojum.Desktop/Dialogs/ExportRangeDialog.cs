@@ -15,10 +15,10 @@ public sealed class ExportRangeDialog : EditorDialog
     private bool loading;
     public ExportRange Result { get; private set; } = new();
 
-    public ExportRangeDialog(int[] originalNumbers, Func<Task<int>>? brailleCount) : base("내보낼 범위", 580)
+    public ExportRangeDialog(int[] originalNumbers, Func<Task<int>>? brailleCount, bool brailleOnly = false) : base("내보낼 범위", 580)
     {
         this.originalNumbers = originalNumbers; this.brailleCount = brailleCount;
-        scope.Items.Add("전체 문서"); scope.Items.Add("원본 쪽 범위");
+        scope.Items.Add("전체 문서"); scope.Items.Add(new ComboBoxItem { Content = "원본 쪽 범위", IsEnabled = !brailleOnly });
         if (brailleCount is not null) scope.Items.Add("점자 면 범위");
         Row("범위 기준", scope); Row("시작 번호", start); Row("끝 번호", end); Fields.Children.Add(bounds);
         Note(brailleCount is null

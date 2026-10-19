@@ -173,6 +173,13 @@ internal static class WindowsSmoke
             await CaptureDialogAsync(new AppearanceDialog(new(), editing.ApplyAppearance) { Owner = editing }, directory, "17-appearance.png");
         }
         finally { editing.PrepareSmokeShutdown(); editing.Close(); }
+        var pdf = await PdfPreview.RenderAsync(PdfFixture(), 1, CancellationToken.None);
+        Check(pdf.PixelWidth == 1800 && pdf.PixelHeight > 0, "Windows PDF fallback renders the requested original page");
+        var pixels = new byte[4]; pdf.CopyPixels(new Int32Rect(900, pdf.PixelHeight / 2, 1, 1), pixels, 4, 0);
+        Check(pixels[2] > 180 && pixels[1] < 80, "PDF fallback preserves page contents instead of an empty placeholder");
+        var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(pdf));
+        using (var file = File.Create(Path.Combine(directory, "18-pdf-original.png"))) png.Save(file);
+        await CaptureDialogAsync(new BraillePreviewDialog([["⠼⠁", "⠫⠉⠊"], ["⠼⠃", "⠱⠑⠘⠃"]], "#a\r\ngnd\r\n\f#b\r\n\f", new(), "조판 검증") { Owner = window }, directory, "19-braille-pages.png");
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
         var real = new MainWindow(testWithoutAccount: true);
@@ -203,6 +210,17 @@ internal static class WindowsSmoke
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
     }
+    private static byte[] PdfFixture()
+    {
+        var b = new System.Text.StringBuilder("%PDF-1.4\n"); var offsets = new List<int> { 0 };
+        var objects = new[] { "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>", "<< /Length 24 >>\nstream\n1 0 0 rg 0 0 200 200 re f\nendstream" };
+        for (var i = 0; i < objects.Length; i++) { offsets.Add(b.Length); b.Append($"{i + 1} 0 obj\n{objects[i]}\nendobj\n"); }
+        var xref = b.Length; b.Append("xref\n0 5\n0000000000 65535 f \n");
+        foreach (var offset in offsets.Skip(1)) b.Append(offset.ToString("0000000000") + " 00000 n \n");
+        b.Append($"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n");
+        return System.Text.Encoding.ASCII.GetBytes(b.ToString());
+    }
+
     private static async Task CaptureDialogAsync(Window dialog, string directory, string name)
     {
         dialog.Show();

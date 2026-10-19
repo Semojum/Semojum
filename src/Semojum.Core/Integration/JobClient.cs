@@ -146,8 +146,9 @@ public sealed class JobClient(SemojumApiClient api)
         if (string.IsNullOrWhiteSpace(m.JobId)) throw new InvalidOperationException("서버 작업이 없는 로컬 초안입니다. 새 텍스트 작업을 만든 후 서버에 저장할 수 있습니다.");
         if (api.Account?.LoginId != m.OwnerLoginId) throw new InvalidOperationException("이 작업을 만든 계정으로 로그인해 주세요.");
         if (m.JobStatus is "PENDING" or "IN_PROGRESS") throw new InvalidOperationException("변환이 끝난 뒤 서버에 저장해 주세요.");
-        if (m.Blocks.Any(b => b.ServerId is null)) throw new InvalidOperationException("서버 id가 없는 새 블록의 저장 규칙이 아직 확정되지 않았습니다. 로컬 파일은 보존됩니다.");
-        var pages = m.Blocks.GroupBy(b => b.Page).Select(page => new
+        var editable = m.Blocks.Where(b => !b.Metadata.IsBlocked).ToArray();
+        if (editable.Any(b => b.ServerId is null)) throw new InvalidOperationException("서버 id가 없는 새 블록의 저장 규칙이 아직 확정되지 않았습니다. 로컬 파일은 보존됩니다.");
+        var pages = editable.GroupBy(b => b.Page).Select(page => new
         {
             pageNo = page.Key,
             text = page.Select(b => new { id = b.ServerId, contents = Lines(b.Source), selectedIdx = b.Metadata.SelectedIndex }).ToArray(),

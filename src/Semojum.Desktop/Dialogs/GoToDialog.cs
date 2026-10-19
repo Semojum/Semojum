@@ -24,7 +24,7 @@ public sealed class GoToDialog : Window
             ($"현재 {(panel == SearchPanel.Text ? "텍스트" : "점자")} 블록의 줄", NavigationTarget.Line),
             ("검토가 필요한 블록", NavigationTarget.Review), ("메모 있는 줄", NavigationTarget.Memo) })
             Target.Items.Add(new ComboBoxItem { Content = name, Tag = value });
-        Target.Items.Add(new ComboBoxItem { Content = "점자 면 — 편집 위치 연결 준비 중", IsEnabled = false });
+        Target.Items.Add(new ComboBoxItem { Content = "점자 면 미리보기", Tag = NavigationTarget.BraillePage });
         Target.SelectionChanged += (_, _) =>
         {
             hint.Text = Target.SelectedIndex switch
@@ -32,6 +32,7 @@ public sealed class GoToDialog : Window
                 0 => "변환에 성공해 편집할 수 있는 원본 쪽으로 이동합니다.",
                 1 => "현재 블록 안의 줄 번호입니다.",
                 2 => "점역에서 차단되거나 누락 문자가 발생한 블록 순서입니다.",
+                4 => "조판 결과를 첫 면부터 센 번호입니다. 읽기 전용 미리보기에서 확인합니다.",
                 _ => $"문서의 {(panel == SearchPanel.Text ? "텍스트" : "점자")} 메모가 있는 줄 순서입니다."
             };
             Result.Text = "";

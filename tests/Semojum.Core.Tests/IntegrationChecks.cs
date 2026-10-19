@@ -281,10 +281,10 @@ internal static class IntegrationChecks
         {
             var path = Path.Combine(folder, "preferences.json"); var store = new LocalWorkspace(path);
             var state = store.Load(); Equal(0, state.RecentFiles?.Length ?? 0);
-            for (var i = 0; i < 12; i++) state = LocalWorkspace.Remember(state, Path.Combine(folder, $"{i}.smj"));
+            for (var i = 0; i < LocalWorkspace.RecentLimit + 2; i++) state = LocalWorkspace.Remember(state, Path.Combine(folder, $"{i}.smj"));
             state = LocalWorkspace.Remember(state, Path.Combine(folder, "4.smj"));
-            Equal(10, state.RecentFiles!.Length); Equal("4.smj", Path.GetFileName(state.RecentFiles[0]));
-            Equal(1, state.RecentFiles.Count(p => p.EndsWith("4.smj", StringComparison.Ordinal)));
+            Equal(LocalWorkspace.RecentLimit, state.RecentFiles!.Length); Equal("4.smj", Path.GetFileName(state.RecentFiles[0]));
+            Equal(1, state.RecentFiles.Count(p => Path.GetFileName(p) == "4.smj"));
             state = state with { WorkFolder = folder, SixDotKeys = "A S D J K L", SpaceEnabled = false };
             await store.SaveAsync(state);
             var loaded = store.Load(); Equal(folder, loaded.WorkFolder); Equal("A S D J K L", loaded.SixDotKeys); True(!loaded.SpaceEnabled);

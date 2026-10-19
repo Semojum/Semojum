@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Semojum.Core;
 
-public enum NavigationTarget { OriginalPage, Line, Review, Memo }
+public enum NavigationTarget { OriginalPage, Line, Review, Memo, BraillePage }
 public sealed record NavigationLocation(EditorBlock Block, SearchPanel Panel, int Offset);
 
 public static class DocumentNavigation

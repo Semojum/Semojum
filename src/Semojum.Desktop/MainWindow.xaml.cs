@@ -80,7 +80,7 @@ public partial class MainWindow : Window
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         BindCommonKeys(this);
         UpdatePanelLayout(); RefreshEditorStatus();
-        Closed += async (_, _) => { dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) opened.Buffers.Dispose(); http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
+        Closed += async (_, _) => { dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Buffers.Dispose(); } http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
     private static DocumentSession BlankDocument()
@@ -142,6 +142,7 @@ public partial class MainWindow : Window
             currentPreviewLine = 0; currentPreviewCells = "";
             LineStrip.SetPreview(0, ""); detachedPane?.SetLinePreview(0, "");
             SourceEditor.Document = documents.Source(block);
+            SourceEditor.IsReadOnly = block.Metadata.IsBlocked;
             SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
             SourceEditor.ScrollToLine(SourceEditor.TextArea.Caret.Line);
             Original.SelectBlock(block.Id, block.Page);
@@ -231,9 +232,10 @@ public partial class MainWindow : Window
                 case "lastFolder": await OpenWorkFolderAsync(false); break;
                 case "save": await SaveAsync(false); break;
                 case "saveAs": await SaveAsync(true); break;
+                case "composition": await ShowCompositionAsync(); break;
                 case "export": await ExportAsync(); break;
                 case "version": ShowVersion(); break;
-                case "login": new AccountDialog(api) { Owner = this }.ShowDialog(); RefreshAccount(); break;
+                case "login": if (api.Account is not null) await LogoutAccountAsync(); else { EnsureAccount(); LoadAccountPreferences(); } break;
                 case "logout": await LogoutAccountAsync(); break;
                 case "serverOpen": await OpenServerAsync(); break;
                 case "upload": await UploadAsync(); break;
@@ -440,7 +442,7 @@ public partial class MainWindow : Window
                 try
                 {
                     var result = await jobs.SaveAsync(snapshot);
-                    if (!result.Complete(snapshot.Manifest.Blocks.Select(b => b.Page).Distinct().Count()))
+                    if (!result.Complete(snapshot.Manifest.Blocks.Where(b => !b.Metadata.IsBlocked).Select(b => b.Page).Distinct().Count()))
                         throw new InvalidOperationException($"서버 저장 실패 쪽: {string.Join(", ", result.FailedPages)}. {result.SavedPages}쪽만 저장되었습니다.");
                 }
                 catch (Exception ex)

@@ -13,6 +13,7 @@ public partial class MainWindow
         public DocumentSession Model { get; } = model;
         public EditorDocuments Buffers { get; } = buffers;
         public string? Path;
+        public CancellationTokenSource JobLifetime { get; } = new();
         public bool ShowOriginal;
         public Dictionary<EditorBlock, int> Translated = [];
         public TabItem Tab { get; } = new();
@@ -72,6 +73,7 @@ public partial class MainWindow
         tabSwitching = true;
         try
         {
+            context.JobLifetime.Cancel();
             context.Model.PropertyChanged -= context.LabelListener;
             DocumentTabs.Items.Remove(context.Tab); openDocuments.Remove(context); context.Buffers.Dispose();
             if (context == openDocument) openDocument = null;

@@ -64,51 +64,70 @@ public partial class MainWindow
 
     private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null)
     {
+        var existing = openDocuments.FirstOrDefault(d => d.Model.JobId == id);
+        if (existing is not null) { SetSession(existing.Model, existing.Path, existing.ShowOriginal); return; }
         fileBusy = true;
-        var model = new DocumentSession { JobId = id, OwnerLoginId = api.Account!.LoginId, Title = title, JobStatus = "PENDING" };
         try
         {
-            // Do not replace the open document if the job is inaccessible.
+            var model = new DocumentSession { JobId = id, OwnerLoginId = api.Account!.LoginId, Title = title, JobStatus = "PENDING" };
             await jobs.ReadSettingsAsync(model, documentLifetime.Token);
             var status = await jobs.StatusAsync(id, documentLifetime.Token);
-            if (originals is not null)
-                foreach (var file in originals) model.OriginalFiles[file.FileName] = file.Bytes;
-            model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "변환 대기 중", State = "대기" });
+            if (originals is not null) foreach (var file in originals) model.OriginalFiles[file.FileName] = file.Bytes;
+            model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "변환 대기 중", State = "대기", IsBrailleLocked = true, Metadata = new(IsBlocked: true) });
             SetSession(model, null, false);
-            var ct = documentLifetime.Token;
+            _ = MonitorJobAsync(openDocument!, status);
+        }
+        finally { fileBusy = false; }
+    }
+    private async Task MonitorJobAsync(OpenDocument context, JobStatus status)
+    {
+        var model = context.Model; var ct = context.JobLifetime.Token;
+        var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
+        void RememberRevision(EditorBlock b, int revision)
+        {
+            context.Translated[b] = revision;
+            if (session == model) translatedRevisions[b] = revision;
+        }
+        try
+        {
             var loadedPages = new HashSet<int>();
+            var waiting = true;
+            await using var events = new JobEventWatch(api, model.JobId!, ct);
             var nextId = 1;
             while (true)
             {
                 model.JobStatus = status.OverallStatus;
                 foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
                 model.Status = $"AI 변환 {status.CompletedPages}/{status.TotalPages}쪽 · {status.OverallStatus}";
-                foreach (var page in status.Pages.Where(p => p.Value is "COMPLETED" or "NEEDS_REVIEW").OrderBy(p => p.Key))
+                foreach (var page in status.Pages.Where(p => p.Value is "COMPLETED" or "NEEDS_REVIEW" or "FAILED" or "BLOCKED").OrderBy(p => p.Key))
                 {
                     if (loadedPages.Contains(page.Key)) continue;
-                    var result = await jobs.PageAsync(id, page.Key, nextId, ct);
-                    if (result.Blocks.Length == 0) continue;
-                    if (loadedPages.Count == 0) { model.ActiveBlock = null; model.Blocks.Clear(); }
-                    foreach (var block in result.Blocks) { model.Add(block); nextId = Math.Max(nextId, block.Id + 1); translatedRevisions[block] = block.Braille.Length > 0 ? block.SourceRevision : -1; }
-                    loadedPages.Add(page.Key);
+                    var result = await jobs.PageAsync(model.JobId!, page.Key, nextId, ct);
                     await CacheOriginalAsync(model, result, ct);
-                    foreach (var block in result.Blocks.Where(b => b.Braille.Length == 0))
+                    if (result.Blocks.Length == 0 && page.Value is "FAILED" or "BLOCKED")
+                        result = result with { Blocks = [new EditorBlock { Id = nextId++, Page = page.Key, Heading = "변환 실패 · 원본 확인", State = page.Value, IsBrailleLocked = true, Metadata = new(IsBlocked: true) }] };
+                    if (result.Blocks.Length == 0) { loadedPages.Add(page.Key); continue; }
+                    if (waiting) { model.ActiveBlock = null; model.Blocks.Clear(); waiting = false; }
+                    foreach (var block in result.Blocks) { model.Add(block); nextId = Math.Max(nextId, block.Id + 1); RememberRevision(block, block.Braille.Length > 0 ? block.SourceRevision : -1); }
+                    loadedPages.Add(page.Key);
+                    foreach (var block in result.Blocks.Where(b => b.Braille.Length == 0 && !b.Metadata.IsBlocked))
                     {
-                        var outcome = await translator.TranslateAsync(block, ManualEditDecision.Overwrite, TimeSpan.FromSeconds(35), ct);
-                        if (outcome == TranslationOutcome.Applied) translatedRevisions[block] = block.SourceRevision;
+                        var outcome = await jobTranslator.TranslateAsync(block, ManualEditDecision.Keep, TimeSpan.FromSeconds(35), ct);
+                        if (outcome == TranslationOutcome.Applied) RememberRevision(block, block.SourceRevision);
                     }
                 }
                 if (status.IsTerminal) break;
-                await Task.Delay(TimeSpan.FromSeconds(2), ct);
-                status = await jobs.StatusAsync(id, ct);
+                await events.WaitAsync(ct);
+                await Task.Delay(150, ct);
+                status = await jobs.StatusAsync(model.JobId!, ct);
             }
             model.IsDirty = true;
             var blocked = status.Pages.Count(p => p.Value is "BLOCKED" or "FAILED");
             model.Status = $"변환 {status.OverallStatus} · 확인할 쪽 {blocked}개 · Ctrl+S로 저장하세요.";
-            ShowActiveBlock();
+            if (session == model) ShowActiveBlock();
         }
         catch (OperationCanceledException) { }
-        finally { fileBusy = false; }
+        catch (Exception ex) { model.Status = "작업 수신을 완료하지 못했습니다. 문서를 닫고 서버 작업에서 다시 열어 주세요: " + ex.Message; }
     }
 
     private static async Task CacheOriginalAsync(DocumentSession model, RemotePage page, CancellationToken ct)
@@ -133,7 +152,9 @@ public partial class MainWindow
                 buffer.Write(chunk, 0, read);
             }
             var name = $"preview-{page.Number}.{(page.OriginalType == "pdf" ? "pdf" : "image")}";
-            model.OriginalFiles[name] = buffer.ToArray();
+            var data = buffer.ToArray();
+            if (page.OriginalType == "pdf") name = model.OriginalFiles.FirstOrDefault(p => p.Key.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) && p.Value.AsSpan().SequenceEqual(data)).Key ?? name;
+            model.OriginalFiles[name] = data;
             model.OriginalPages[page.Number] = new(page.OriginalType ?? "image", name, Width: page.Width, Height: page.Height);
         }
         catch (HttpRequestException) { model.Status = $"{page.Number}쪽 원본을 받지 못했습니다. 작업을 다시 열어 URL을 갱신할 수 있습니다."; }

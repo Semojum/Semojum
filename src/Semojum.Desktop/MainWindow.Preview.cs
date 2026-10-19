@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Media.Imaging;
 using Semojum.Core;
 using Semojum.Core.Integration;
+using Semojum.Desktop.Services;
 
 namespace Semojum.Desktop;
 
@@ -56,21 +57,38 @@ public partial class MainWindow
         QueuePreview(false);
     }
 
-    private void ShowOriginal(int page)
+    private async void OriginalImage_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        var point = e.GetPosition(OriginalImageGrid);
+        var selected = session.Blocks.Where(b => b.Page == session.ActiveBlock?.Page && b.Metadata.BoundingBox is { Length: 4 } r
+            && point.X >= r[0] && point.X <= r[2] && point.Y >= r[1] && point.Y <= r[3])
+            .OrderBy(b => (b.Metadata.BoundingBox![2] - b.Metadata.BoundingBox[0]) * (b.Metadata.BoundingBox[3] - b.Metadata.BoundingBox[1])).FirstOrDefault();
+        if (selected is null) return;
+        try { await NavigateToAsync(new(selected, SearchPanel.Text, selected.SourceCaret)); }
+        catch (Exception ex) { ShowError(ex); }
+    }
+    private long originalGeneration;
+    private async void ShowOriginal(int page)
     {
         if (smoke) return;
+        var generation = ++originalGeneration; var owner = session;
         OriginalEmpty.Visibility = Visibility.Visible;
         OriginalImage.Source = null; OriginalText.Text = "원본 미리보기 없음";
         OriginalSelection.Visibility = Visibility.Collapsed;
         if (!session.OriginalPages.TryGetValue(page, out var original)) return;
         if (original.Type == "text") { OriginalText.Text = string.Join("\n", original.Lines ?? []); return; }
-        if (original.Type == "pdf") { OriginalText.Text = "PDF 원본이 작업 파일에 보존되어 있습니다. 쪽 이미지 미리보기는 서버에서 제공되지 않았습니다."; return; }
         if (original.AssetName is null || !session.OriginalFiles.TryGetValue(original.AssetName, out var bytes)) return;
         try
         {
-            using var stream = new MemoryStream(bytes, writable: false);
-            var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
-            image.DecodePixelWidth = 1800; image.StreamSource = stream; image.EndInit(); image.Freeze();
+            BitmapSource image;
+            if (original.Type == "pdf") { OriginalText.Text = "PDF 원본을 표시하는 중…"; image = await PdfPreview.RenderAsync(bytes, page, documentLifetime.Token); }
+            else
+            {
+                using var stream = new MemoryStream(bytes, writable: false);
+                var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.DecodePixelWidth = 1800; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze(); image = bitmap;
+            }
+            if (generation != originalGeneration || owner != session) return;
             OriginalImage.Source = image; OriginalText.Text = $"원본 {page}쪽";
             var width = original.Width > 0 ? original.Width : image.PixelWidth;
             var height = original.Height > 0 ? original.Height : image.PixelHeight;
@@ -84,7 +102,8 @@ public partial class MainWindow
                 OriginalSelection.Visibility = Visibility.Visible;
             }
         }
-        catch (Exception ex) when (ex is NotSupportedException or System.IO.FileFormatException or ArgumentException)
-        { OriginalText.Text = "원본 이미지를 표시할 수 없습니다."; }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is NotSupportedException or IOException or ArgumentException or System.Runtime.InteropServices.COMException)
+        { if (generation == originalGeneration && owner == session) OriginalText.Text = "원본을 표시할 수 없습니다: " + ex.Message; }
     }
 }

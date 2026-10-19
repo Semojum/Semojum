@@ -8,6 +8,8 @@ internal static class RemainingChecks
 {
     public static IEnumerable<(string Name, Func<Task> Run)> Tests()
     {
+        yield return ("SSE refreshes rejected access and parses multiline events without duplicated content", Events);
+        yield return ("Appearance rejects invalid colors, nonfinite values and manual correction color", Appearance);
         yield return ("Empty text job sends settings without source or AI input", EmptyTextJob);
         yield return ("Default options PUT retains visual choices, form and page row", Defaults);
         yield return ("Board edit preserves attachment IDs and never submits invalid prose or six attachments", Board);
@@ -15,6 +17,28 @@ internal static class RemainingChecks
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
         yield return ("AI alternatives and rule evidence survive page parsing and SMJ persistence", Alternatives);
+    }
+    private static async Task Events()
+    {
+        var attempts = 0; var refreshed = 0;
+        using var http = new HttpClient(new Handler(r =>
+        {
+            if (r.RequestUri!.AbsolutePath == "/api/auth/login") return Task.FromResult(Login());
+            if (r.RequestUri.AbsolutePath == "/api/auth/refresh") { refreshed++; Check(r.Headers.Authorization is null); return Task.FromResult(Response(new { accessToken = "fresh" })); }
+            Check(r.Headers.Accept.Any(h => h.MediaType == "text/event-stream")); attempts++;
+            if (attempts == 1) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{\"code\":\"AUTH4003\"}") });
+            Check(r.Headers.Authorization?.Parameter == "fresh");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(": heartbeat\nevent: page_done\ndata: {\n data ignored\ndata: \"page_no\":1}\n\nevent: unknown\ndata: {}\n\nevent: job_done\ndata: {\"total_pages\":1}\n\n", Encoding.UTF8, "text/event-stream") });
+        }));
+        var api = new SemojumApiClient(http); await api.LoginAsync("user", "password");
+        var events = new List<JobEvent>(); await foreach (var item in api.EventsAsync("test")) events.Add(item);
+        Check(events.Count == 2 && events[0].Data.GetProperty("page_no").GetInt32() == 1 && events[1].Name == "job_done" && attempts == 2 && refreshed == 1);
+    }
+    private static async Task Appearance()
+    {
+        foreach (var appearance in new[] { new EditorAppearance(TextColor: "red"), new EditorAppearance(BrailleColor: "#b22222"), new EditorAppearance(LineSpacing: double.NaN), new EditorAppearance(RecentCount: 51) })
+            await Rejected(() => { AccountPreferenceStore.Validate(new(Appearance: appearance)); return Task.CompletedTask; });
+        AccountPreferenceStore.Validate(new(Appearance: new(HighContrast: true, RecentCount: 50, CursorWidth: 8)));
     }
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken ct) => send(r); }

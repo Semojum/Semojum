@@ -88,6 +88,38 @@ public sealed class SemojumApiClient
         { ClearIfCurrent(before); throw; }
     }
 
+    public async IAsyncEnumerable<JobEvent> EventsAsync(string jobId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var before = Volatile.Read(ref session) ?? throw AuthenticationRequired();
+        async Task<HttpResponseMessage> OpenAsync(Session auth)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(origin, "/api/jobs/" + Uri.EscapeDataString(jobId) + "/events"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", auth.AccessToken);
+            return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        }
+        var response = await OpenAsync(before).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            string? code = null;
+            using (response)
+            {
+                try { using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)); code = body.RootElement.GetProperty("code").GetString(); }
+                catch (Exception ex) when (ex is JsonException or KeyNotFoundException) { }
+            }
+            if (code is not ("AUTH4003" or "COMMON4001")) { ClearIfCurrent(before); throw AuthenticationRequired(); }
+            var fresh = await RefreshAsync(before, cancellationToken).ConfigureAwait(false);
+            response = await OpenAsync(fresh).ConfigureAwait(false);
+        }
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode) throw new SemojumApiException(response.StatusCode, "SSE_UNAVAILABLE", "진행 스트림에 연결할 수 없습니다.");
+            if (response.Content.Headers.ContentType?.MediaType != "text/event-stream") throw new InvalidDataException("진행 스트림 형식이 올바르지 않습니다.");
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await foreach (var item in ServerSentEvents.ReadAsync(stream, cancellationToken).ConfigureAwait(false)) yield return item;
+        }
+    }
+
     private async Task<Session> RefreshAsync(Session rejected, CancellationToken cancellationToken)
     {
         await authGate.WaitAsync(cancellationToken).ConfigureAwait(false);
