@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Input;
 using Semojum.Core;
 using Semojum.Desktop.Dialogs;
 
@@ -58,7 +59,7 @@ internal static class WindowsSmoke
         var source = block.Source;
         window.SourceEditor.Select(0, 2); window.InsertTag("강조");
         Check(block.Source.StartsWith("<!강조>"), "Source tag insertion reaches model");
-        window.SourceEditor.Undo(); Check(block.Source == source, "Tag insertion has one-step undo");
+        ApplicationCommands.Undo.Execute(null, window.SourceEditor.TextArea); Check(block.Source == source, "Tag insertion has one-step undo");
 
         window.ToggleDetached();
         Check(ReferenceEquals(window.Braille.Editor.Document, window.DetachedPane!.Editor.Document), "Detached window shares the same document");
@@ -77,7 +78,7 @@ internal static class WindowsSmoke
         Check(window.Session.ChangeVersion == versionBeforeDetach, "Detaching panels does not change document state");
         window.SourceEditor.Document.Insert(0, "분리 편집 ");
         Check(block.Source.StartsWith("분리 편집 "), "Detached source edits reach shared model");
-        window.SourceEditor.Undo();
+        ApplicationCommands.Undo.Execute(null, window.SourceEditor.TextArea);
         Check(block.Source == source, "Detached source edit can be undone");
         window.Session.ActiveBlock = window.Session.Blocks[1];
         Check(window.SourceEditor.Text == window.Session.Blocks[1].Source
@@ -144,7 +145,7 @@ internal static class WindowsSmoke
             await searchWindow.ReplaceMatchesAsync("⠿⠯", "⠃", SearchPanel.Braille, true);
             Check(locked.Braille == "⠿⠯" && editable.Braille == "⠃⠃" && editable.HasManualBraille,
                 "Replace all protects locked braille and marks corrections in editable blocks");
-            searchWindow.Braille.Editor.Undo();
+            ApplicationCommands.Undo.Execute(null, searchWindow.Braille.Editor.TextArea);
             Check(editable.Braille == "⠿⠯⠿⠯", "Replace all in a block is one undo operation");
             await searchWindow.ReplaceMatchesAsync("⠿⠯", "abc", SearchPanel.Braille, true);
             Check(editable.Braille == "⠿⠯⠿⠯", "Replace rejects non-braille content without changing buffers");
@@ -164,20 +165,32 @@ internal static class WindowsSmoke
             var count = editing.Session.Blocks.Count;
             await editing.AddBlockAsync();
             Check(editing.Session.Blocks.Count == count + 1, "Add-block menu adds a paired block");
-            editing.SourceEditor.Undo();
+            ApplicationCommands.Undo.Execute(null, editing.SourceEditor.TextArea);
             Check(editing.Session.Blocks.Count == count, "Page history undoes structural insertion");
-            editing.SourceEditor.Redo();
+            ApplicationCommands.Redo.Execute(null, editing.SourceEditor.TextArea);
             Check(editing.Session.Blocks.Count == count + 1, "Page history redoes structural insertion");
-            editing.SourceEditor.Undo();
+            ApplicationCommands.Undo.Execute(null, editing.SourceEditor.TextArea);
             var rangeBlocks = editing.Session.Blocks.Take(2).ToArray();
             var beforeRange = rangeBlocks.Select(b => b.Source).ToArray();
             rangeBlocks[1].Memos.Add(new("range-memo", null, "TEXT", 0, beforeRange[1].Split('\n')[0], "붙여넣기 전 메모", DateTimeOffset.UtcNow));
             editing.EditStructure(() => BlockRange.Replace(editing.Session, rangeBlocks.Select(b => new BlockSpan(b, 0, b.Source.Length)).ToArray(), SearchPanel.Text, "선택 구간 대체"));
             Check(editing.Session.Blocks.Count == count - 1 && editing.Session.ActiveBlock!.Memos.Any(m => m.LocalId == "range-memo"), "Cross-block replacement retains memo provenance");
-            editing.SourceEditor.Undo();
+            ApplicationCommands.Undo.Execute(null, editing.SourceEditor.TextArea);
             Check(editing.Session.Blocks.Count == count && editing.Session.Blocks.Take(2).Select(b => b.Source).SequenceEqual(beforeRange), "Shared page history restores text and blocks after range replacement");
-            editing.SourceEditor.Redo();
+            ApplicationCommands.Redo.Execute(null, editing.SourceEditor.TextArea);
             Check(editing.Session.ActiveBlock!.Source == "선택 구간 대체", "Shared page history redoes range replacement");
+            var restored = editing.Session.ActiveBlock!;
+            editing.SourceEditor.Document.Insert(0, "입력 ");
+            restored.Braille = "⠫"; // An asynchronous engine/model update must preserve typing history.
+            ApplicationCommands.Undo.Execute(null, editing.SourceEditor.TextArea);
+            Check(restored.Source == "선택 구간 대체" && restored.Braille == "⠫", "Engine buffer update preserves the previous source undo step");
+            ApplicationCommands.Redo.Execute(null, editing.SourceEditor.TextArea);
+            Check(restored.Source == "입력 선택 구간 대체", "Source redo survives engine updates without stale text offsets");
+            editing.ToggleDetached();
+            editing.DetachedPane!.Editor.Document.Insert(0, "⠿");
+            ApplicationCommands.Undo.Execute(null, editing.DetachedPane.Editor.TextArea);
+            Check(restored.Braille == "⠫" && !restored.HasManualBraille, "Detached undo restores braille text and manual-edit state");
+            editing.ToggleDetached();
             var revision = editing.Session.ChangeVersion;
             editing.ApplyAppearance(new(HighContrast: true, CursorWidth: 4, TextSize: 18, Bold: true));
             editing.UpdateLayout();

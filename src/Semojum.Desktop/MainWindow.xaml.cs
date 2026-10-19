@@ -278,8 +278,8 @@ public partial class MainWindow : Window
                         BlockPicker.SetCurrentValue(Selector.SelectedItemProperty, pageBlock);
                     break;
                 case "close": Close(); break;
-                case "undo": (lastEditor ?? SourceEditor).Undo(); break;
-                case "redo": (lastEditor ?? SourceEditor).Redo(); break;
+                case "undo": ReplayHistory(); break;
+                case "redo": ReplayHistory(true); break;
                 case "cut": if (!CopySelectedBlocks(true)) (lastEditor ?? SourceEditor).Cut(); break;
                 case "copy": if (!CopySelectedBlocks(false)) (lastEditor ?? SourceEditor).Copy(); break;
                 case "paste": if (!await PasteSelectedBlocksAsync()) (lastEditor ?? SourceEditor).Paste(); break;

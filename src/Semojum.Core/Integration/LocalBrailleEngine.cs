@@ -98,10 +98,9 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         FooterRange.Validate(snapshot.FooterRanges ?? []);
         var footer = layout.Footer == "출력 안 함" || string.IsNullOrEmpty(snapshot.FooterText) ? "" :
             (await TranslateElementAsync(snapshot.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
-        var headerText = snapshot.Blocks.SelectMany(b => Regex.Matches(b.Source, "<!머리말>(.*?)<!/머리말>", RegexOptions.Singleline)
-            .Select(m => m.Groups[1].Value)).LastOrDefault();
-        var header = headerText is null ? "" : (await TranslateElementAsync(headerText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
-        var sources = snapshot.Blocks.GroupBy(b => b.Page).Select(page => new
+        string header = "";
+        var headers = new Dictionary<int, string>();
+        object Sources(IEnumerable<SmjBlock> blocks) => blocks.GroupBy(b => b.Page).Select(page => new
         {
             orig_page = page.Key,
             blocks = page.Select((b, order) => new
@@ -114,12 +113,12 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             }).ToArray()
         }).ToArray();
         var footers = new Dictionary<int, string>();
-        var job = new
+        Task<JsonElement> Build(object sources, bool pad) => sidecar.InvokeAsync("build_brf", new { job = new
             {
-                sources, footer, header, footers,
+                sources, footer, header, headers, footers,
                 opts = new
                 {
-                    cols = layout.Columns, rows = layout.Lines, pad_to_even = layout.PadToEven,
+                    cols = layout.Columns, rows = layout.Lines, pad_to_even = pad,
                     page_row_pages = layout.PageNumbers == "모든 페이지" ? "every" : "odd",
                     first_braille_page = layout.StartPage,
                     footer_align = layout.FooterAlign, wrap = settings.LineBreakUnit,
@@ -127,8 +126,49 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                     show_orig_page = layout.PageNumbers != "출력 안 함" && layout.ShowSourcePageNumber,
                     show_braille_page = layout.PageNumbers != "출력 안 함" && layout.ShowBraillePageNumber
                 }
-            };
-        var result = await sidecar.InvokeAsync("build_brf", new { job }, cancellationToken: cancellationToken).ConfigureAwait(false);
+            } }, cancellationToken: cancellationToken);
+
+        var changes = new SortedDictionary<int, string>();
+        var coverFaces = 0;
+        var hasHeaders = snapshot.Blocks.Any(b => b.Source.Contains("<!머리말>", StringComparison.Ordinal));
+        if (hasHeaders && layout.CoverPages > 0)
+        {
+            var coverNumbers = snapshot.Blocks.Select(b => b.Page).Distinct().Take(layout.CoverPages).ToHashSet();
+            var cover = await Build(Sources(snapshot.Blocks.Where(b => coverNumbers.Contains(b.Page))), false).ConfigureAwait(false);
+            coverFaces = DocumentExport.BrfPages(cover.GetProperty("brf").GetString() ?? "").Length;
+        }
+        for (var index = 0; index < snapshot.Blocks.Length; index++)
+        {
+            var block = snapshot.Blocks[index];
+            foreach (Match marker in Regex.Matches(block.Source, "<!머리말>(.*?)<!/머리말>", RegexOptions.Singleline))
+            {
+                // Locate the source anchor using an exact translated prefix. A changed manual prefix has no safe mapping.
+                var sourcePrefix = block.Source[..marker.Index];
+                var prefix = IsNonPrintingTag(sourcePrefix) || string.IsNullOrWhiteSpace(sourcePrefix) ? "" :
+                    (await TranslateElementAsync(sourcePrefix, block.Metadata, settings, cancellationToken)).Cells;
+                if (!block.Braille.StartsWith(prefix, StringComparison.Ordinal))
+                    throw new ArgumentException($"{block.Page}쪽 머리말 위치를 직접 수정한 점자와 연결할 수 없습니다. 해당 블록을 재점역하거나 블록 시작에 머리말을 넣어 주세요.");
+                // A visible probe keeps the anchor's blank row from being trimmed. It is never returned or saved.
+                var probe = prefix.Length < block.Braille.Length || prefix.Length == 0 || prefix.EndsWith('\n') ? prefix + "⠿" : prefix;
+                var partial = block with { Braille = probe, Translation = block.Translation is null ? null : block.Translation with { Breaks = block.Translation.Breaks.Where(b => b <= prefix.Length).ToArray() } };
+                var composedPrefix = await Build(Sources(snapshot.Blocks.Take(index).Append(partial)), false).ConfigureAwait(false);
+                var faces = DocumentExport.BrfPages(composedPrefix.GetProperty("brf").GetString() ?? "").Length;
+                var face = checked(layout.StartPage + Math.Max(0, faces - coverFaces - 1));
+                var text = marker.Groups[1].Value;
+                var translated = text.Length == 0 ? "" : (await TranslateElementAsync(text, new(Type: "header_footer"), settings, cancellationToken)).Cells;
+                changes[face] = translated;
+                // The latest value becomes the default for following faces; earlier faces retain their prior values.
+                header = changes.Last().Value; headers.Clear();
+                var ordered = changes.ToArray(); var changeIndex = 0; var current = "";
+                for (var page = layout.StartPage; page < changes.Last().Key; page++)
+                {
+                    while (changeIndex < ordered.Length && ordered[changeIndex].Key <= page) current = ordered[changeIndex++].Value;
+                    headers[page] = current;
+                }
+            }
+        }
+        var sources = Sources(snapshot.Blocks);
+        var result = await Build(sources, layout.PadToEven).ConfigureAwait(false);
         if (layout.Footer != "출력 안 함" && ((snapshot.FooterRanges?.Length ?? 0) > 0 || layout.Footer == "홀수 페이지" && layout.PageNumbers == "모든 페이지"))
         {
             // Footer contents do not change body capacity. Count once, then expand only existing face numbers.
@@ -144,7 +184,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             }
             if (layout.Footer == "홀수 페이지")
                 for (long page = layout.StartPage; page <= upper; page++) if (page % 2 == 0) footers[(int)page] = "";
-            result = await sidecar.InvokeAsync("build_brf", new { job }, cancellationToken: cancellationToken).ConfigureAwait(false);
+            result = await Build(sources, layout.PadToEven).ConfigureAwait(false);
         }
         var brf = result.GetProperty("brf").GetString() ?? throw new SidecarException("BRF 결과가 없습니다.");
         if (brf.Any(c => c > 127)) throw new SidecarException("BRF 응답에 ASCII가 아닌 문자가 있습니다.");

@@ -393,6 +393,17 @@ internal static class IntegrationChecks
         True(rangePages[0][^1].StartsWith(footerA)); True(rangePages[1][^1].StartsWith(footerB)); True(rangePages[2][^1].All(c => c is '⠀' or ' '));
         rangeDoc.Layout = rangeDoc.Layout with { Footer = "출력 안 함" };
         True((await engine.ReadBrfAsync(await engine.BuildBrfAsync(rangeDoc))).All(p => p[^1].All(c => c is '⠀' or ' ')));
+        var headerDoc = new DocumentSession { Layout = new(Columns: 16, Lines: 4, StartPage: 7, PageNumbers: "모든 페이지", ShowSourcePageNumber: false, ShowBraillePageNumber: false) };
+        headerDoc.Add(new EditorBlock { Id = 1, Page = 1, Source = "", Braille = "⠿", HasManualBraille = true });
+        headerDoc.Add(new EditorBlock { Id = 2, Page = 1, Source = "<!머리말>가<!/머리말>나", Braille = "⠉", HasManualBraille = true });
+        var headerCells = (await engine.TranslateElementAsync("가", new(Type: "header_footer"), new())).Cells.Trim('⠀', ' ');
+        var headerPages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(headerDoc));
+        True(headerPages[0][0].Trim('⠀', ' ') == headerCells); // Inserting mid-face changes the current face's top.
+        headerDoc.Blocks[0].Braille = "⠿\n⠿\n⠿";
+        headerPages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(headerDoc));
+        True(headerPages[0][0].Contains('⠿') && headerPages[1][0].Trim('⠀', ' ') == headerCells); // Earlier face unaffected.
+        headerDoc.Blocks[1].Source = "다<!머리말>가<!/머리말>나";
+        await Reject<ArgumentException>(() => engine.BuildBrfAsync(headerDoc)); // Unknown manual position cannot silently become global.
     }
 
     private static async Task<T> Reject<T>(Func<Task> action) where T : Exception

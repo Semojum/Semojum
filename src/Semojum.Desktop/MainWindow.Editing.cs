@@ -43,8 +43,33 @@ public partial class MainWindow
     private SearchPanel selectionPanel;
     private bool selectedWholeBlock;
     private bool draggingBlocks;
-    private void InstallEditingKeys(TextEditor editor) => editor.PreviewKeyDown += async (_, e) =>
+    private bool CanReplayHistory(bool redo) => session?.IsReadOnly == false && session.ActiveBlock is { } block
+        && (redo ? documents.History(block.Page).CanRedo : documents.History(block.Page).CanUndo);
+    internal void ReplayHistory(bool redo = false)
     {
+        if (!CanReplayHistory(redo) || session.ActiveBlock is not { } block) return;
+        foreach (var item in session.Blocks.Where(b => b.Page == block.Page)) translator.Invalidate(item);
+        previewGeneration++; debounce?.Cancel(); pendingSourceTranslation = false;
+        var target = documents.Replay(block.Page, redo);
+        if (target is not null && session.Blocks.Contains(target)) session.ActiveBlock = target;
+        ShowActiveBlock(); QueuePreview(true);
+    }
+    private void InstallEditingKeys(TextEditor editor)
+    {
+        // Intercept the routed commands before AvalonEdit consults its intentionally empty
+        // local stack. Main and detached editors use the same per-page model history.
+        editor.AddHandler(CommandManager.PreviewCanExecuteEvent, new CanExecuteRoutedEventHandler((_, e) =>
+        {
+            if (e.Command != ApplicationCommands.Undo && e.Command != ApplicationCommands.Redo) return;
+            e.CanExecute = CanReplayHistory(e.Command == ApplicationCommands.Redo); e.Handled = true;
+        }));
+        editor.AddHandler(CommandManager.PreviewExecutedEvent, new ExecutedRoutedEventHandler((_, e) =>
+        {
+            if (e.Command != ApplicationCommands.Undo && e.Command != ApplicationCommands.Redo) return;
+            ReplayHistory(e.Command == ApplicationCommands.Redo); e.Handled = true;
+        }));
+        editor.PreviewKeyDown += async (_, e) =>
+        {
         if (session.ActiveBlock is not { } block || editor.IsReadOnly) return;
         var panel = editor == SourceEditor ? SearchPanel.Text : SearchPanel.Braille;
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A)
@@ -67,7 +92,8 @@ public partial class MainWindow
         { e.Handled = true; await MergeBlocksAsync(session.Blocks[index - 1], block, panel); }
         else if ((e.Key is Key.Delete or Key.Insert) && atEnd && index + 1 < session.Blocks.Count && session.Blocks[index + 1].Page == block.Page)
         { e.Handled = true; await MergeBlocksAsync(block, session.Blocks[index + 1], panel); }
-    };
+        };
+    }
     internal void EditStructure(Action action)
     {
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
