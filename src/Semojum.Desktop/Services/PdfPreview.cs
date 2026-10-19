@@ -7,7 +7,11 @@ namespace Semojum.Desktop.Services;
 
 public static class PdfPreview
 {
-    public static async Task<BitmapSource> RenderAsync(byte[] bytes, int pageNumber, CancellationToken cancellationToken)
+    // Keep PDF COM objects off the WPF STA. Only the frozen bitmap crosses back to the UI.
+    public static Task<BitmapSource> RenderAsync(byte[] bytes, int pageNumber, CancellationToken cancellationToken) =>
+        Task.Run(() => RenderCoreAsync(bytes, pageNumber, cancellationToken), cancellationToken);
+
+    private static async Task<BitmapSource> RenderCoreAsync(byte[] bytes, int pageNumber, CancellationToken cancellationToken)
     {
         using var input = new InMemoryRandomAccessStream();
         using (var writer = new DataWriter(input.GetOutputStreamAt(0))) { writer.WriteBytes(bytes); await writer.StoreAsync().AsTask(cancellationToken); }

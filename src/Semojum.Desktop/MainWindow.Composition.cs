@@ -28,7 +28,7 @@ public partial class MainWindow
             DocumentExport.RequireCompletedPages(snapshot);
             var selectedIds = snapshot.Blocks.Select(b => b.Id).ToHashSet();
             if (session.Blocks.Where(b => selectedIds.Contains(b.Id)).Any(b => b.IsBrailleLocked ||
-                b.Source.Length > 0 && b.Braille.Length == 0 && !LocalBrailleEngine.IsLayoutMarker(b.Source) ||
+                b.Source.Length > 0 && b.Braille.Length == 0 && !LocalBrailleEngine.IsLayoutMarker(b.Source) && !LocalBrailleEngine.IsNonPrintingTag(b.Source) ||
                 b.Source.Length > 0 && !b.HasManualBraille && translatedRevisions.GetValueOrDefault(b, -1) != b.SourceRevision))
                 throw new ArgumentException("먼저 원문·옵션이 바뀐 블록을 재점역해 주세요. 점역 전 내용은 미리보기에 포함하지 않습니다.");
             session.Status = "점자 면을 조판하는 중…";

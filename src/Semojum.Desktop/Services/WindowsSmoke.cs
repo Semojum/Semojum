@@ -184,6 +184,12 @@ internal static class WindowsSmoke
         var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(pdf));
         using (var file = File.Create(Path.Combine(directory, "18-pdf-original.png"))) png.Save(file);
         await CaptureDialogAsync(new BraillePreviewDialog([["⠼⠁", "⠫⠉⠊"], ["⠼⠃", "⠱⠑⠘⠃"]], "#a\r\ngnd\r\n\f#b\r\n\f", new(), "조판 검증") { Owner = window }, directory, "19-braille-pages.png");
+        await CaptureDialogAsync(new FooterDialog(window.Session) { Owner = window }, directory, "20-footer-ranges.png");
+        await CaptureDialogAsync(new RangeSelectionDialog(() => window.Session.Blocks.Where(b => b.Page == window.Session.ActiveBlock!.Page).ToArray(), SearchPanel.Text, (_, _) => Task.CompletedTask) { Owner = window }, directory, "21-range-selection.png");
+        window.Session.Progress = new(128, 47, 1, "잔여 약 2분 (처리 속도 기준)");
+        await RenderAsync(window, Path.Combine(directory, "22-conversion-progress.png"));
+        Check(window.ConversionBanner.IsVisible, "Conversion progress exposes page counts and cancellation");
+        window.Session.Progress = null;
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
         var real = new MainWindow(testWithoutAccount: true);

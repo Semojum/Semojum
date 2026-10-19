@@ -39,7 +39,7 @@ public abstract class EditorDialog : Window
 public sealed class LayoutDialog : EditorDialog
 {
     private readonly TextBox columns, lines, start, sourceStart, cover;
-    private readonly ComboBox numbers, align;
+    private readonly ComboBox numbers, align, footerPages;
     private readonly CheckBox sourceNumber, brailleNumber, changeLine;
     public PageLayout Result { get; private set; }
     public LayoutDialog(PageLayout layout) : base("편집용 점자문서 페이지설정")
@@ -47,15 +47,17 @@ public sealed class LayoutDialog : EditorDialog
         Result = layout;
         lines = new() { Text = layout.Lines.ToString() }; columns = new() { Text = layout.Columns.ToString() }; start = new() { Text = layout.StartPage.ToString() };
         numbers = Choices(layout.PageNumbers);
+        footerPages = Choices(layout.Footer);
         sourceStart = new() { Text = layout.SourcePageStart.ToString() }; cover = new() { Text = layout.CoverPages.ToString() };
-        align = new() { ItemsSource = new[] { "가운데", "오른쪽" }, SelectedIndex = layout.FooterAlign == "right" ? 1 : 0 };
+        align = new() { ItemsSource = new[] { "가운데", "오른쪽", "왼쪽" }, SelectedIndex = layout.FooterAlign switch { "right" => 1, "left" => 2, _ => 0 } };
         sourceNumber = new() { Content = "원본 쪽 번호", IsChecked = layout.ShowSourcePageNumber };
         brailleNumber = new() { Content = "점자 면 번호", IsChecked = layout.ShowBraillePageNumber };
         changeLine = new() { Content = "묵자 쪽 전환선", IsChecked = layout.ShowChangeLine };
         Row("페이지당 줄 수", lines); Row("줄당 칸 수", columns); Row("점자 시작 면", start); Row("원본 시작 쪽", sourceStart);
         Row("표지 면 수", cover); Row("페이지행 출력", numbers); Row("꼬리말 정렬", align);
+        Row("꼬리말 출력", footerPages);
         Fields.Children.Add(sourceNumber); Fields.Children.Add(brailleNumber); Fields.Children.Add(changeLine);
-        Note("BRF 내보내기에 적용합니다. 원시 점자와 직접 수정한 내용은 작업 파일에 보존됩니다."); Fields.Children.Add(Error);
+        Note("BRF 내보내기에 적용합니다. 꼬리말은 페이지행이 있는 면에 출력됩니다. 원시 점자와 직접 수정한 내용은 작업 파일에 보존됩니다."); Fields.Children.Add(Error);
     }
     private static ComboBox Choices(string selected) => new() { ItemsSource = new[] { "홀수 페이지", "모든 페이지", "출력 안 함" }, SelectedItem = selected };
     protected override bool Apply()
@@ -63,8 +65,8 @@ public sealed class LayoutDialog : EditorDialog
         if (!int.TryParse(columns.Text, out var c) || !int.TryParse(lines.Text, out var l) || !int.TryParse(start.Text, out var s)
             || !int.TryParse(sourceStart.Text, out var original) || !int.TryParse(cover.Text, out var covers)) throw new ArgumentException("숫자로 입력해 주세요.");
         var value = Result with { Columns = c, Lines = l, StartPage = s, PageNumbers = numbers.SelectedItem?.ToString() ?? "출력 안 함",
-            SourcePageStart = original, CoverPages = covers, FooterAlign = align.SelectedIndex == 1 ? "right" : "center",
-            ShowSourcePageNumber = sourceNumber.IsChecked == true, ShowBraillePageNumber = brailleNumber.IsChecked == true, ShowChangeLine = changeLine.IsChecked == true };
+            SourcePageStart = original, CoverPages = covers, FooterAlign = align.SelectedIndex switch { 1 => "right", 2 => "left", _ => "center" },
+            ShowSourcePageNumber = sourceNumber.IsChecked == true, ShowBraillePageNumber = brailleNumber.IsChecked == true, ShowChangeLine = changeLine.IsChecked == true, Footer = footerPages.SelectedItem?.ToString() ?? "출력 안 함" };
         value.Validate(); Result = value; return true;
     }
 }

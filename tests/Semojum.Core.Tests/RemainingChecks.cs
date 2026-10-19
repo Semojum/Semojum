@@ -13,6 +13,7 @@ internal static class RemainingChecks
         yield return ("Portable update rejects traversal, duplicate paths and incomplete packages atomically", Updates);
         yield return ("Slow translation locks braille at 400ms and unlocks when the current result arrives", DelayedTranslation);
         yield return ("Partial cross-block replacement preserves unselected text, original bounds and memo provenance", PartialRanges);
+        yield return ("Footer ranges reject overlap and preserve open-ended and blank overrides in SMJ", Footers);
         yield return ("Table grid round trips cells and rejects nested structural markers", Tables);
         yield return ("Work file writer lease excludes a second writer and releases on close", Leases);
         yield return ("Resolved memo state survives explicit SMJ save", ResolvedMemos);
@@ -25,6 +26,16 @@ internal static class RemainingChecks
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
         yield return ("AI alternatives and rule evidence survive page parsing and SMJ persistence", Alternatives);
+    }
+    private static async Task Footers()
+    {
+        await Rejected(() => { FooterRange.Validate([new(1, 3, "가"), new(3, null, "나")]); return Task.CompletedTask; });
+        await Rejected(() => { FooterRange.Validate([new(2, 1, "가")]); return Task.CompletedTask; });
+        var session = new DocumentSession { FooterRanges = [new(2, 3, ""), new(4, null, "단원")], Layout = new(FooterAlign: "left") };
+        session.Add(new EditorBlock { Id = 1, Page = 1 });
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".smj");
+        try { await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path); Check(restored.FooterRanges.SequenceEqual(session.FooterRanges) && restored.Layout.FooterAlign == "left"); }
+        finally { File.Delete(path); }
     }
     private static async Task PartialRanges()
     {

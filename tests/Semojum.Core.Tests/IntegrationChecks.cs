@@ -384,6 +384,15 @@ internal static class IntegrationChecks
         var priority = await engine.ReviewPriorityAsync(grade1.Cells, "가", new(), new(KoreanGrade1: true));
         True(new[] { "먼저 확인", "확인", "나중에 확인" }.Contains(priority));
         True((await engine.DecodeAsync(grade1.Cells, new(KoreanGrade1: true))).Contains('가'));
+        var rangeDoc = new DocumentSession { Layout = new(Columns: 16, Lines: 4, StartPage: 7, PageNumbers: "모든 페이지", Footer: "모든 페이지", ShowSourcePageNumber: false, ShowBraillePageNumber: false, FooterAlign: "left"), FooterText = "가", FooterRanges = [new(8, 8, "나"), new(9, null, "")] };
+        rangeDoc.Add(new EditorBlock { Id = 1, Page = 1, Braille = string.Join("\n", Enumerable.Repeat("⠿", 9)), HasManualBraille = true });
+        var rangePages = await engine.ReadBrfAsync(await engine.BuildBrfAsync(rangeDoc));
+        Equal(3, rangePages.Length);
+        var footerA = (await engine.TranslateElementAsync("가", new(Type: "header_footer"), new())).Cells;
+        var footerB = (await engine.TranslateElementAsync("나", new(Type: "header_footer"), new())).Cells;
+        True(rangePages[0][^1].StartsWith(footerA)); True(rangePages[1][^1].StartsWith(footerB)); True(rangePages[2][^1].All(c => c is '⠀' or ' '));
+        rangeDoc.Layout = rangeDoc.Layout with { Footer = "출력 안 함" };
+        True((await engine.ReadBrfAsync(await engine.BuildBrfAsync(rangeDoc))).All(p => p[^1].All(c => c is '⠀' or ' ')));
     }
 
     private static async Task<T> Reject<T>(Func<Task> action) where T : Exception

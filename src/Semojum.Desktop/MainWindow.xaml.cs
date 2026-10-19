@@ -137,6 +137,7 @@ public partial class MainWindow : Window
 
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(DocumentSession.IsDirty) && session.IsDirty) Welcome.Visibility = Visibility.Collapsed;
         if (e.PropertyName == nameof(DocumentSession.ActiveBlock)) ShowActiveBlock();
         if (e.PropertyName == nameof(DocumentSession.Options))
             foreach (var block in session.Blocks) { translator.Invalidate(block); translatedRevisions[block] = -1; block.State = "옵션 변경 · 재점역 필요"; }
@@ -267,7 +268,10 @@ public partial class MainWindow : Window
                 case "logout": await LogoutAccountAsync(); break;
                 case "serverOpen": await OpenServerAsync(); break;
                 case "upload": await UploadAsync(); break;
-                case "cancelJob": if (session.JobId is { } jobId) { await jobs.CancelAsync(jobId); session.Status = "변환 중단을 요청했습니다. 처리 중인 쪽이 마무리되면 반영됩니다."; } break;
+                case "cancelJob":
+                    var cancelling = session;
+                    if (cancelling.JobId is { } jobId) { await jobs.CancelAsync(jobId); cancelling.Status = "변환 중단을 요청했습니다. 처리 중인 쪽이 마무리되면 반영됩니다."; }
+                    break;
                 case "pageStatus":
                     var pageStatus = new PageStatusDialog(session) { Owner = this };
                     if (pageStatus.ShowDialog() == true && session.Blocks.FirstOrDefault(b => b.Page == pageStatus.SelectedPage && b.ServerId is not null) is { } pageBlock)
@@ -311,8 +315,8 @@ public partial class MainWindow : Window
                     { if (translationSession != session) break; var choice = ChooseTranslation(item); if (choice == ManualEditDecision.Cancel) break; await TranslateAsync(item, choice); }
                     break;
                 case "footer":
-                    var footer = new TextValueDialog("꼬리말", "꼬리말 묵자", session.FooterText, 200) { Owner = this };
-                    if (footer.ShowDialog() == true) session.FooterText = footer.Value;
+                    var footer = new FooterDialog(session) { Owner = this };
+                    if (footer.ShowDialog() == true) { session.FooterText = footer.Footer; session.FooterRanges = footer.Ranges; session.Layout = session.Layout with { FooterAlign = footer.Alignment }; }
                     break;
                 case "memo": ShowLineMemos(ActiveSearchPanel); break;
                 case "memos": await ShowMemoListAsync(); break;

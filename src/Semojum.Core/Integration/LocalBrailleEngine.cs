@@ -95,7 +95,8 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         var settings = snapshot.Options;
         var layout = snapshot.Layout;
         layout.Validate();
-        var footer = string.IsNullOrEmpty(snapshot.FooterText) ? "" :
+        FooterRange.Validate(snapshot.FooterRanges ?? []);
+        var footer = layout.Footer == "출력 안 함" || string.IsNullOrEmpty(snapshot.FooterText) ? "" :
             (await TranslateElementAsync(snapshot.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
         var headerText = snapshot.Blocks.SelectMany(b => Regex.Matches(b.Source, "<!머리말>(.*?)<!/머리말>", RegexOptions.Singleline)
             .Select(m => m.Groups[1].Value)).LastOrDefault();
@@ -112,11 +113,10 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 { "왼쪽" => "left", "가운데" => "center", "오른쪽" => "right", _ => "" }
             }).ToArray()
         }).ToArray();
-        var result = await sidecar.InvokeAsync("build_brf", new
-        {
-            job = new
+        var footers = new Dictionary<int, string>();
+        var job = new
             {
-                sources, footer, header,
+                sources, footer, header, footers,
                 opts = new
                 {
                     cols = layout.Columns, rows = layout.Lines, pad_to_even = layout.PadToEven,
@@ -127,8 +127,25 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                     show_orig_page = layout.PageNumbers != "출력 안 함" && layout.ShowSourcePageNumber,
                     show_braille_page = layout.PageNumbers != "출력 안 함" && layout.ShowBraillePageNumber
                 }
+            };
+        var result = await sidecar.InvokeAsync("build_brf", new { job }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (layout.Footer != "출력 안 함" && ((snapshot.FooterRanges?.Length ?? 0) > 0 || layout.Footer == "홀수 페이지" && layout.PageNumbers == "모든 페이지"))
+        {
+            // Footer contents do not change body capacity. Count once, then expand only existing face numbers.
+            // Cover faces consume no printed number, so this upper bound deliberately includes a few unused keys.
+            var count = DocumentExport.BrfPages(result.GetProperty("brf").GetString() ?? "").Length;
+            var upper = Math.Min(int.MaxValue, (long)layout.StartPage + count - 1);
+            foreach (var range in snapshot.FooterRanges ?? [])
+            {
+                var first = Math.Max(layout.StartPage, range.Start); var last = Math.Min(upper, range.End ?? int.MaxValue);
+                if (first > last) continue;
+                var cells = range.Text.Length == 0 ? "" : (await TranslateElementAsync(range.Text, new(Type: "header_footer"), settings, cancellationToken)).Cells;
+                for (long page = first; page <= last; page++) footers[(int)page] = cells;
             }
-        }, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (layout.Footer == "홀수 페이지")
+                for (long page = layout.StartPage; page <= upper; page++) if (page % 2 == 0) footers[(int)page] = "";
+            result = await sidecar.InvokeAsync("build_brf", new { job }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
         var brf = result.GetProperty("brf").GetString() ?? throw new SidecarException("BRF 결과가 없습니다.");
         if (brf.Any(c => c > 127)) throw new SidecarException("BRF 응답에 ASCII가 아닌 문자가 있습니다.");
         var replaced = result.TryGetProperty("replaced", out var r) ? r.Deserialize<Dictionary<string, int>>() ?? [] : [];
@@ -137,6 +154,9 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
 
     public static bool IsLayoutMarker(string source) => source.Trim() is "<!쪽바꿈>" or "<!장바꿈>" or "<!상단줄>" or "<!중단줄>" or "<!하단줄>"
         or "<!상단굵은줄>" or "<!하단굵은줄>" or "<!표시작>" or "<!표중앙>" or "<!표끝>" or "<!표구분선>";
+
+    public static bool IsNonPrintingTag(string source) => source.Length > 0 &&
+        Regex.Replace(source, "<!머리말>.*?<!/머리말>|<!(?:왼쪽|가운데|오른쪽)정렬>", "", RegexOptions.Singleline).Trim().Length == 0;
 
     public async Task<string[][]> ReadBrfAsync(string brf, CancellationToken cancellationToken = default)
     {

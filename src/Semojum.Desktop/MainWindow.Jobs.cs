@@ -105,6 +105,7 @@ public partial class MainWindow
     {
         var model = context.Model; var ct = context.JobLifetime.Token;
         var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
+        var started = System.Diagnostics.Stopwatch.StartNew(); var initialCompleted = status.CompletedPages;
         void RememberRevision(EditorBlock b, int revision)
         {
             context.Translated[b] = revision;
@@ -120,6 +121,11 @@ public partial class MainWindow
             {
                 model.JobStatus = status.OverallStatus;
                 foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
+                var failed = status.Pages.Count(p => p.Value is "FAILED" or "BLOCKED" or "CANCELLED" or "CANCELED");
+                var completedSinceOpen = status.CompletedPages - initialCompleted;
+                var remainingSeconds = completedSinceOpen > 0 ? started.Elapsed.TotalSeconds / completedSinceOpen * Math.Max(0, status.TotalPages - status.CompletedPages - failed) : 0;
+                model.Progress = status.IsTerminal ? null : new(status.TotalPages, status.CompletedPages, failed,
+                    remainingSeconds > 0 ? $"잔여 약 {Math.Max(1, Math.Ceiling(remainingSeconds / 60))}분 (처리 속도 기준)" : "남은 시간 계산 중");
                 model.Status = $"AI 변환 {status.CompletedPages}/{status.TotalPages}쪽 · {status.OverallStatus}";
                 foreach (var page in status.Pages.Where(p => p.Value is "COMPLETED" or "NEEDS_REVIEW" or "FAILED" or "BLOCKED").OrderBy(p => p.Key))
                 {
@@ -153,6 +159,7 @@ public partial class MainWindow
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { model.Status = "작업 수신을 완료하지 못했습니다. 문서를 닫고 서버 작업에서 다시 열어 주세요: " + ex.Message; }
+        finally { model.Progress = null; }
     }
 
     private static async Task CacheOriginalAsync(DocumentSession model, RemotePage page, CancellationToken ct)

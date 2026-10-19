@@ -70,9 +70,11 @@ public sealed partial class DocumentSession : ObservableObject
     [ObservableProperty] private bool isDirty;
     [ObservableProperty] private bool isReadOnly;
     [ObservableProperty] private string status = "준비";
+    [ObservableProperty] private ConversionProgress? progress;
     [ObservableProperty] private PageLayout layout = new();
     [ObservableProperty] private BrailleOptions options = new();
     [ObservableProperty] private string footerText = "";
+    [ObservableProperty] private FooterRange[] footerRanges = [];
     public string? JobId { get; set; }
     public string? OwnerLoginId { get; set; }
     public string JobStatus { get; set; } = "COMPLETED";
@@ -84,6 +86,7 @@ public sealed partial class DocumentSession : ObservableObject
     partial void OnLayoutChanged(PageLayout value) { ChangeVersion++; IsDirty = true; }
     partial void OnOptionsChanged(BrailleOptions value) { ChangeVersion++; IsDirty = true; }
     partial void OnFooterTextChanged(string value) { ChangeVersion++; IsDirty = true; }
+    partial void OnFooterRangesChanged(FooterRange[] value) { ChangeVersion++; IsDirty = true; }
 
     public void Add(EditorBlock block)
     {
@@ -110,6 +113,11 @@ public sealed partial class DocumentSession : ObservableObject
 }
 
 public sealed record OriginalPage(string Type, string? AssetName, string[]? Lines = null, int Width = 0, int Height = 0);
+public sealed record ConversionProgress(int Total, int Completed, int Failed, string Estimate)
+{
+    public int Finished => Math.Min(Total, Completed + Failed);
+    public string Label => $"{Total}쪽 중 {Finished}쪽 처리 · 성공 {Completed} · 확인 필요 {Failed}" + (Estimate.Length == 0 ? "" : " · " + Estimate);
+}
 
 public sealed record PageLayout(int Columns = 32, int Lines = 26, int StartPage = 1, string PageNumbers = "홀수 페이지", string Footer = "홀수 페이지",
     int CoverPages = 0, int SourcePageStart = 1, bool ShowSourcePageNumber = true, bool ShowBraillePageNumber = true,
@@ -118,7 +126,7 @@ public sealed record PageLayout(int Columns = 32, int Lines = 26, int StartPage 
     public void Validate()
     {
         if (Columns is < 8 or > 100 || Lines is < 4 or > 100 || StartPage < 1 || SourcePageStart < 1 || CoverPages < 0
-            || FooterAlign is not ("center" or "right") || EditScope is not ("all" or "page"))
+            || FooterAlign is not ("center" or "right" or "left") || EditScope is not ("all" or "page"))
             throw new ArgumentException("줄당 칸 수 8–100, 페이지당 줄 수 4–100, 시작 페이지 1 이상으로 입력해 주세요.");
     }
 

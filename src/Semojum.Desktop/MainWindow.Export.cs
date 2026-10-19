@@ -23,7 +23,7 @@ public partial class MainWindow
         {
             var owner = session;
             var snapshot = SmjFile.Snapshot(owner).Manifest;
-            var invalid = owner.Blocks.Where(b => b.IsBrailleLocked || b.Braille.Length == 0 && b.Source.Length > 0 && !LocalBrailleEngine.IsLayoutMarker(b.Source)
+            var invalid = owner.Blocks.Where(b => b.IsBrailleLocked || b.Braille.Length == 0 && b.Source.Length > 0 && !LocalBrailleEngine.IsLayoutMarker(b.Source) && !LocalBrailleEngine.IsNonPrintingTag(b.Source)
                 || !b.HasManualBraille && translatedRevisions.GetValueOrDefault(b, -1) != b.SourceRevision).Select(b => b.Id).ToHashSet();
             var plainText = dialog.FilterIndex == 2;
             var local = engine as LocalBrailleEngine;
