@@ -4,11 +4,27 @@ using System.Windows.Input;
 using ICSharpCode.AvalonEdit;
 using Semojum.Core;
 using Semojum.Desktop.Services;
+using Semojum.Desktop.Dialogs;
 
 namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private void SelectTextRange()
+    {
+        if (session.ActiveBlock is not { } active) return;
+        var panel = ActiveSearchPanel; var page = active.Page;
+        new RangeSelectionDialog(() => session.Blocks.Where(b => b.Page == page).ToArray(), panel, async (spans, value) =>
+        {
+            if (session.IsReadOnly) throw new InvalidOperationException("읽기 전용 문서입니다.");
+            var decision = ManualEditDecision.Overwrite;
+            if (panel == SearchPanel.Text && spans.Any(s => s.Block.HasManualBraille))
+            { decision = ChooseTranslation(spans.First(s => s.Block.HasManualBraille).Block); if (decision == ManualEditDecision.Cancel) return; }
+            EditorBlock? edited = null;
+            EditStructure(() => edited = BlockRange.Replace(session, spans, panel, value));
+            if (panel == SearchPanel.Text && edited is not null && autoTranslate) await TranslateAsync(edited, decision, false);
+        }) { Owner = this }.ShowDialog();
+    }
     private void InstallEditorMenu(TextEditor editor)
     {
         var menu = new ContextMenu(); editor.ContextMenu = menu;

@@ -51,6 +51,8 @@ public partial class MainWindow
         Braille.NormalForeground = value.HighContrast ? Brushes.White : C(value.BrailleColor);
         if (detachedPane is not null) detachedPane.NormalForeground = Braille.NormalForeground;
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
+        Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.InvalidateFaces();
+        if (detachedPane is not null) { detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.InvalidateFaces(); }
         LineNumbersToggle.IsChecked = value.ShowLineNumbers;
         EditorToolbar.Visibility = value.ShowToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (!value.SpeakDots) dotSpeech.Stop();

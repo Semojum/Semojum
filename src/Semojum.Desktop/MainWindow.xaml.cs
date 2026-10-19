@@ -37,6 +37,15 @@ public partial class MainWindow : Window
     private Window? detachedWindow;
     private BraillePane? detachedPane;
     private TextEditor? lastEditor;
+    private Task? cleanup;
+    internal Task ReleaseResourcesAsync() => cleanup ??= ReleaseResourcesCoreAsync();
+    private async Task ReleaseResourcesCoreAsync()
+    {
+        appLifetime.Cancel(); debounce?.Cancel(); dotSpeech.Dispose(); documentLifetime.Cancel(); Braille.Dispose();
+        foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); }
+        if (sidecar is not null) await sidecar.DisposeAsync();
+        documentLifetime.Dispose(); http.Dispose();
+    }
 
     internal DocumentSession Session => session;
     internal EditorDocuments Documents => documents;
@@ -84,7 +93,7 @@ public partial class MainWindow : Window
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         BindCommonKeys(this);
         UpdatePanelLayout(); RefreshEditorStatus();
-        Closed += async (_, _) => { appLifetime.Cancel(); dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); } http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
+        Closed += (_, _) => _ = ReleaseResourcesAsync();
     }
 
     private static DocumentSession BlankDocument()
@@ -229,6 +238,7 @@ public partial class MainWindow : Window
             switch (action)
             {
                 case "autoUpdate": preferences = preferences with { AutoCheckUpdates = AutoUpdateToggle.IsChecked }; await PersistPreferencesAsync(); break;
+                case "selectRange": SelectTextRange(); break;
                 case "showMemos":
                     foreach (var editor in new[] { SourceEditor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.Visibility = MemoToggle.IsChecked ? Visibility.Visible : Visibility.Collapsed;
@@ -542,7 +552,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (closing) return;
         closing = true;
-        try { if (await ConfirmAllDocumentsAsync()) { allowClose = true; _ = Dispatcher.BeginInvoke(new Action(Close)); } }
+        try { if (await ConfirmAllDocumentsAsync()) { await ReleaseResourcesAsync(); allowClose = true; _ = Dispatcher.BeginInvoke(new Action(Close)); } }
         finally { closing = false; }
     }
     private void ShowError(Exception ex) => MessageBox.Show(this, ex.Message, "작업을 완료하지 못했습니다", MessageBoxButton.OK, MessageBoxImage.Warning);

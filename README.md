@@ -1,10 +1,12 @@
 # 세모점 Windows 편집기
 
-Notion V3.1 API·기능정의서 V2를 바탕으로 기존 WPF 시안에 실제 점역 엔진과 작업 파일·서버 연결을 구현하고 있습니다. **전체 설계 구현이 끝난 상태는 아닙니다.** 남은 범위와 검증 결과는 [구현 상태](docs/implementation-status.md)에 구분합니다.
+[Service 서비스 기획](https://app.notion.com/p/3a643813bc2e801aa2b9eaf48dde8f2e)을 최우선으로, Notion V3.1 API·기능정의서 V2를 대조하여 기존 WPF 시안에 실제 점역 엔진과 작업 파일·서버 연결을 구현하고 있습니다. **전체 설계 구현이 끝난 상태는 아닙니다.** 남은 범위와 검증 결과는 [구현 상태](docs/implementation-status.md)에 구분합니다.
+
+기준 문서 충돌의 적용 순서는 [서비스 기획 우선 적용](docs/service-priority.md)에 기록합니다.
 
 ## 실행
 
-Windows와 .NET 10 SDK가 필요합니다. 개발 중에는 `semojum-braille` v3.4.17이 설치된 Python 경로를 지정합니다.
+Windows와 .NET 10 SDK가 필요합니다. 개발 중에는 `semojum-braille` v3.4.24이 설치된 Python 경로를 지정합니다.
 
 ```powershell
 $env:SEMOJUM_ENGINE_PYTHON = 'C:\path\to\venv\Scripts\python.exe'
@@ -17,8 +19,8 @@ macOS/Linux에서는 핵심 로직 검사와 Windows 교차 빌드만 할 수 �
 
 ## 사용 흐름
 
-- **새 문서 / 텍스트 열기**: 로컬 초안. 텍스트 입력이 멈추면 블록을 점역합니다. 새 문서의 서버 생성 UX는 아직 미정입니다.
-- **최근 문서 / 작업 폴더**: 최근 로컬 작업 10개를 표시하고, 선택한 폴더의 `.smj`와 하위 폴더를 탐색합니다. 마지막 작업 폴더와 사용자 6점키 설정을 다음 실행에 복원합니다. 작업은 마지막으로 저장한 쪽과 커서 위치에서 이어집니다.
+- **새 문서 / 텍스트 열기**: AI와 크레딧 없이 빈 서버 작업을 생성하고, 묵자 입력·TXT를 로컬에서 점역합니다. TXT의 긴 원문은 엔진 입력 제한에 맞춰 나누며 원본 파일을 보존합니다. 첫 블록의 서버 저장에는 아래 ID 계약 제약이 있습니다.
+- **최근 문서 / 작업 폴더**: 최근 로컬 작업은 기본 10개(0–50개 설정)를 표시하고, 선택한 폴더의 `.smj`와 하위 폴더를 탐색합니다. 마지막 작업 폴더와 사용자 6점키 설정을 다음 실행에 복원합니다. 작업은 마지막으로 저장한 쪽과 커서 위치에서 이어집니다.
 - **정보 → 로그인** 후 **파일 → 문서 업로드·AI 변환**: 문서를 서버에 보내고 완료된 쪽의 묵자를 받아 로컬에서 점역합니다. 기존 작업은 작업 ID로 열 수 있습니다. 변환 중단은 서버에 취소 요청을 보냅니다.
 - **6점 입력**: 기본 `F D S J K L`. 점자를 직접 고치면 표시 색이 바뀌며 재점역 전에 유지/덮어쓰기/취소를 선택합니다.
 - **Ctrl+S**: 버전 있는 ZIP `.smj`에 저장하고, 서버 작업이 연결되어 있으면 서버 저장도 요청합니다. 서버 부분 실패는 따로 표시하며 로컬 파일은 남습니다. 쪽 이동과 종료 때 자동 저장하지 않습니다.
@@ -49,6 +51,6 @@ dotnet run --project tests/Semojum.Core.Tests -c Release
 ./artifacts/Semojum-win-x64/Semojum.Mockup.exe --smoke-test ./artifacts/smoke
 ```
 
-`SEMOJUM_ENGINE_PYTHON`이 있으면 실제 v3.4.17 테스트를 추가 실행하고, 없으면 그 검사는 SKIP으로 표시합니다. `--smoke-test`는 네트워크와 분리된 고정 샘플로 WPF 창·편집 버퍼·저장을 검사합니다. Windows CI는 실제 엔진 검사와 UI 검사를 별도로 실행합니다. 물리 키보드 동시 입력, 한국어 IME, 보조기기와 여러 DPI는 별도 장비 검증이 필요합니다.
+`SEMOJUM_ENGINE_PYTHON`이 있으면 실제 v3.4.24 테스트를 추가 실행하고, 없으면 그 검사는 SKIP으로 표시합니다. `--smoke-test`는 네트워크와 분리된 고정 샘플로 WPF 창·편집 버퍼·저장을 검사합니다. Windows CI는 실제 엔진 검사와 UI 검사를 별도로 실행합니다. 물리 키보드 동시 입력, 한국어 IME, 보조기기와 여러 DPI는 별도 장비 검증이 필요합니다.
 
 [엔진 계약과 문서 차이](docs/engine-contract.md) · [.smj 규격](docs/smj-format.md) · [외부 라이브러리 고지](THIRD-PARTY-NOTICES.md)

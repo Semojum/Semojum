@@ -33,6 +33,7 @@
             <MenuItem Header="이동…" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
             <MenuItem Header="새 블록 추가" Tag="addBlock" Click="Action_Click"/>
             <MenuItem Header="현재 쪽 블록 선택…" Tag="selectBlocks" Click="Action_Click"/>
+            <MenuItem Header="여러 줄·블록 구간 선택…" Tag="selectRange" Click="Action_Click"/>
             <MenuItem Header="블록 내용 비우기" Tag="clearBlock" Click="Action_Click"/>
             <MenuItem Header="블록 삭제" Tag="deleteBlock" Click="Action_Click"/>
             <MenuItem Header="현재 줄 지우기" Tag="clearLine" Click="Action_Click"/>

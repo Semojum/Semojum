@@ -12,6 +12,7 @@ internal static class RemainingChecks
         yield return ("Long TXT chunks preserve all characters and Unicode boundaries", TextChunks);
         yield return ("Portable update rejects traversal, duplicate paths and incomplete packages atomically", Updates);
         yield return ("Slow translation locks braille at 400ms and unlocks when the current result arrives", DelayedTranslation);
+        yield return ("Partial cross-block replacement preserves unselected text, original bounds and memo provenance", PartialRanges);
         yield return ("Table grid round trips cells and rejects nested structural markers", Tables);
         yield return ("Work file writer lease excludes a second writer and releases on close", Leases);
         yield return ("Resolved memo state survives explicit SMJ save", ResolvedMemos);
@@ -24,6 +25,20 @@ internal static class RemainingChecks
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
         yield return ("AI alternatives and rule evidence survive page parsing and SMJ persistence", Alternatives);
+    }
+    private static async Task PartialRanges()
+    {
+        var document = new DocumentSession();
+        var a = new EditorBlock { Id = 1, Page = 1, Source = "가나다", Braille = "⠁⠃⠉", Metadata = new(BoundingBox: [0, 0, 10, 10]) };
+        var b = new EditorBlock { Id = 2, Page = 1, Source = "라마바", Braille = "⠙⠑⠋", Metadata = new(BoundingBox: [20, 20, 30, 30]) };
+        b.Memos.Add(new("m", null, "TEXT", 0, "라마바", "원문 메모", DateTimeOffset.Now)); document.Add(a); document.Add(b);
+        var spans = BlockRange.Select(document.Blocks.ToArray(), SearchPanel.Text, 1, 4);
+        BlockRange.Replace(document, spans, SearchPanel.Text, "대체");
+        Check(document.Blocks.Count == 1 && a.Source == "가대체마바" && a.Metadata.OriginalSource == "가나다라마바" && a.Metadata.BoundingBox![2] == 30 && a.Memos.Single().LineText == "라마바");
+        var old = a.Source; document.IsReadOnly = true;
+        await Rejected(() => { BlockRange.Replace(document, [new(a, 0, 1)], SearchPanel.Text, "삭제"); return Task.CompletedTask; }); Check(a.Source == old);
+        document.IsReadOnly = false; a.IsBrailleLocked = true;
+        await Rejected(() => { BlockRange.Replace(document, [new(a, 0, 1)], SearchPanel.Braille, "⠿"); return Task.CompletedTask; });
     }
     private sealed class DelayedEngine : ITranslationEngine
     {

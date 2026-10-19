@@ -210,7 +210,7 @@ internal static class WindowsSmoke
             Check(real.Session.ActiveBlock.Source == "나" && real.Session.ActiveBlock.Translation?.SourceText == "나"
                 && real.Session.ActiveBlock.Braille.Trim('⠀') != "⠫", "Source replacement retranslates with production engine");
         }
-        finally { real.PrepareSmokeShutdown(); real.Close(); }
+        finally { await real.ReleaseResourcesAsync(); real.PrepareSmokeShutdown(); real.Close(); }
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
     }

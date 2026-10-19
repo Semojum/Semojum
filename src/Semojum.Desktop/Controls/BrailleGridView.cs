@@ -14,6 +14,7 @@ public sealed class BrailleGridView : ListBox
     public EditorBlock? ActiveBlock { get; set; }
     public int CaretOffset { get; set; }
     public bool ShowOutlines { get; set; } = true;
+    public bool HighContrast { get; set; }
     public BrailleGridView()
     {
         Background = new SolidColorBrush(Color.FromRgb(244, 245, 247)); BorderThickness = new(0);
@@ -54,7 +55,7 @@ public sealed class BrailleGridView : ListBox
         {
             if (Data is not { } face) return;
             var owner = Owner; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length;
-            dc.DrawRectangle(Brushes.White, null, new Rect(RenderSize));
+            dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : Brushes.White, null, new Rect(RenderSize));
             void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
             Text($"편집 {face.Number}면", new(30, 4), 12, Brushes.DimGray);
             var gridPen = new Pen(new SolidColorBrush(Color.FromRgb(225, 228, 232)), .5);
@@ -66,8 +67,8 @@ public sealed class BrailleGridView : ListBox
                     var box = new Rect(30 + x * cw, 26 + y * ch, cw, ch); var cell = face.Rows[y][x];
                     if (cell is not null)
                     {
-                        if (cell.Block == owner?.ActiveBlock) dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(234, 244, 255)), null, box);
-                        Text(cell.Value.ToString(), new(box.X, box.Y), cw * 1.45, cell.Block.HasManualBraille ? Brushes.Firebrick : Brushes.Black);
+                        if (cell.Block == owner?.ActiveBlock) dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : new SolidColorBrush(Color.FromRgb(234, 244, 255)), null, box);
+                        Text(cell.Value.ToString(), new(box.X, box.Y), cw * 1.45, cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick) : owner?.HighContrast == true ? Brushes.White : Brushes.Black);
                         if (cell.Block == owner?.ActiveBlock && cell.Offset == owner.CaretOffset) dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), box);
                     }
                     dc.DrawRectangle(null, gridPen, box);

@@ -15,7 +15,7 @@ public partial class App : Application
         {
             window.ContentRendered += async (_, _) =>
             {
-                try { await WindowsSmoke.RunAsync(window, e.Args[1]); window.PrepareSmokeShutdown(); Shutdown(0); }
+                try { await WindowsSmoke.RunAsync(window, e.Args[1]); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); Shutdown(0); }
                 catch (Exception ex)
                 {
                     System.IO.Directory.CreateDirectory(e.Args[1]);
