@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+artifacts/
+*.user
+*.suo
+*.mock.smi
+*.smj
+.DS_Store
+
+.build/

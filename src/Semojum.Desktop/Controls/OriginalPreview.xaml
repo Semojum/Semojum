@@ -1,0 +1,37 @@
+<UserControl x:Class="Semojum.Desktop.Controls.OriginalPreview" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Grid Background="#FAFAFA">
+    <Grid.RowDefinitions><RowDefinition Height="0"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
+    <Border Style="{StaticResource PanelHeader}"><DockPanel><TextBlock x:Name="PageLabel" DockPanel.Dock="Right" Text="12 / 128쪽" FontSize="11" Foreground="{StaticResource Muted}"/><TextBlock Text="❶  원본 이미지" FontWeight="SemiBold"/></DockPanel></Border>
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <Viewbox Stretch="Uniform" VerticalAlignment="Top" Margin="15,18">
+        <Border Width="350" Height="630" Background="White" BorderBrush="#D2D8E0" BorderThickness="1" Padding="23">
+          <StackPanel>
+            <TextBlock Text="2026  수능특강" FontSize="10" Foreground="#808894"/>
+            <TextBlock Text="사회탐구 영역" FontWeight="Bold" FontSize="21" Margin="0,12,0,5"/>
+            <Border BorderBrush="#26313E" BorderThickness="0,0,0,2" Padding="0,0,0,12"><TextBlock Text="한국지리  |  기후와 생활" FontSize="11"/></Border>
+            <Border x:Name="BlockOne" BorderBrush="#4F85BC" BorderThickness="1" Background="#EDF5FE" Padding="9" Margin="0,18,0,12">
+              <TextBlock Text="6. 그래프는 지도에 표시된 네 지역의 기후 특성을 나타낸 것이다. 이에 대한 설명으로 옳은 것은?" TextWrapping="Wrap" FontSize="13" LineHeight="23"/>
+            </Border>
+            <Grid Height="128" Margin="8,5,8,15">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Border Height="64" Width="30" Background="#4877AD" VerticalAlignment="Bottom" Margin="0,0,0,22"/>
+              <Border Grid.Column="1" Height="98" Width="30" Background="#7FA2C9" VerticalAlignment="Bottom" Margin="0,0,0,22"/>
+              <Border Grid.Column="2" Height="44" Width="30" Background="#4877AD" VerticalAlignment="Bottom" Margin="0,0,0,22"/>
+              <Border Grid.Column="3" Height="79" Width="30" Background="#7FA2C9" VerticalAlignment="Bottom" Margin="0,0,0,22"/>
+              <TextBlock Text="(가)" VerticalAlignment="Bottom" HorizontalAlignment="Center" FontSize="11"/>
+              <TextBlock Grid.Column="1" Text="(나)" VerticalAlignment="Bottom" HorizontalAlignment="Center" FontSize="11"/>
+              <TextBlock Grid.Column="2" Text="(다)" VerticalAlignment="Bottom" HorizontalAlignment="Center" FontSize="11"/>
+              <TextBlock Grid.Column="3" Text="(라)" VerticalAlignment="Bottom" HorizontalAlignment="Center" FontSize="11"/>
+            </Grid>
+            <Border x:Name="BlockTwo" Padding="9" BorderThickness="1" BorderBrush="Transparent">
+              <TextBlock Text="① (가)는 겨울철 강수량 비율이 가장 높다.&#10;② (나)는 연교차가 가장 크다.&#10;③ (다)는 (라)보다 최한월 평균 기온이 낮다.&#10;④ (라)는 (가)보다 위도가 높다.&#10;⑤ 모두 여름 강수 집중률이 높다." TextWrapping="Wrap" FontSize="12" LineHeight="27"/>
+            </Border>
+            <Border x:Name="BlockThree" BorderThickness="1" BorderBrush="Transparent" Padding="9" Margin="0,15,0,0"><TextBlock Text="자료 해설 · 해안과 내륙의 기온 차이" FontSize="12" Foreground="#667384"/></Border>
+            <TextBlock Text="—  12  —" HorizontalAlignment="Center" FontSize="10" Margin="0,20,0,0" Foreground="#888888"/>
+          </StackPanel>
+        </Border>
+      </Viewbox>
+    </ScrollViewer>
+    <Border Grid.Row="2" Background="#F5F6F8" Padding="10,0" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0"><TextBlock Text="원본 미리보기 · 목업용 예시 자료" FontSize="11" Foreground="{StaticResource Muted}"/></Border>
+  </Grid>
+</UserControl>

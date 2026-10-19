@@ -1,0 +1,209 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+
+namespace Semojum.Core.Integration;
+
+/// <summary>Wire adapter for Semojum/braille v3.4.24, commit 976b2048d1a1ad0b31a869001f80f9fa260b93af.</summary>
+public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptions>? options = null) : ITranslationEngine
+{
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+    public async Task<string> TranslateAsync(string text, int blockId, CancellationToken cancellationToken) =>
+        (await TranslateElementAsync(text, new(), options?.Invoke() ?? new(), cancellationToken)).Cells;
+
+    public Task<BrailleTranslation> TranslateBlockAsync(EditorBlock block, CancellationToken cancellationToken) =>
+        TranslateElementAsync(block.Source, block.Metadata, options?.Invoke() ?? new(), cancellationToken);
+
+    public async Task<BrailleTranslation> TranslateElementAsync(string text, BlockMetadata metadata, BrailleOptions settings,
+        CancellationToken cancellationToken = default)
+    {
+        JsonElement response;
+        if (metadata.Type == "table" && !text.Contains("<!표>", StringComparison.Ordinal))
+        {
+            if (metadata.TableSource is null) throw new SidecarException("표 구조 데이터가 없어 표를 점역할 수 없습니다.", "MISSING_TABLE_SOURCE");
+            if (metadata.TableDisplayText is { } original && original != text)
+                throw new SidecarException("표의 표시 텍스트가 바뀌었습니다. 편집 → 표 구조 편집에서 칸 내용을 수정해 주세요.", "TABLE_STRUCTURE_CHANGED");
+            response = await sidecar.InvokeAsync("table", new
+            {
+                table_source = metadata.TableSource, render_mode = metadata.RenderMode ?? "",
+                tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel,
+                korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2, math_page = metadata.MathPage
+            }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            response = await sidecar.InvokeAsync("translate", new
+            {
+                text = metadata.Type == "formula" && !text.Contains("<!수식>", StringComparison.Ordinal) ? $"<!수식>{text}<!/수식>" : text,
+                type = text.Contains("<!표>", StringComparison.Ordinal) ? "table" : metadata.Type switch
+                { "formula" => "text", "image" or "figure" or "chart_graph" or "diagram" or "cartoon" => "caption", _ => metadata.Type },
+                heading_level = metadata.HeadingLevel,
+                korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2,
+                split_choices = settings.ChoiceLayout == "onePerLine", math_page = metadata.MathPage,
+                render_mode = metadata.RenderMode ?? "", tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel
+            }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        if (!response.TryGetProperty("cells", out var cells) || cells.ValueKind != JsonValueKind.String)
+            throw new SidecarException("점역 결과에 점자 데이터가 없습니다.", "INVALID_RESPONSE");
+        return new(cells.GetString()!, ReadArray<int>(response, "breaks"), ReadArray<DroppedCharacter>(response, "dropped"),
+            response.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
+            ReadArray<BrailleDraft>(response, "drafts"), response.TryGetProperty("render_mode", out var mode) ? mode.GetString() : null,
+            UnknownTags: ReadArray<string>(response, "unknown_tags"));
+    }
+
+    public async Task<string> DecodeAsync(string cells, BrailleOptions settings, CancellationToken cancellationToken = default)
+    {
+        var result = await sidecar.InvokeAsync("decode", new { braille = cells, korean_grade = settings.KoreanGrade1 ? 1 : 2, english = settings.EnglishDocument },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.GetProperty("text").GetString() ?? "";
+    }
+
+    public async Task<string> ReviewPriorityAsync(string cells, string source, BlockMetadata metadata, BrailleOptions settings,
+        double? ocrConfidence = null, CancellationToken cancellationToken = default)
+    {
+        var fields = new Dictionary<string, object?>
+        {
+            ["braille"] = cells, ["source"] = source, ["type"] = metadata.Type, ["korean_grade"] = settings.KoreanGrade1 ? 1 : 2
+        };
+        if (ocrConfidence.HasValue) fields["ocr_confidence"] = ocrConfidence.Value;
+        var result = await sidecar.InvokeAsync("grade", fields, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.GetProperty("grade").GetString() switch
+        {
+            "low" => "먼저 확인", "medium" => "확인", "high" => "나중에 확인",
+            _ => throw new SidecarException("알 수 없는 검수 순서입니다.")
+        };
+    }
+
+    public Task<string> BuildBrfAsync(DocumentSession session, CancellationToken cancellationToken = default) =>
+        BuildBrfAsync(SmjFile.Snapshot(session).Manifest, cancellationToken);
+
+    public async Task<string> BuildBrfAsync(SmjManifest snapshot, CancellationToken cancellationToken = default) =>
+        (await ComposeAsync(snapshot, cancellationToken)).Brf;
+
+    public async Task<BrailleSymbol[]> SymbolsAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await sidecar.InvokeAsync("symbols", new { }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return ReadArray<BrailleSymbol>(result, "symbols");
+    }
+
+    public async Task<ComposedBraille> ComposeAsync(SmjManifest snapshot, CancellationToken cancellationToken = default)
+    {
+        var settings = snapshot.Options;
+        var layout = snapshot.Layout;
+        layout.Validate();
+        FooterRange.Validate(snapshot.FooterRanges ?? []);
+        var footer = layout.Footer == "출력 안 함" || string.IsNullOrEmpty(snapshot.FooterText) ? "" :
+            (await TranslateElementAsync(snapshot.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
+        string header = "";
+        var headers = new Dictionary<int, string>();
+        object Sources(IEnumerable<SmjBlock> blocks) => blocks.GroupBy(b => b.Page).Select(page => new
+        {
+            orig_page = page.Key,
+            blocks = page.Select((b, order) => new
+            {
+                order, heading_level = b.Metadata.HeadingLevel,
+                braille = !b.HasManualBraille && IsLayoutMarker(b.Source) ? b.Source.Trim() : b.Braille,
+                breaks = b.HasManualBraille ? Array.Empty<int>() : b.Translation?.Breaks ?? [],
+                align = Regex.Matches(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>").LastOrDefault()?.Groups[1].Value switch
+                { "왼쪽" => "left", "가운데" => "center", "오른쪽" => "right", _ => "" }
+            }).ToArray()
+        }).ToArray();
+        var footers = new Dictionary<int, string>();
+        Task<JsonElement> Build(object sources, bool pad) => sidecar.InvokeAsync("build_brf", new { job = new
+            {
+                sources, footer, header, headers, footers,
+                opts = new
+                {
+                    cols = layout.Columns, rows = layout.Lines, pad_to_even = pad,
+                    page_row_pages = layout.PageNumbers == "모든 페이지" ? "every" : "odd",
+                    first_braille_page = layout.StartPage,
+                    footer_align = layout.FooterAlign, wrap = settings.LineBreakUnit,
+                    cover_orig_page_count = layout.CoverPages, orig_page_first_no = layout.SourcePageStart,
+                    show_orig_page = layout.PageNumbers != "출력 안 함" && layout.ShowSourcePageNumber,
+                    show_braille_page = layout.PageNumbers != "출력 안 함" && layout.ShowBraillePageNumber
+                }
+            } }, cancellationToken: cancellationToken);
+
+        var changes = new SortedDictionary<int, string>();
+        var coverFaces = 0;
+        var hasHeaders = snapshot.Blocks.Any(b => b.Source.Contains("<!머리말>", StringComparison.Ordinal));
+        if (hasHeaders && layout.CoverPages > 0)
+        {
+            var coverNumbers = snapshot.Blocks.Select(b => b.Page).Distinct().Take(layout.CoverPages).ToHashSet();
+            var cover = await Build(Sources(snapshot.Blocks.Where(b => coverNumbers.Contains(b.Page))), false).ConfigureAwait(false);
+            coverFaces = DocumentExport.BrfPages(cover.GetProperty("brf").GetString() ?? "").Length;
+        }
+        for (var index = 0; index < snapshot.Blocks.Length; index++)
+        {
+            var block = snapshot.Blocks[index];
+            foreach (Match marker in Regex.Matches(block.Source, "<!머리말>(.*?)<!/머리말>", RegexOptions.Singleline))
+            {
+                // Locate the source anchor using an exact translated prefix. A changed manual prefix has no safe mapping.
+                var sourcePrefix = block.Source[..marker.Index];
+                var prefix = IsNonPrintingTag(sourcePrefix) || string.IsNullOrWhiteSpace(sourcePrefix) ? "" :
+                    (await TranslateElementAsync(sourcePrefix, block.Metadata, settings, cancellationToken)).Cells;
+                if (!block.Braille.StartsWith(prefix, StringComparison.Ordinal))
+                    throw new ArgumentException($"{block.Page}쪽 머리말 위치를 직접 수정한 점자와 연결할 수 없습니다. 해당 블록을 재점역하거나 블록 시작에 머리말을 넣어 주세요.");
+                // A visible probe keeps the anchor's blank row from being trimmed. It is never returned or saved.
+                var probe = prefix.Length < block.Braille.Length || prefix.Length == 0 || prefix.EndsWith('\n') ? prefix + "⠿" : prefix;
+                var partial = block with { Braille = probe, Translation = block.Translation is null ? null : block.Translation with { Breaks = block.Translation.Breaks.Where(b => b <= prefix.Length).ToArray() } };
+                var composedPrefix = await Build(Sources(snapshot.Blocks.Take(index).Append(partial)), false).ConfigureAwait(false);
+                var faces = DocumentExport.BrfPages(composedPrefix.GetProperty("brf").GetString() ?? "").Length;
+                var face = checked(layout.StartPage + Math.Max(0, faces - coverFaces - 1));
+                var text = marker.Groups[1].Value;
+                var translated = text.Length == 0 ? "" : (await TranslateElementAsync(text, new(Type: "header_footer"), settings, cancellationToken)).Cells;
+                changes[face] = translated;
+                // The latest value becomes the default for following faces; earlier faces retain their prior values.
+                header = changes.Last().Value; headers.Clear();
+                var ordered = changes.ToArray(); var changeIndex = 0; var current = "";
+                for (var page = layout.StartPage; page < changes.Last().Key; page++)
+                {
+                    while (changeIndex < ordered.Length && ordered[changeIndex].Key <= page) current = ordered[changeIndex++].Value;
+                    headers[page] = current;
+                }
+            }
+        }
+        var sources = Sources(snapshot.Blocks);
+        var result = await Build(sources, layout.PadToEven).ConfigureAwait(false);
+        if (layout.Footer != "출력 안 함" && ((snapshot.FooterRanges?.Length ?? 0) > 0 || layout.Footer == "홀수 페이지" && layout.PageNumbers == "모든 페이지"))
+        {
+            // Footer contents do not change body capacity. Count once, then expand only existing face numbers.
+            // Cover faces consume no printed number, so this upper bound deliberately includes a few unused keys.
+            var count = DocumentExport.BrfPages(result.GetProperty("brf").GetString() ?? "").Length;
+            var upper = Math.Min(int.MaxValue, (long)layout.StartPage + count - 1);
+            foreach (var range in snapshot.FooterRanges ?? [])
+            {
+                var first = Math.Max(layout.StartPage, range.Start); var last = Math.Min(upper, range.End ?? int.MaxValue);
+                if (first > last) continue;
+                var cells = range.Text.Length == 0 ? "" : (await TranslateElementAsync(range.Text, new(Type: "header_footer"), settings, cancellationToken)).Cells;
+                for (long page = first; page <= last; page++) footers[(int)page] = cells;
+            }
+            if (layout.Footer == "홀수 페이지")
+                for (long page = layout.StartPage; page <= upper; page++) if (page % 2 == 0) footers[(int)page] = "";
+            result = await Build(sources, layout.PadToEven).ConfigureAwait(false);
+        }
+        var brf = result.GetProperty("brf").GetString() ?? throw new SidecarException("BRF 결과가 없습니다.");
+        if (brf.Any(c => c > 127)) throw new SidecarException("BRF 응답에 ASCII가 아닌 문자가 있습니다.");
+        var replaced = result.TryGetProperty("replaced", out var r) ? r.Deserialize<Dictionary<string, int>>() ?? [] : [];
+        return new(brf, replaced);
+    }
+
+    public static bool IsLayoutMarker(string source) => source.Trim() is "<!쪽바꿈>" or "<!장바꿈>" or "<!상단줄>" or "<!중단줄>" or "<!하단줄>"
+        or "<!상단굵은줄>" or "<!하단굵은줄>" or "<!표시작>" or "<!표중앙>" or "<!표끝>" or "<!표구분선>";
+
+    public static bool IsNonPrintingTag(string source) => source.Length > 0 &&
+        Regex.Replace(source, "<!머리말>.*?<!/머리말>|<!(?:왼쪽|가운데|오른쪽)정렬>", "", RegexOptions.Singleline).Trim().Length == 0;
+
+    public async Task<string[][]> ReadBrfAsync(string brf, CancellationToken cancellationToken = default)
+    {
+        var result = await sidecar.InvokeAsync("read_brf", new { brf }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.GetProperty("pages").Deserialize<string[][]>() ?? [];
+    }
+
+    private static T[] ReadArray<T>(JsonElement root, string name) => root.TryGetProperty(name, out var value)
+        ? value.Deserialize<T[]>(Json) ?? [] : [];
+}

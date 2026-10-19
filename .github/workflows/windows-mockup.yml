@@ -1,0 +1,60 @@
+name: Windows editor
+on:
+  push:
+    branches: [main, 'codex/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-mockup-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Build
+        run: dotnet build Semojum.sln -c Release
+      - name: Core behavior checks
+        run: dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
+      - name: Publish portable Windows app
+        run: ./scripts/publish.ps1
+      - name: Real engine integration checks
+        shell: pwsh
+        run: |
+          $env:SEMOJUM_ENGINE_PYTHON = Join-Path $PWD 'artifacts/engine-build/venv/Scripts/python.exe'
+          $env:SEMOJUM_ENGINE_EXECUTABLE = Join-Path $PWD 'artifacts/Semojum-win-x64/engine/semojum-engine.exe'
+          dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
+      - name: WPF runtime smoke and screenshots
+        shell: pwsh
+        run: |
+          $output = Join-Path $PWD 'artifacts/smoke'
+          $started = Get-Date
+          $process = Start-Process 'artifacts/Semojum-win-x64/Semojum.Mockup.exe' -ArgumentList @('--smoke-test', $output) -PassThru
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'WPF smoke timed out.' }
+          if ($process.ExitCode -ne 0) {
+            Get-Content "$output/failure.txt" -ErrorAction SilentlyContinue
+            Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $started; Id = 1000, 1026 } -ErrorAction SilentlyContinue |
+              Format-List TimeCreated, ProviderName, Message | Out-String | Tee-Object -FilePath "$output/windows-events.txt"
+            throw "WPF smoke failed: $($process.ExitCode)"
+          }
+          Get-Content "$output/checks.txt"
+      - name: Save Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Semojum-win-x64
+          path: artifacts/Semojum-win-x64.zip
+      - name: Save UI verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpf-smoke
+          path: artifacts/smoke
+          if-no-files-found: warn

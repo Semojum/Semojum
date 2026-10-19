@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>Semojum.Mockup</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Semojum.Core/Semojum.Core.csproj" />
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
+    <Resource Include="Assets/Figma/*.svg" />
+    <PackageReference Include="PDFtoImage" Version="5.4.0" />
+    <PackageReference Include="WpfMath" Version="2.1.0" />
+  </ItemGroup>
+</Project>
