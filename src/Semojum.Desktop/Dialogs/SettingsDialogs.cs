@@ -114,7 +114,7 @@ public sealed class FormDialog : CompactDialog
         {
             var f = picker.SelectedItem as BrailleForm;
             edit.IsEnabled = delete.IsEnabled = f is { Builtin: false };
-            summary.Text = f is null ? "양식이 없습니다." : $"이 양식이 정하는 값 (읽기 전용)\n지면       {f.Layout.Columns}칸 × {f.Layout.Lines}줄\n한글       {(f.Options.KoreanGrade1 ? "정자(1급)" : "약자(2급)")}\n줄바꿈    {(f.Options.LineBreakUnit == "word" ? "어절" : "음절")} 단위\n페이지행 {f.Layout.PageNumbers}\n꼬리말    {(f.Layout.FooterAlign == "right" ? "오른쪽" : "가운데")}";
+            summary.Text = f is null ? "양식이 없습니다." : $"이 양식이 정하는 값 (읽기 전용)\n지면       {f.Layout.Columns}칸 × {f.Layout.Lines}줄\n한글       {(f.Options.KoreanGrade1 ? "정자(1급)" : "약자(2급)")}\n줄바꿈    {(f.Options.LineBreakUnit == "word" ? "어절" : "음절")} 단위\n페이지행 {f.Layout.PageNumbers}\n꼬리말    {f.Layout.FooterAlign switch { "right" => "오른쪽", "left" => "왼쪽", _ => "가운데" }}";
         };
         async Task ReloadAsync(string? id)
         { picker.ItemsSource = await client.FormsAsync(Lifetime.Token); picker.SelectedItem = picker.Items.Cast<BrailleForm>().FirstOrDefault(f => f.FormId == id); if (picker.SelectedIndex < 0) picker.SelectedIndex = 0; }

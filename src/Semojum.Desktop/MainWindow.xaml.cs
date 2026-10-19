@@ -485,6 +485,7 @@ public partial class MainWindow : Window
             }
             owner.IsDirty = owner.ChangeVersion != version;
             owner.Status = owner.IsDirty ? "저장 완료 · 저장 중 편집한 내용은 한 번 더 저장해 주세요." : owner.JobId is null ? "로컬 초안 저장 완료 · 서버 작업 없음" : "로컬·서버 저장 완료 · " + path;
+            if (owner.FooterRanges.Length > 0) owner.Status += " · 꼬리말 범위는 .smj에 보존";
             return !owner.IsDirty;
         }
         catch (Exception ex) { ShowError(ex); return false; }

@@ -153,7 +153,7 @@
       <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding Progress}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
       <DockPanel>
         <Button DockPanel.Dock="Right" Content="변환 중단" Tag="cancelJob" Click="Action_Click" Margin="12,0,0,0"/>
-        <StackPanel><TextBlock Text="{Binding Progress.Label}" Margin="0,0,0,5"/><ProgressBar Minimum="0" Maximum="{Binding Progress.Total}" Value="{Binding Progress.Finished}" Height="8" AutomationProperties.Name="문서 변환 진행률"/></StackPanel>
+        <StackPanel><TextBlock Text="{Binding Progress.Label}" Margin="0,0,0,5"/><ProgressBar Minimum="0" Maximum="{Binding Progress.Total, Mode=OneWay}" Value="{Binding Progress.Finished, Mode=OneWay}" Height="8" AutomationProperties.Name="문서 변환 진행률"/></StackPanel>
       </DockPanel>
     </Border>
     <Border x:Name="SelectionPane" DockPanel.Dock="Top" Visibility="Collapsed" Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,1" Padding="8">
