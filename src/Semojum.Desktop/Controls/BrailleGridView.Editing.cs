@@ -33,9 +33,11 @@ public sealed partial class BrailleGridView
             return BlockRange.Select(page, SearchPanel.Braille, Math.Min(a, b), Math.Abs(b - a));
         }
     }
-    public bool HasSelection => drawSelection.Any(s => s.Length > 0) || Selection.Length > 1;
+    public bool HasSelection => Selection.Any(s => s.Length > 0) || Selection.Length > 1;
+    private bool IsCaret(GridCell cell) => cell.Block == ActiveBlock && cell.Offset == CaretOffset &&
+        cell.Prefix == (caret?.Block == ActiveBlock && caret.Offset == CaretOffset ? caret.Prefix : "");
     private GridCell[] CurrentRow() => !CoordinatesCurrent || caret is null ? [] :
-        Items.Cast<BrailleGridFace>().SelectMany(f => f.Rows).FirstOrDefault(r => r.Any(c => c?.Block == caret.Block && c.Offset == caret.Offset))?.OfType<GridCell>().ToArray() ?? [];
+        Items.Cast<BrailleGridFace>().SelectMany(f => f.Rows).FirstOrDefault(r => r.Any(c => c is not null && IsCaret(c)))?.OfType<GridCell>().ToArray() ?? [];
     public async Task ClearLineAsync()
     {
         var row = CurrentRow(); if (row.Length == 0) return;
@@ -110,7 +112,7 @@ public sealed partial class BrailleGridView
         foreach (var f in faces)
             for (var y = 0; y < f.Rows.Length; y++)
                 for (var x = 0; x < f.Rows[y].Length; x++)
-                    if (f.Rows[y][x] is { } c && c.Block == ActiveBlock && c.Offset == CaretOffset)
+                    if (f.Rows[y][x] is { } c && IsCaret(c))
                         return $"{f.Number}면 · {y + 1}줄 {x + 1}칸 · 총 {faces.Length}면";
         return $"총 {faces.Length}면";
     }

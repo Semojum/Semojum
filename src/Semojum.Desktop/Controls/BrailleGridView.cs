@@ -77,7 +77,7 @@ public sealed partial class BrailleGridView : ListBox
                         if (owner?.IsSelected(cell) == true) dc.DrawRectangle(Brushes.LightSkyBlue, null, box);
                         else if (cell.Block == owner?.ActiveBlock) dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : new SolidColorBrush(Color.FromRgb(234, 244, 255)), null, box);
                         Text(cell.Value.ToString(), new(box.X, box.Y), cw * 1.45, cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick) : owner?.HighContrast == true ? Brushes.White : Brushes.Black);
-                        if (cell.Block == owner?.ActiveBlock && cell.Offset == owner.CaretOffset) dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), box);
+                        if (owner?.IsCaret(cell) == true) dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), box);
                     }
                     else if (face.Text is not null && x < face.Text[y].Length)
                         Text(face.Text[y][x].ToString(), new(box.X, box.Y), cw * 1.45, Brushes.Gray);
@@ -117,6 +117,12 @@ public sealed partial class BrailleGridView : ListBox
             }
             if (Owner is not { } owner || e.LeftButton != MouseButtonState.Pressed || !owner.dragSelecting) return;
             if (Hit(e.GetPosition(this)) is { } cell) owner.Point(cell, true);
+        }
+        protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+        {
+            if (Hit(e.GetPosition(this)) is not { } cell || Owner is not { } owner) return;
+            if (!owner.IsSelected(cell)) owner.Point(cell, false);
+            owner.Focus();
         }
         protected override void OnDrop(DragEventArgs e)
         {

@@ -40,7 +40,12 @@ public partial class MainWindow
             QueuePreview(decision != ManualEditDecision.Keep);
         };
         PageEditor.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(PageEditor.Editor);
-        PageEditor.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
+        PageEditor.Editor.TextArea.Caret.PositionChanged += (_, _) =>
+        {
+            if (session?.ActiveBlock is { } block)
+                SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
+            RefreshEditorStatus();
+        };
     }
     private void InstallEditorMenu(TextEditor editor)
     {

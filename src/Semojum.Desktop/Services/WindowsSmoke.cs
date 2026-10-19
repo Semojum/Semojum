@@ -275,6 +275,7 @@ internal static class WindowsSmoke
             Check(firstBlock.Braille.Contains("<!쪽바꿈>"), "Grid page break preserves a structural marker");
             await Task.Delay(300);
             grid.Point(new(firstBlock, 0, '⠀'), false); grid.Point(new(firstBlock, firstBlock.Braille.Length, '⠀'), true);
+            Check(grid.HasSelection, "Grid selection is available before a render pass");
             grid.Copy(false);
             Check(!Clipboard.GetText().Contains("<!"), "Grid clipboard omits generated layout markers");
             await grid.InsertAsync("⠿");
@@ -288,6 +289,7 @@ internal static class WindowsSmoke
             real.PageEditor.SelectContext();
             Check(real.PageEditor.Editor.SelectedText == oldSource, "Second Ctrl+A selects original page in continuous editor");
             real.PageEditor.Editor.Select(real.PageEditor.Editor.Document.TextLength, 0);
+            Check(real.SourceEditor.CaretOffset == secondBlock.Source.Length, "Continuous source caret reaches block-based memo and preview commands");
             real.PageEditor.Editor.Document.Insert(real.PageEditor.Editor.Document.TextLength, "연속 편집");
             Check(secondBlock.Source.EndsWith("연속 편집"), "Inline page editor writes through to original block");
             real.ReplayHistory(); await Task.Delay(100);

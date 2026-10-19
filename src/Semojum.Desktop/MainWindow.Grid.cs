@@ -1,6 +1,7 @@
 using Semojum.Core;
 using Semojum.Core.Integration;
 using Semojum.Desktop.Controls;
+using System.Windows.Controls;
 
 namespace Semojum.Desktop;
 
@@ -12,6 +13,14 @@ public partial class MainWindow
     private Task<ComposedBraille>? composing;
     private void ConnectGrid(BraillePane pane)
     {
+        var menu = new ContextMenu(); pane.GridView.ContextMenu = menu;
+        menu.Opened += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); };
+        foreach (var (label, action) in new[] { ("메모 추가·답글", "memo"), ("복사", "copy"), ("잘라내기", "cut"), ("붙여넣기", "paste"), ("현재 줄 지우기", "clearLine") })
+        {
+            var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
+        }
+        var pageBreak = new MenuItem { Header = "쪽바꿈", InputGestureText = "Ctrl+Enter" };
+        pageBreak.Click += async (_, _) => await pane.GridView.InsertPageBreakAsync(); menu.Items.Add(pageBreak);
         pane.GridView.GotKeyboardFocus += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); };
         pane.NavigateGridAsync = async cell =>
         {
