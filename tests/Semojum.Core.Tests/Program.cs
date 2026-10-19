@@ -4,6 +4,36 @@ if (args.Contains("--sidecar-fixture")) return await IntegrationChecks.RunFixtur
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("Navigation validates absolute, relative, missing and overflow page numbers", () => Sync(() =>
+    {
+        var first = new EditorBlock { Id = 1, Page = 12, Source = "abc" };
+        var next = new EditorBlock { Id = 2, Page = 14, Source = "다음" };
+        EditorBlock[] blocks = [first, next];
+        Equal(next, DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 0, NavigationTarget.OriginalPage, "+2").Block);
+        Equal(first, DocumentNavigation.Resolve(blocks, next, SearchPanel.Text, 0, NavigationTarget.OriginalPage, "12").Block);
+        Throws<ArgumentException>(() => DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 0, NavigationTarget.OriginalPage, "13"));
+        foreach (var invalid in new[] { "0", "-12", "+2147483647", "NaN", "1.2", "" })
+            Throws<ArgumentException>(() => DocumentNavigation.Number(invalid, 12));
+        Equal(15, DocumentNavigation.Number(" +3 ", 12));
+    })),
+    ("Navigation uses CRLF-safe UTF-16 line offsets and rejects stale memo anchors", () => Sync(() =>
+    {
+        var first = new EditorBlock { Id = 1, Page = 1, Source = "😀a\r\nb\rc\n", Braille = "⠁\n⠃" };
+        var next = new EditorBlock { Id = 2, Page = 2, Source = "검토", Translation = new("", [], [new("?", 1, "unknown")], false, []) };
+        first.Memos.Add(new("a", null, "TEXT", 1, "b", "메모", DateTimeOffset.Now));
+        first.Memos.Add(new("b", null, "TEXT", 20, "삭제된 줄", "오래된 메모", DateTimeOffset.Now));
+        first.Memos.Add(new("c", null, "BRAILLE", 1, "⠃", "점자 메모", DateTimeOffset.Now));
+        EditorBlock[] blocks = [first, next];
+        Equal("0,5,7,9", string.Join(",", DocumentNavigation.LineOffsets(first.Source)));
+        Equal(5, DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 0, NavigationTarget.Line, "+1").Offset);
+        Equal(9, DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 7, NavigationTarget.Line, "+1").Offset);
+        Throws<ArgumentException>(() => DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 7, NavigationTarget.Line, "5"));
+        Equal(5, DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 0, NavigationTarget.Memo, "1").Offset);
+        Equal(1, DocumentNavigation.MarkedLocations(blocks, NavigationTarget.Memo, SearchPanel.Text).Count);
+        Equal(2, DocumentNavigation.Resolve(blocks, first, SearchPanel.Braille, 0, NavigationTarget.Memo, "1").Offset);
+        Equal(next, DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 0, NavigationTarget.Review, "+1").Block);
+        Equal(0, DocumentNavigation.Resolve(blocks, first, SearchPanel.Text, 0, NavigationTarget.Review, "1").Offset);
+    })),
     ("Export validates ranges and retains exact BRF page bytes including blanks", () => Sync(() =>
     {
         var brf = "a\r\n#a\r\n\f\r\n\fbc\r\n#c\r\n\f";

@@ -8,3 +8,5 @@ artifacts/
 *.mock.smi
 *.smj
 .DS_Store
+
+.build/

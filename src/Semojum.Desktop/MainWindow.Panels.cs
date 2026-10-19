@@ -13,13 +13,13 @@ public partial class MainWindow
 
     private void BindCommonKeys(Window target)
     {
-        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace") })
+        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace"), (Key.G, "goto") })
             target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync(action)), new KeyGesture(key, ModifierKeys.Control)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("findNext")), new KeyGesture(Key.F3)));
     }
 
-    internal void ToggleSourcePanel() => TogglePanel(SourcePanel, "텍스트");
+    internal void ToggleSourcePanel() { SourceToggle.IsChecked = true; TogglePanel(SourcePanel, "텍스트"); }
     internal void ToggleOriginalPanel()
     {
         OriginalToggle.IsChecked = true;
@@ -55,9 +55,9 @@ public partial class MainWindow
         PanelGrid.ColumnDefinitions.Clear();
         var panels = new[]
         {
-            (Panel: (FrameworkElement)OriginalPanel, Visible: OriginalToggle.IsChecked && !detachedPanels.ContainsKey(OriginalPanel), Weight: .82, Minimum: 260d),
-            (Panel: (FrameworkElement)SourcePanel, Visible: !detachedPanels.ContainsKey(SourcePanel), Weight: 1d, Minimum: 340d),
-            (Panel: (FrameworkElement)BrailleContainer, Visible: detachedWindow is null, Weight: 1d, Minimum: 340d)
+            (Panel: (FrameworkElement)OriginalPanel, Visible: OriginalToggle.IsChecked && !detachedPanels.ContainsKey(OriginalPanel), Weight: 380d, Minimum: 260d),
+            (Panel: (FrameworkElement)SourcePanel, Visible: SourceToggle.IsChecked && !detachedPanels.ContainsKey(SourcePanel), Weight: 484d, Minimum: 300d),
+            (Panel: (FrameworkElement)BrailleContainer, Visible: BrailleToggle.IsChecked && detachedWindow is null, Weight: 576d, Minimum: 300d)
         };
         var column = 0;
         foreach (var item in panels)
@@ -69,8 +69,8 @@ public partial class MainWindow
             }
             if (column > 0)
             {
-                PanelGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(6) });
-                var splitter = new GridSplitter { ResizeBehavior = GridResizeBehavior.PreviousAndNext };
+                PanelGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });
+                var splitter = new GridSplitter { ResizeBehavior = GridResizeBehavior.PreviousAndNext, ShowsPreview = true };
                 Grid.SetColumn(splitter, column++); PanelGrid.Children.Add(splitter);
             }
             PanelGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(item.Weight, GridUnitType.Star), MinWidth = item.Minimum });

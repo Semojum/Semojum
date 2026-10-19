@@ -11,6 +11,8 @@ public partial class MainWindow
     private long previewGeneration;
     private CancellationTokenSource? debounce;
     private bool pendingSourceTranslation;
+    private int currentPreviewLine;
+    private string currentPreviewCells = "";
 
     private async void QueuePreview(bool sourceChanged)
     {
@@ -31,7 +33,8 @@ public partial class MainWindow
             var result = await local.TranslateElementAsync(SourceEditor.Document.GetText(line), new(), session.Options, ct);
             if (generation == previewGeneration && session == owner)
             {
-                Braille.SetLinePreview(line.LineNumber, result.Cells);
+                currentPreviewLine = line.LineNumber; currentPreviewCells = result.Cells;
+                LineStrip.SetPreview(line.LineNumber, result.Cells);
                 detachedPane?.SetLinePreview(line.LineNumber, result.Cells);
             }
         }
@@ -42,8 +45,14 @@ public partial class MainWindow
 
     private void LinePreviewToggle_Click(object sender, RoutedEventArgs e)
     {
-        Braille.SetLinePreviewVisible(LinePreviewToggle.IsChecked);
-        detachedPane?.SetLinePreviewVisible(LinePreviewToggle.IsChecked);
+        SetLinePreviewVisible(LinePreviewToggle.IsChecked);
+    }
+
+    private void SetLinePreviewVisible(bool visible)
+    {
+        LinePreviewToggle.IsChecked = visible;
+        LineStrip.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        detachedPane?.SetLinePreviewVisible(visible);
         QueuePreview(false);
     }
 

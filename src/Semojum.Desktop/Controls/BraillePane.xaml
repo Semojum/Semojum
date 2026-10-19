@@ -1,21 +1,16 @@
-<UserControl x:Class="Semojum.Desktop.Controls.BraillePane" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit">
-  <Grid Background="White">
-    <Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition Height="*"/><RowDefinition Height="30"/><RowDefinition Height="96"/></Grid.RowDefinitions>
-    <Border Style="{StaticResource PanelHeader}"><DockPanel>
+<UserControl x:Class="Semojum.Desktop.Controls.BraillePane" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit" xmlns:local="clr-namespace:Semojum.Desktop.Controls">
+  <DockPanel Background="White">
+    <Border x:Name="Header" DockPanel.Dock="Top" Style="{StaticResource PanelHeader}" Height="32"><DockPanel>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <TextBlock x:Name="LayoutLabel" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,10,0"/>
-        <Button x:Name="DetachButton" Content="↗" ToolTip="점자 창 분리 / 합치기" Click="Detach_Click" Style="{StaticResource ToolButton}"/>
+        <TextBlock x:Name="LayoutLabel" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,8,0" ToolTip="{Binding Text, ElementName=StateLabel}"/>
+        <Button x:Name="DetachButton" Content="⧉" ToolTip="점자 창 분리 / 합치기" Click="Detach_Click" Style="{StaticResource PanelButton}"/>
+        <Button Content="×" ToolTip="점자 패널 숨기기" Click="Hide_Click" Style="{StaticResource PanelButton}"/>
       </StackPanel>
-      <TextBlock Text="❸  점자" FontWeight="SemiBold"/>
+      <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock Text="3" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
+      <TextBlock Text="점자" FontSize="12"/>
     </DockPanel></Border>
-    <ae:TextEditor x:Name="Editor" Grid.Row="1" FontFamily="Segoe UI Symbol" FontSize="25" Padding="8,12" ShowLineNumbers="True" WordWrap="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="점자 편집기"/>
-    <Border Grid.Row="2" Background="#F3F4F6" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,1" Padding="10,0"><DockPanel>
-      <TextBlock x:Name="StateLabel" DockPanel.Dock="Right" Foreground="{StaticResource Muted}" FontSize="11"/>
-      <TextBlock x:Name="LineLabel" Text="줄번역 · 1줄" FontSize="12"/>
-    </DockPanel></Border>
-    <StackPanel Grid.Row="3" Margin="14,7">
-      <TextBlock x:Name="LinePreview" FontFamily="Segoe UI Symbol" FontSize="24" TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="텍스트 입력 중인 줄의 점역 결과" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/>
-    </StackPanel>
-  </Grid>
+    <local:LineTranslation x:Name="PreviewStrip" DockPanel.Dock="Bottom" Visibility="Collapsed"/>
+    <TextBlock x:Name="StateLabel" Visibility="Collapsed"/>
+    <ae:TextEditor x:Name="Editor" FontFamily="Segoe UI Symbol" FontSize="22" Padding="8,4" ShowLineNumbers="True" WordWrap="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="점자 편집기"/>
+  </DockPanel>
 </UserControl>

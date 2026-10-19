@@ -54,7 +54,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         SourceEditor.Options.HighlightCurrentLine = true;
-        SourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 248, 177));
+        SourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 245, 163));
         SourceEditor.TextArea.TextView.CurrentLineBorder = null;
         SourceEditor.TextArea.Caret.PositionChanged += (_, _) =>
         {
@@ -62,16 +62,23 @@ public partial class MainWindow : Window
             RefreshSourcePosition(); QueuePreview(false);
         };
         SourceEditor.TextChanged += (_, _) => QueuePreview(true);
-        SourceEditor.GotKeyboardFocus += (_, _) => lastEditor = SourceEditor;
-        Braille.Editor.GotKeyboardFocus += (_, _) => lastEditor = Braille.Editor;
+        SourceEditor.GotKeyboardFocus += (_, _) => SetActiveEditor(SourceEditor);
+        Braille.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(Braille.Editor);
         Braille.DetachRequested += (_, _) => ToggleDetached();
+        Braille.HideRequested += (_, _) => HidePanel("hideBraille");
+        Braille.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
+        LineStrip.CloseRequested += (_, _) => SetLinePreviewVisible(false);
+        SourceEditor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
+        OriginalPanel.PreviewMouseDown += (_, _) => SetActiveEditor(null);
+        ZoomPicker.ItemsSource = new[] { "75%", "100%", "125%", "150%", "175%", "200%" };
+        ZoomPicker.SelectedItem = "100%";
         SetSession(smoke ? DocumentSession.Sample() : BlankDocument(), null, smoke);
         RestorePreferences();
         if (!smoke && preferences.WorkFolder is not null)
             Loaded += async (_, _) => { try { await OpenWorkFolderAsync(false); } catch (Exception ex) { ShowError(ex); } };
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         BindCommonKeys(this);
-        UpdatePanelLayout();
+        UpdatePanelLayout(); RefreshEditorStatus();
         Closed += async (_, _) => { documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); documents.Dispose(); http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
@@ -114,6 +121,7 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(DocumentSession.ActiveBlock)) ShowActiveBlock();
         if (e.PropertyName == nameof(DocumentSession.Options))
             foreach (var block in session.Blocks) { translator.Invalidate(block); translatedRevisions[block] = -1; block.State = "옵션 변경 · 재점역 필요"; }
+        RefreshEditorStatus();
         if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
         foreach (var window in detachedPanels.Values) window.Title = $"{window.Tag} — {session.Title}";
     }
@@ -124,6 +132,8 @@ public partial class MainWindow : Window
         var wasSwitching = switching; switching = true;
         try
         {
+            currentPreviewLine = 0; currentPreviewCells = "";
+            LineStrip.SetPreview(0, ""); detachedPane?.SetLinePreview(0, "");
             SourceEditor.Document = documents.Source(block);
             SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
             SourceEditor.ScrollToLine(SourceEditor.TextArea.Caret.Line);
@@ -132,12 +142,14 @@ public partial class MainWindow : Window
             RefreshSourcePosition();
         }
         finally { switching = wasSwitching; }
+        QueuePreview(false);
     }
 
     private void RefreshSourcePosition()
     {
         if (session?.ActiveBlock is { } block)
-            SourcePosition.Text = $"{block.Page}쪽 · {SourceEditor.TextArea.Caret.Line}줄 {SourceEditor.TextArea.Caret.Column}칸";
+            SourcePosition.Text = $"줄 {SourceEditor.TextArea.Caret.Line} / {SourceEditor.Document.LineCount}";
+        RefreshEditorStatus();
     }
 
     private async void BlockPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -235,6 +247,9 @@ public partial class MainWindow : Window
                     if (searchQuery.Length == 0) await ShowSearchAsync(false);
                     else session.Status = await FindNextAsync(searchQuery, ActiveSearchPanel);
                     break;
+                case "goto": ShowGoTo(); break;
+                case "hideOriginal": case "hideSource": case "hideBraille": HidePanel(action); break;
+                case "lineNumbers": LineNumbersToggle.IsChecked = !LineNumbersToggle.IsChecked; ApplyLineNumbers(); break;
                 case "previous": MoveBlock(-1); break;
                 case "next": MoveBlock(1); break;
                 case "detach": ToggleDetached(); break;
@@ -242,7 +257,7 @@ public partial class MainWindow : Window
                 case "detachOriginal": ToggleOriginalPanel(); break;
                 case "zoomIn": SetFontSize(SourceEditor.FontSize + 2); break;
                 case "zoomOut": SetFontSize(SourceEditor.FontSize - 2); break;
-                case "zoomReset": SetFontSize(18); break;
+                case "zoomReset": SetFontSize(14); break;
                 case "translate": if (session.ActiveBlock is { } block) await TranslateAsync(block, ChooseTranslation(block)); break;
                 case "translateAll":
                     var translationSession = session;
@@ -336,15 +351,26 @@ public partial class MainWindow : Window
     private void InsertText(string value) { SourceEditor.SelectedText = value; SourceEditor.Focus(); }
     private void SetFontSize(double size)
     {
-        SourceEditor.FontSize = Math.Clamp(size, 12, 32); FontSizeLabel.Text = SourceEditor.FontSize.ToString("0");
+        SourceEditor.FontSize = Math.Clamp(size, 10, 32);
+        Braille.Editor.FontSize = SourceEditor.FontSize * 22 / 14;
+        if (detachedPane is not null) detachedPane.Editor.FontSize = Braille.Editor.FontSize;
+        FontSizeLabel.Content = SourceEditor.FontSize.ToString("0") + " px";
+        var percent = (SourceEditor.FontSize / 14 * 100).ToString("0") + "%";
+        if (ZoomPicker.Text != percent) ZoomPicker.Text = percent;
     }
 
     internal void ToggleDetached()
     {
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
         detachedPane = new BraillePane(); detachedPane.Attach(session, documents);
-        detachedPane.Editor.GotKeyboardFocus += (_, _) => lastEditor = detachedPane?.Editor;
+        detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
+        detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
+        detachedPane.HideRequested += (_, _) => detachedWindow?.Close();
+        detachedPane.PreviewCloseRequested += (_, _) => SetLinePreviewVisible(false);
+        detachedPane.SetLinePreviewVisible(LinePreviewToggle.IsChecked);
+        detachedPane.SetLinePreview(currentPreviewLine, currentPreviewCells);
         detachedPane.DetachRequested += (_, _) => detachedWindow?.Close();
+        BrailleToggle.IsChecked = true;
         CopyBrailleSettings();
         detachedWindow = new Window { Title = $"점자 — {session.Title}", Owner = this, Width = 680, Height = 760, MinWidth = 420, MinHeight = 420, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         detachedWindow.Closed += (_, _) =>
@@ -361,12 +387,14 @@ public partial class MainWindow : Window
     {
         if (detachedPane is null) return;
         detachedPane.ConfigureKeys(sixDotKeys); detachedPane.SixDotEnabled = Braille.SixDotEnabled;
+        detachedPane.Editor.FontSize = Braille.Editor.FontSize; detachedPane.Editor.ShowLineNumbers = Braille.Editor.ShowLineNumbers;
         detachedPane.SpaceEnabled = Braille.SpaceEnabled; detachedPane.EnterEnabled = Braille.EnterEnabled;
     }
     private void SixDotToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (Braille is null) return;
         Braille.SixDotEnabled = SixDotToggle.IsChecked == true; CopyBrailleSettings();
+        RefreshEditorStatus();
         if (session is not null) session.Status = Braille.SixDotEnabled ? $"6점 입력 켜짐 · {sixDotKeys} · 점자 편집기에 입력하세요." : "6점 입력 꺼짐";
     }
     private void TimeoutToggle_Click(object sender, RoutedEventArgs e)

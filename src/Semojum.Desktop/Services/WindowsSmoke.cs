@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Semojum.Core;
@@ -23,6 +24,32 @@ internal static class WindowsSmoke
         window.WindowState = WindowState.Normal; window.Width = 1440; window.Height = 1000;
         await RenderAsync(window, Path.Combine(directory, "01-main.png"));
         Check(window.SourceEditor.ActualWidth > 250 && window.Braille.ActualWidth > 250, "Three-panel layout has usable editor widths");
+        Check(window.LineStrip.ActualHeight == 64 && Math.Abs(window.LineStrip.ActualWidth - window.PanelGrid.ActualWidth) < 2,
+            "Figma line translation strip spans all panels at 64px");
+        Check(window.SourceHeader.ActualHeight == 32 && window.ZoomPicker.ActualHeight == 32,
+            "Figma panel headers and toolbar controls retain compact geometry");
+        foreach (var icon in new[] { window.CutIcon, window.DraftIcon, window.LinenoIcon })
+        {
+            Check(icon.ActualWidth == 16 && icon.ActualHeight == 16 && icon.Drawings is { Bounds.IsEmpty: false },
+                "Local Figma SVG loaded at native 16px: " + icon.Name);
+        }
+        var initialVersion = window.Session.ChangeVersion;
+        window.HidePanel("hideOriginal"); window.UpdateLayout();
+        Check(window.OriginalPanel.Visibility == Visibility.Collapsed && window.SourceEditor.ActualWidth > 350,
+            "Hiding original redistributes editor space");
+        window.OriginalToggle.IsChecked = true; window.ToggleOriginalPanel(); window.ToggleOriginalPanel();
+        window.UpdateLayout();
+        Check(window.Session.ChangeVersion == initialVersion, "Panel visibility changes do not dirty the document");
+        var beforeNavigation = window.Session.ChangeVersion;
+        await window.NavigateAsync(NavigationTarget.OriginalPage, "+1", SearchPanel.Text);
+        Check(window.Session.ActiveBlock!.Page == 13 && window.SourceEditor.CaretOffset == 0,
+            "Relative original-page navigation synchronizes source and braille");
+        await window.NavigateAsync(NavigationTarget.OriginalPage, "12", SearchPanel.Text);
+        await window.NavigateAsync(NavigationTarget.Line, "2", SearchPanel.Text);
+        Check(window.SourceEditor.TextArea.Caret.Line == 2 && window.Session.ChangeVersion == beforeNavigation,
+            "Go to line moves caret without modifying document");
+        await CaptureDialogAsync(new GoToDialog(SearchPanel.Text,
+            (target, number) => window.NavigateAsync(target, number, SearchPanel.Text)) { Owner = window }, directory, "15-go-to.png");
         var block = window.Session.ActiveBlock!;
         var source = block.Source;
         window.SourceEditor.Select(0, 2); window.InsertTag("강조");
@@ -74,6 +101,7 @@ internal static class WindowsSmoke
         window.SourceEditor.CaretOffset = 8; window.Braille.Editor.CaretOffset = 3;
         window.Session.ActiveBlock = window.Session.Blocks[1]; window.Session.ActiveBlock = block;
         Check(window.SourceEditor.CaretOffset == 8 && window.Braille.Editor.CaretOffset == 3, "Block navigation restores each panel caret");
+        window.SourceEditor.CaretOffset = 8; window.Braille.Editor.CaretOffset = 3;
         await CaptureDialogAsync(new LayoutDialog(window.Session.Layout) { Owner = window }, directory, "03-page-settings.png");
         await CaptureDialogAsync(new SixDotDialog("F D S J K L", true, true) { Owner = window }, directory, "04-six-dot-settings.png");
         await CaptureDialogAsync(new MathDialog { Owner = window }, directory, "05-math.png");
@@ -135,6 +163,11 @@ internal static class WindowsSmoke
             while (real.Session.ActiveBlock!.Braille.Trim('⠀') != "⠫" && DateTime.UtcNow < deadline)
                 await Task.Delay(100);
             Check(real.Session.ActiveBlock!.Braille.Trim('⠀') == "⠫", "Production text input automatically translates with packaged engine");
+            while (real.LineStrip.Cells.Text.Trim('⠀') != "⠫" && DateTime.UtcNow < deadline) await Task.Delay(100);
+            Check(real.LineStrip.Cells.Text.Trim('⠀') == "⠫", "Production line translation reaches shared bottom strip");
+            real.ToggleDetached();
+            Check(real.DetachedPane!.PreviewStrip.Cells.Text.Trim('⠀') == "⠫", "Detached braille retains latest line translation");
+            real.ToggleDetached();
             var actualPath = Path.Combine(directory, "real-engine.smj");
             await SmjFile.SaveAsync(actualPath, SmjFile.Snapshot(real.Session));
             var actual = await SmjFile.LoadAsync(actualPath);

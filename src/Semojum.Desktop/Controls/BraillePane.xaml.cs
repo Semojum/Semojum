@@ -19,12 +19,18 @@ public partial class BraillePane : UserControl, IDisposable
     public bool SpaceEnabled { get; set; } = true;
     public bool EnterEnabled { get; set; } = true;
     public event EventHandler? DetachRequested;
+    public event EventHandler? HideRequested;
+    public event EventHandler? PreviewCloseRequested;
     public BraillePane()
     {
         InitializeComponent();
         Editor.Options.HighlightCurrentLine = true;
-        Editor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 248, 177));
+        Editor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 245, 163));
         Editor.TextArea.TextView.CurrentLineBorder = null;
+        Editor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
+        Editor.Options.ShowColumnRuler = true;
+        Editor.TextArea.TextView.ColumnRulerPen = new Pen(new SolidColorBrush(Color.FromRgb(242, 93, 93)), 1);
+        PreviewStrip.CloseRequested += (_, _) => PreviewCloseRequested?.Invoke(this, EventArgs.Empty);
         Editor.PreviewKeyDown += HandleKeyDown;
         Editor.PreviewKeyUp += HandleKeyUp;
         Editor.LostKeyboardFocus += (_, _) => chord.Reset();
@@ -83,15 +89,17 @@ public partial class BraillePane : UserControl, IDisposable
     {
         if (session is null || active is null) return;
         Editor.IsReadOnly = active.IsBrailleLocked;
-        LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄";
+        Editor.Options.ColumnRulerPosition = session.Layout.Columns;
+        LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄 · {Editor.TextArea.Caret.Line}줄 {Editor.TextArea.Caret.Column}칸";
         StateLabel.Text = active.State;
         var lineNumber = Math.Clamp(Editor.TextArea.Caret.Line, 1, Editor.Document.LineCount);
         var line = Editor.Document.GetLineByNumber(lineNumber);
         Editor.Foreground = active.HasManualBraille ? Brushes.Firebrick : Brushes.Black;
         if (line.Length > session.Layout.Columns) StateLabel.Text += $" · 판면 초과 +{line.Length - session.Layout.Columns}칸";
     }
-    public void SetLinePreview(int line, string cells) { LineLabel.Text = $"텍스트 줄번역 · {line}줄"; LinePreview.Text = cells; }
-    public void SetLinePreviewVisible(bool visible) { LinePreview.Visibility = visible ? Visibility.Visible : Visibility.Collapsed; }
+    public void SetLinePreview(int line, string cells) => PreviewStrip.SetPreview(line, cells);
+    public void SetLinePreviewVisible(bool visible) => PreviewStrip.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+    private void Hide_Click(object sender, RoutedEventArgs e) => HideRequested?.Invoke(this, EventArgs.Empty);
     private void HandleKeyDown(object sender, KeyEventArgs e)
     {
         if (!SixDotEnabled || Editor.IsReadOnly || Keyboard.Modifiers != ModifierKeys.None) return;
