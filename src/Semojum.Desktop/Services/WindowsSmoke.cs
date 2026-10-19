@@ -200,8 +200,12 @@ internal static class WindowsSmoke
             await CaptureDialogAsync(new AppearanceDialog(new(), editing.ApplyAppearance) { Owner = editing }, directory, "17-appearance.png");
         }
         finally { editing.PrepareSmokeShutdown(); editing.Close(); }
+        var invalidPdfRejected = false;
+        try { await PdfPreview.RenderAsync("not a PDF"u8.ToArray(), 1, CancellationToken.None); }
+        catch (InvalidDataException) { invalidPdfRejected = true; }
+        Check(invalidPdfRejected, "Invalid PDF is reported without terminating the editor");
         var pdf = await PdfPreview.RenderAsync(PdfFixture(), 1, CancellationToken.None);
-        Check(pdf.PixelWidth == 1800 && pdf.PixelHeight > 0, "Windows PDF fallback renders the requested original page");
+        Check(pdf.PixelWidth == 1800 && pdf.PixelHeight == 1800, "PDF preview recovers after invalid input and preserves page aspect ratio");
         var pixels = new byte[4]; pdf.CopyPixels(new Int32Rect(900, pdf.PixelHeight / 2, 1, 1), pixels, 4, 0);
         Check(pixels[2] > 180 && pixels[1] < 80, "PDF fallback preserves page contents instead of an empty placeholder");
         var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(pdf));
