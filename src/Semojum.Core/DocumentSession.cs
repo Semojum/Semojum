@@ -68,6 +68,7 @@ public sealed partial class DocumentSession : ObservableObject
     [ObservableProperty] private EditorBlock? activeBlock;
     [ObservableProperty] private string title = "제목 없음.smj";
     [ObservableProperty] private bool isDirty;
+    [ObservableProperty] private bool isReadOnly;
     [ObservableProperty] private string status = "준비";
     [ObservableProperty] private PageLayout layout = new();
     [ObservableProperty] private BrailleOptions options = new();
@@ -112,7 +113,7 @@ public sealed record OriginalPage(string Type, string? AssetName, string[]? Line
 
 public sealed record PageLayout(int Columns = 32, int Lines = 26, int StartPage = 1, string PageNumbers = "홀수 페이지", string Footer = "홀수 페이지",
     int CoverPages = 0, int SourcePageStart = 1, bool ShowSourcePageNumber = true, bool ShowBraillePageNumber = true,
-    bool ShowChangeLine = true, string FooterAlign = "center", string EditScope = "all", bool AdvancedAi = false)
+    bool ShowChangeLine = true, string FooterAlign = "center", string EditScope = "all", bool AdvancedAi = false, bool PadToEven = false)
 {
     public void Validate()
     {

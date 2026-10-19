@@ -6,7 +6,14 @@ namespace Semojum.Desktop;
 public partial class MainWindow
 {
     private int lastPreviewPage = 1;
-    private async Task ShowCompositionAsync(int face = 1)
+    private async Task OptimizeDocumentAsync()
+    {
+        var dialog = new OutputSettingsDialog(session.Layout, accountPreferences.Output) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        if (dialog.Remember) { accountPreferences = accountPreferences with { Output = dialog.Result }; await PersistAccountPreferencesAsync(); }
+        await ShowCompositionAsync(1, dialog.Result);
+    }
+    private async Task ShowCompositionAsync(int face = 1, OutputPreferences? output = null)
     {
         if (engine is not LocalBrailleEngine local) throw new ArgumentException("샘플 문서는 조판할 수 없습니다.");
         if (fileBusy) return;
@@ -14,6 +21,7 @@ public partial class MainWindow
         try
         {
             var snapshot = SmjFile.Snapshot(session).Manifest;
+            if (output is not null) snapshot = snapshot with { Layout = output.Layout ?? new(), Options = snapshot.Options with { LineBreakUnit = output.LineBreakUnit } };
             var range = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), null) { Owner = this };
             if (range.ShowDialog() != true) return;
             snapshot = DocumentExport.SelectOriginal(snapshot, range.Result);

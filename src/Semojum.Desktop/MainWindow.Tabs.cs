@@ -13,6 +13,7 @@ public partial class MainWindow
         public DocumentSession Model { get; } = model;
         public EditorDocuments Buffers { get; } = buffers;
         public string? Path;
+        public WorkFileLease? Lease;
         public CancellationTokenSource JobLifetime { get; } = new();
         public bool ShowOriginal;
         public Dictionary<EditorBlock, int> Translated = [];
@@ -37,8 +38,8 @@ public partial class MainWindow
         var context = new OpenDocument(model, new()) { Path = path, ShowOriginal = showOriginal };
         var header = new StackPanel { Orientation = Orientation.Horizontal };
         var label = new TextBlock { Margin = new(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-        void UpdateLabel() { label.Text = (model.IsDirty ? "● " : "") + model.Title; context.Tab.ToolTip = context.Path ?? model.Title; }
-        context.LabelListener = (_, e) => { if (e.PropertyName is nameof(DocumentSession.Title) or nameof(DocumentSession.IsDirty)) UpdateLabel(); };
+        void UpdateLabel() { label.Text = (model.IsReadOnly ? "[읽기 전용] " : "") + (model.IsDirty ? "● " : "") + model.Title; context.Tab.ToolTip = context.Path ?? model.Title; }
+        context.LabelListener = (_, e) => { if (e.PropertyName is nameof(DocumentSession.Title) or nameof(DocumentSession.IsDirty) or nameof(DocumentSession.IsReadOnly)) UpdateLabel(); };
         model.PropertyChanged += context.LabelListener;
         var close = new Button { Content = "×", MinHeight = 20, Height = 20, Width = 22, Padding = new(0), Margin = new(2, 0, 0, 0) };
         close.Click += async (_, e) => { e.Handled = true; await CloseDocumentAsync(context); };
@@ -73,7 +74,7 @@ public partial class MainWindow
         tabSwitching = true;
         try
         {
-            context.JobLifetime.Cancel();
+            context.JobLifetime.Cancel(); context.Lease?.Dispose();
             context.Model.PropertyChanged -= context.LabelListener;
             DocumentTabs.Items.Remove(context.Tab); openDocuments.Remove(context); context.Buffers.Dispose();
             if (context == openDocument) openDocument = null;

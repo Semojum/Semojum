@@ -62,7 +62,7 @@ public partial class MainWindow
         finally { fileBusy = false; }
     }
 
-    private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null)
+    private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null, int? restorePage = null)
     {
         var existing = openDocuments.FirstOrDefault(d => d.Model.JobId == id);
         if (existing is not null) { SetSession(existing.Model, existing.Path, existing.ShowOriginal); return; }
@@ -75,11 +75,11 @@ public partial class MainWindow
             if (originals is not null) foreach (var file in originals) model.OriginalFiles[file.FileName] = file.Bytes;
             model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "변환 대기 중", State = "대기", IsBrailleLocked = true, Metadata = new(IsBlocked: true) });
             SetSession(model, null, false);
-            _ = MonitorJobAsync(openDocument!, status);
+            _ = MonitorJobAsync(openDocument!, status, restorePage);
         }
         finally { fileBusy = false; }
     }
-    private async Task MonitorJobAsync(OpenDocument context, JobStatus status)
+    private async Task MonitorJobAsync(OpenDocument context, JobStatus status, int? restorePage)
     {
         var model = context.Model; var ct = context.JobLifetime.Token;
         var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
@@ -110,6 +110,7 @@ public partial class MainWindow
                     if (waiting) { model.ActiveBlock = null; model.Blocks.Clear(); waiting = false; }
                     foreach (var block in result.Blocks) { model.Add(block); nextId = Math.Max(nextId, block.Id + 1); RememberRevision(block, block.Braille.Length > 0 ? block.SourceRevision : -1); }
                     loadedPages.Add(page.Key);
+                    if (restorePage == page.Key) { model.ActiveBlock = result.Blocks[0]; restorePage = null; }
                     foreach (var block in result.Blocks.Where(b => b.Braille.Length == 0 && !b.Metadata.IsBlocked))
                     {
                         var outcome = await jobTranslator.TranslateAsync(block, ManualEditDecision.Keep, TimeSpan.FromSeconds(35), ct);
@@ -121,7 +122,9 @@ public partial class MainWindow
                 await Task.Delay(150, ct);
                 status = await jobs.StatusAsync(model.JobId!, ct);
             }
-            model.IsDirty = true;
+            if (waiting && status.TotalPages == 0 && status.OverallStatus == "COMPLETED")
+            { model.ActiveBlock = null; model.Blocks.Clear(); model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "새 문서" }); }
+            model.IsDirty = status.TotalPages > 0;
             var blocked = status.Pages.Count(p => p.Value is "BLOCKED" or "FAILED");
             model.Status = $"변환 {status.OverallStatus} · 확인할 쪽 {blocked}개 · Ctrl+S로 저장하세요.";
             if (session == model) ShowActiveBlock();

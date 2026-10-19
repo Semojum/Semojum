@@ -26,7 +26,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         {
             if (metadata.TableSource is null) throw new SidecarException("표 구조 데이터가 없어 표를 점역할 수 없습니다.", "MISSING_TABLE_SOURCE");
             if (metadata.TableDisplayText is { } original && original != text)
-                throw new SidecarException("표의 표시 텍스트가 바뀌었습니다. 표 구조 편집 규칙이 확정되기 전에는 기존 표를 그대로 재점역할 수 없습니다.", "TABLE_STRUCTURE_CHANGED");
+                throw new SidecarException("표의 표시 텍스트가 바뀌었습니다. 편집 → 표 구조 편집에서 칸 내용을 수정해 주세요.", "TABLE_STRUCTURE_CHANGED");
             response = await sidecar.InvokeAsync("table", new
             {
                 table_source = metadata.TableSource, render_mode = metadata.RenderMode ?? "",
@@ -119,7 +119,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 sources, footer, header,
                 opts = new
                 {
-                    cols = layout.Columns, rows = layout.Lines,
+                    cols = layout.Columns, rows = layout.Lines, pad_to_even = layout.PadToEven,
                     page_row_pages = layout.PageNumbers == "모든 페이지" ? "every" : "odd",
                     first_braille_page = layout.StartPage,
                     footer_align = layout.FooterAlign, wrap = settings.LineBreakUnit,

@@ -17,7 +17,7 @@ public partial class MainWindow
 
     private async void QueuePreview(bool sourceChanged)
     {
-        if (smoke || switching || session?.ActiveBlock is not { } block || engine is not LocalBrailleEngine local) return;
+        if (smoke || switching || session?.IsReadOnly == true || session?.ActiveBlock is not { } block || engine is not LocalBrailleEngine local) return;
         pendingSourceTranslation |= sourceChanged;
         var generation = ++previewGeneration;
         debounce?.Cancel(); debounce?.Dispose(); debounce = new();

@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Semojum.Core;
 
-public sealed record LineMemo(string LocalId, long? ServerId, string Panel, int LineIndex, string LineText, string Body, DateTimeOffset CreatedAt);
+public sealed record LineMemo(string LocalId, long? ServerId, string Panel, int LineIndex, string LineText, string Body, DateTimeOffset CreatedAt, bool Resolved = false);
 public sealed record SmjBlock(int Id, string? ServerId, int Page, string Heading, string Source, string Braille,
     string Memo, bool HasManualBraille, BlockMetadata Metadata, BrailleTranslation? Translation, LineMemo[] Memos,
     int SourceCaret = 0, int BrailleCaret = 0);

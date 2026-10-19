@@ -21,6 +21,9 @@ public sealed class AccountDialog : Window
         fields.Children.Add(new TextBlock { Text = "비밀번호" }); fields.Children.Add(password);
         fields.Children.Add(error); fields.Children.Add(submit);
         fields.Children.Add(new TextBlock { Text = "로그인 정보는 앱을 종료하면 지워집니다.", Margin = new Thickness(0, 14, 0, 0) });
+        var links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 12, 0, 0) };
+        links.Children.Add(CompactDialog.Button("공지사항", () => { new PublicNoticesDialog(api) { Owner = this }.ShowDialog(); return Task.CompletedTask; }));
+        links.Children.Add(CompactDialog.Button("문의하기", () => { new PublicInquiryDialog(api) { Owner = this }.ShowDialog(); return Task.CompletedTask; })); fields.Children.Add(links);
         var lifetime = new CancellationTokenSource();
         Closed += (_, _) => { lifetime.Cancel(); password.Clear(); };
         submit.Click += async (_, _) =>

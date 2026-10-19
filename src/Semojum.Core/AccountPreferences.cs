@@ -11,8 +11,9 @@ public sealed record EditorAppearance(string TextColor = "#1F1F1F", string Backg
     string LineNumberColor = "#666666", string LineNumberBackground = "#F3F3F3", string TagColor = "#2D609E",
     string OutlineColor = "#F25D5D", double OutlineWidth = 1, bool Bold = false, bool ShowLineNumbers = true,
     bool ShowFormattingMarks = false, int RecentCount = 10, bool ShowToolbar = true);
+public sealed record OutputPreferences(PageLayout? Layout = null, string LineBreakUnit = "syllable", bool Duplex = true);
 public sealed record AccountPreferences(string SixDotKeys = "F D S J K L", bool SpaceEnabled = true, bool EnterEnabled = true,
-    string[]? TextSnippets = null, string[]? BrailleSnippets = null, EditorAppearance? Appearance = null);
+    string[]? TextSnippets = null, string[]? BrailleSnippets = null, EditorAppearance? Appearance = null, OutputPreferences? Output = null);
 
 /// <summary>Device-local account preferences. This stores no document snapshots or authentication tokens.</summary>
 public sealed class AccountPreferenceStore(string directory)
@@ -37,6 +38,8 @@ public sealed class AccountPreferenceStore(string directory)
     public static void Validate(AccountPreferences value)
     {
         new SixDotInput().Configure(value.SixDotKeys);
+        value.Output?.Layout?.Validate();
+        if (value.Output is { LineBreakUnit: not ("syllable" or "word") }) throw new ArgumentException("출력 줄바꿈 옵션이 올바르지 않습니다.");
         foreach (var slots in new[] { value.TextSnippets, value.BrailleSnippets })
             if (slots is not null && (slots.Length != 10 || slots.Any(s => s is null || s.Length > 10000))) throw new ArgumentException("상용구는 패널별 10개, 각 10,000자까지입니다.");
         if (value.BrailleSnippets?.Any(s => !DocumentSearch.IsBrailleText(s)) == true) throw new ArgumentException("점자 상용구에는 점자와 공백만 넣을 수 있습니다.");

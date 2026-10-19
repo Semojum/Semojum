@@ -8,6 +8,38 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private void ShowLineMemos(SearchPanel panel, int? requestedLine = null)
+    {
+        if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
+        var editor = SearchEditor(panel); var line = requestedLine ?? editor.TextArea.Caret.Line - 1;
+        if (line < 0 || line >= editor.Document.LineCount) return;
+        var text = editor.Document.GetText(editor.Document.GetLineByNumber(line + 1));
+        new MemoThreadDialog(block, panel == SearchPanel.Text ? "TEXT" : "BRAILLE", line, text, EditStructure) { Owner = this }.ShowDialog();
+        foreach (var margin in editor.TextArea.LeftMargins.OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
+    }
+    private async Task ShowMemoListAsync()
+    {
+        var dialog = new MemoListDialog(session) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.Destination is { } d) { await NavigateToAsync(d); ShowLineMemos(d.Panel); }
+    }
+    private async Task EditTableAsync()
+    {
+        if (session.ActiveBlock is not { } block || block.Metadata.IsBlocked || engine is not LocalBrailleEngine local) return;
+        var source = block.Source.Contains("<!표>") ? block.Source : block.Metadata.TableSource;
+        if (source is null) throw new ArgumentException("현재 블록에는 편집할 표 구조가 없습니다.");
+        var dialog = new TableDialog(source, block.Metadata, session.Options, local) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Translation is null) return;
+        var choice = ChooseTranslation(block); if (choice == ManualEditDecision.Cancel) return;
+        EditStructure(() =>
+        {
+            block.Metadata = block.Metadata with { Type = "table", TableSource = dialog.SourceText, TableDisplayText = dialog.SourceText, OriginalSource = block.Metadata.OriginalSource ?? block.Source };
+            block.Source = dialog.SourceText;
+            if (choice == ManualEditDecision.Overwrite) { block.Braille = dialog.Translation.Cells; block.Translation = dialog.Translation; block.HasManualBraille = false; }
+        });
+        translatedRevisions[block] = block.SourceRevision;
+        session.Status = "표를 반영했습니다. Ctrl+S로 저장해 주세요.";
+        await Task.CompletedTask;
+    }
     private void PopulateTagMenu()
     {
         foreach (var tag in BrailleTags.All)
@@ -24,11 +56,13 @@ public partial class MainWindow
             if (dialog.ShowDialog() != true || dialog.Translation is null) return;
             var decision = ChooseTranslation(block);
             if (decision == ManualEditDecision.Cancel) return;
-            translator.Invalidate(block);
+            EditStructure(() =>
+            {
             block.Metadata = block.Metadata with { SelectedIndex = dialog.SelectedIndex, OriginalSource = block.Metadata.OriginalSource ?? block.Source };
-            documents.Source(block).Text = dialog.SourceText;
+            block.Source = dialog.SourceText;
             if (decision == ManualEditDecision.Overwrite)
             { block.Braille = dialog.Translation.Cells; block.Translation = dialog.Translation; block.HasManualBraille = false; block.State = "선택한 대체 초안"; }
+            });
             translatedRevisions[block] = block.SourceRevision;
             session.Status = "대체 초안을 적용했습니다. Ctrl+S로 저장해 주세요.";
         }

@@ -90,7 +90,7 @@ public partial class BraillePane : UserControl, IDisposable
     private void RefreshIndicators()
     {
         if (session is null || active is null) return;
-        Editor.IsReadOnly = active.IsBrailleLocked;
+        Editor.IsReadOnly = active.IsBrailleLocked || session.IsReadOnly;
         Editor.Options.ColumnRulerPosition = session.Layout.Columns;
         LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄 · {Editor.TextArea.Caret.Line}줄 {Editor.TextArea.Caret.Column}칸";
         StateLabel.Text = active.State;

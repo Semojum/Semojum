@@ -53,6 +53,8 @@ public partial class MainWindow : Window
         translator = new(engine);
         InitializeComponent();
         PopulateTagMenu();
+        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)));
+        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         SourceEditor.Options.HighlightCurrentLine = true;
@@ -80,7 +82,7 @@ public partial class MainWindow : Window
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         BindCommonKeys(this);
         UpdatePanelLayout(); RefreshEditorStatus();
-        Closed += async (_, _) => { dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Buffers.Dispose(); } http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
+        Closed += async (_, _) => { dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); } http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
     private static DocumentSession BlankDocument()
@@ -142,7 +144,7 @@ public partial class MainWindow : Window
             currentPreviewLine = 0; currentPreviewCells = "";
             LineStrip.SetPreview(0, ""); detachedPane?.SetLinePreview(0, "");
             SourceEditor.Document = documents.Source(block);
-            SourceEditor.IsReadOnly = block.Metadata.IsBlocked;
+            SourceEditor.IsReadOnly = session.IsReadOnly || block.Metadata.IsBlocked;
             SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
             SourceEditor.ScrollToLine(SourceEditor.TextArea.Caret.Line);
             Original.SelectBlock(block.Id, block.Page);
@@ -218,6 +220,8 @@ public partial class MainWindow : Window
         try
         {
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }
+            if (session.IsReadOnly && (action.StartsWith("tag:") || new[] { "undo", "redo", "cut", "paste", "replace", "addBlock", "deleteBlock", "moveBlockUp", "moveBlockDown", "indent", "unindent", "clearLine", "clearBlock", "table", "memo", "memos", "drafts", "symbol", "math", "footer", "layout", "translationOptions", "translate", "translateAll" }.Contains(action)))
+                throw new InvalidOperationException("읽기 전용 문서입니다. 다른 이름으로 저장한 뒤 편집해 주세요.");
             switch (action)
             {
                 case "new": await NewTextDocumentAsync(); break;
@@ -232,6 +236,7 @@ public partial class MainWindow : Window
                 case "lastFolder": await OpenWorkFolderAsync(false); break;
                 case "save": await SaveAsync(false); break;
                 case "saveAs": await SaveAsync(true); break;
+                case "optimize": await OptimizeDocumentAsync(); break;
                 case "composition": await ShowCompositionAsync(); break;
                 case "export": await ExportAsync(); break;
                 case "version": ShowVersion(); break;
@@ -262,6 +267,8 @@ public partial class MainWindow : Window
                 case "selectBlocks": selectionPanel = ActiveSearchPanel; SelectionPane.Visibility = Visibility.Visible; PopulateBlockSelection(); break;
                 case "deleteBlock": case "moveBlockUp": case "moveBlockDown": case "indent": case "unindent": SelectionEdit(action); break;
                 case "clearLine": ClearCurrentLine(); break;
+                case "clearBlock": if (lastEditor?.IsReadOnly != true) EditStructure(() => { if (ActiveSearchPanel == SearchPanel.Text) session.ActiveBlock!.Source = ""; else session.ActiveBlock!.EditBraille(""); }); break;
+                case "table": await EditTableAsync(); break;
                 case "board": if (EnsureAccount()) new BoardDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
                 case "notifications": if (EnsureAccount()) new NotificationsDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
                 case "hideOriginal": case "hideSource": case "hideBraille": HidePanel(action); break;
@@ -284,27 +291,8 @@ public partial class MainWindow : Window
                     var footer = new TextValueDialog("꼬리말", "꼬리말 묵자", session.FooterText, 200) { Owner = this };
                     if (footer.ShowDialog() == true) session.FooterText = footer.Value;
                     break;
-                case "memo":
-                    if (session.ActiveBlock is { } memoBlock)
-                    {
-                        var editor = lastEditor ?? SourceEditor;
-                        var panel = editor == SourceEditor ? "TEXT" : "BRAILLE";
-                        var line = Math.Clamp(editor.TextArea.Caret.Line, 1, editor.Document.LineCount);
-                        var memo = memoBlock.Memos.FirstOrDefault(m => m.Panel == panel && m.LineIndex == line - 1);
-                        var dialog = new MemoDialog($"{(panel == "TEXT" ? "텍스트" : "점자")} · 블록 {memoBlock.Id} · {line}줄 메모", memo?.Body ?? "") { Owner = this };
-                        if (dialog.ShowDialog() == true)
-                        {
-                            if (memo is not null) memoBlock.Memos.Remove(memo);
-                            if (dialog.Result.Length != 0)
-                            {
-                                var lineText = editor.Document.GetText(editor.Document.GetLineByNumber(line));
-                                memoBlock.Memos.Add(new(memo?.LocalId ?? Guid.NewGuid().ToString("N"), memo?.ServerId, panel, line - 1,
-                                    lineText[..Math.Min(80, lineText.Length)], dialog.Result, memo?.CreatedAt ?? DateTimeOffset.Now));
-                            }
-                            session.Status = $"블록 {memoBlock.Id} · {line}줄 메모를 반영했습니다.";
-                        }
-                    }
-                    break;
+                case "memo": ShowLineMemos(ActiveSearchPanel); break;
+                case "memos": await ShowMemoListAsync(); break;
                 case "drafts": await ShowAlternativesAsync(); break;
                 case "rules": ShowRules(); break;
                 case "symbol": await InsertSymbolAsync(); break;
@@ -375,6 +363,7 @@ public partial class MainWindow : Window
     {
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
         detachedPane = new BraillePane(); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
+        detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
         detachedPane.HideRequested += (_, _) => detachedWindow?.Close();
@@ -388,6 +377,7 @@ public partial class MainWindow : Window
         detachedWindow = new Window { Title = $"점자 — {session.Title}", Owner = this, Width = 680, Height = 760, MinWidth = 420, MinHeight = 420, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         detachedWindow.Closed += (_, _) =>
         {
+            if (detachedPane is not null) wideCarets.Remove(detachedPane.Editor);
             detachedPane?.Dispose(); detachedPane = null; detachedWindow = null;
             DetachedPlaceholder.Visibility = Visibility.Collapsed; Braille.Visibility = Visibility.Visible; lastEditor = Braille.Editor;
             UpdatePanelLayout();
@@ -424,17 +414,27 @@ public partial class MainWindow : Window
     {
         if (fileBusy) return false;
         var path = filePath;
-        if (saveAs || path is null)
+        if (saveAs || session.IsReadOnly || path is null)
         {
             var dialog = new SaveFileDialog { Title = "세모점 작업 저장", Filter = "세모점 작업 파일|*.smj", DefaultExt = ".smj", FileName = session.Title, AddExtension = true };
             if (dialog.ShowDialog(this) != true) return false;
             path = dialog.FileName;
+        }
+        WorkFileLease? candidate = null;
+        var samePath = filePath is not null && LocalWorkspace.SamePath(filePath, path);
+        if (!samePath || openDocument?.Lease is null)
+        {
+            if (openDocuments.Any(d => d != openDocument && d.Path is not null && LocalWorkspace.SamePath(d.Path, path))) { ShowError(new IOException("다른 탭에서 열어 둔 파일입니다.")); return false; }
+            candidate = WorkFileLease.TryAcquire(path);
+            if (candidate is null) { ShowError(new IOException("다른 창에서 편집 중이거나 쓸 수 없는 경로입니다. 다른 이름으로 저장해 주세요.")); return false; }
         }
         fileBusy = true;
         try
         {
             var owner = session; var version = owner.ChangeVersion; var snapshot = SmjFile.Snapshot(owner);
             await SmjFile.SaveAsync(path, snapshot);
+            if (candidate is not null && openDocument is not null) { openDocument.Lease?.Dispose(); openDocument.Lease = candidate; candidate = null; }
+            owner.IsReadOnly = false; ShowActiveBlock();
             filePath = path; if (openDocument is not null) openDocument.Path = path; owner.Title = Path.GetFileName(path);
             await RememberFileAsync(path);
             if (owner.JobId is not null)
@@ -458,7 +458,7 @@ public partial class MainWindow : Window
             return !owner.IsDirty;
         }
         catch (Exception ex) { ShowError(ex); return false; }
-        finally { fileBusy = false; }
+        finally { candidate?.Dispose(); fileBusy = false; }
     }
     private async Task<bool> ConfirmDiscardAsync()
     {
@@ -501,7 +501,18 @@ public partial class MainWindow : Window
             }
             else if (requestedPath.EndsWith(".mock.smi", StringComparison.OrdinalIgnoreCase))
             { model = await WorkFile.LoadAsync(requestedPath); model.Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj"; SetSession(model, null, false); }
-            else { model = await SmjFile.LoadAsync(requestedPath); SetSession(model, requestedPath, false); await RememberFileAsync(requestedPath); }
+            else
+            {
+                var lease = WorkFileLease.TryAcquire(requestedPath);
+                try
+                {
+                    model = await SmjFile.LoadAsync(requestedPath); model.IsReadOnly = lease is null;
+                    SetSession(model, requestedPath, false); openDocument!.Lease = lease; lease = null;
+                    await RememberFileAsync(requestedPath);
+                    if (model.IsReadOnly) MessageBox.Show(this, "다른 창에서 편집 중이거나 쓰기 권한이 없어 읽기 전용으로 열었습니다. 다른 이름으로 저장하면 편집할 수 있습니다.", "읽기 전용");
+                }
+                finally { lease?.Dispose(); }
+            }
             session.Status = "문서를 열었습니다. 자동 저장은 사용하지 않습니다.";
         }
         finally { IsEnabled = true; fileBusy = false; }

@@ -8,6 +8,9 @@ internal static class RemainingChecks
 {
     public static IEnumerable<(string Name, Func<Task> Run)> Tests()
     {
+        yield return ("Table grid round trips cells and rejects nested structural markers", Tables);
+        yield return ("Work file writer lease excludes a second writer and releases on close", Leases);
+        yield return ("Resolved memo state survives explicit SMJ save", ResolvedMemos);
         yield return ("SSE refreshes rejected access and parses multiline events without duplicated content", Events);
         yield return ("Appearance rejects invalid colors, nonfinite values and manual correction color", Appearance);
         yield return ("Empty text job sends settings without source or AI input", EmptyTextJob);
@@ -17,6 +20,27 @@ internal static class RemainingChecks
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
         yield return ("AI alternatives and rule evidence survive page parsing and SMJ persistence", Alternatives);
+    }
+    private static async Task Tables()
+    {
+        var text = TaggedTable.Write(new[] { new[] { "머리", "열" }, new[] { "<!강조>값<!/강조>", "" } });
+        var rows = TaggedTable.Read(text); Check(rows.Length == 2 && rows[1][0] == "<!강조>값<!/강조>" && rows[1][1] == "");
+        await Rejected(() => { TaggedTable.Write(new[] { new[] { "<!행>오류" } }); return Task.CompletedTask; });
+        await Rejected(() => { TaggedTable.Read("<!표>잘못된 표<!/표>"); return Task.CompletedTask; });
+    }
+    private static Task Leases()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".smj");
+        using (var first = WorkFileLease.TryAcquire(path)) { Check(first is not null); using var second = WorkFileLease.TryAcquire(path); Check(second is null); }
+        using var third = WorkFileLease.TryAcquire(path); Check(third is not null); return Task.CompletedTask;
+    }
+    private static async Task ResolvedMemos()
+    {
+        var model = new DocumentSession(); var block = new EditorBlock { Id = 1, Source = "문장", Page = 1 };
+        block.Memos.Add(new("memo", 12, "TEXT", 0, "문장", "해결 메모", DateTimeOffset.Now, true)); model.Add(block);
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".smj");
+        try { await SmjFile.SaveAsync(path, SmjFile.Snapshot(model)); Check((await SmjFile.LoadAsync(path)).Blocks[0].Memos[0].Resolved); }
+        finally { File.Delete(path); }
     }
     private static async Task Events()
     {

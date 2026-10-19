@@ -20,6 +20,7 @@ public class CompactDialog : Window
         var footer = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(214, 214, 214)), BorderThickness = new(0, 1, 0, 0), Child = Actions };
         DockPanel.SetDock(footer, Dock.Bottom); Root.Children.Add(footer);
         DockPanel.SetDock(Status, Dock.Bottom); Root.Children.Add(Status);
+        PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.F1) { new HelpWindow(Title) { Owner = this }.Show(); e.Handled = true; } };
         Closed += (_, _) => Lifetime.Cancel();
         Closing += (_, e) => { if (busy && !DialogResult.HasValue) e.Cancel = true; };
     }

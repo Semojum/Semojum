@@ -80,7 +80,6 @@ public partial class MainWindow
         var item = active.EnumerateArray().OrderByDescending(x => x.TryGetProperty("lastModifiedAt", out var t) ? t.GetString() : "").First();
         var id = item.GetProperty("jobId").GetString()!;
         var page = item.TryGetProperty("lastEditedPage", out var p) && p.ValueKind == JsonValueKind.Number && p.TryGetInt32(out var n) ? Math.Max(1, n) : 1;
-        await LoadJobAsync(id, (item.GetProperty("originalFileName").GetString() ?? "복구 작업") + ".smj");
-        if (session.Blocks.FirstOrDefault(b => b.Page == page) is { } block) session.ActiveBlock = block;
+        await LoadJobAsync(id, (item.GetProperty("originalFileName").GetString() ?? "복구 작업") + ".smj", restorePage: page);
     }
 }

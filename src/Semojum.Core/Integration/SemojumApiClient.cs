@@ -71,6 +71,9 @@ public sealed class SemojumApiClient
         return SendOnceAsync(HttpMethod.Get, path, null, null, cancellationToken);
     }
 
+    public Task<JsonElement> SubmitInquiryAsync(object inquiry, CancellationToken cancellationToken = default) =>
+        SendOnceAsync(HttpMethod.Post, "/api/public/inquiries", inquiry, null, cancellationToken);
+
     public async Task<JsonElement> SendAuthenticatedAsync(HttpMethod method, string path, object? body = null,
         CancellationToken cancellationToken = default)
     {

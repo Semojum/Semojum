@@ -17,6 +17,7 @@
             <MenuItem Header="쪽별 변환 상태…" Tag="pageStatus" Click="Action_Click"/>
             <Separator/><MenuItem Header="저장" InputGestureText="Ctrl+S" Tag="save" Click="Action_Click"/>
             <MenuItem Header="다른 이름으로 저장…" Tag="saveAs" Click="Action_Click"/>
+            <MenuItem Header="문서 최적화·출력 설정…" Tag="optimize" Click="Action_Click"/>
             <MenuItem Header="점자 면 미리보기·인쇄…" Tag="composition" Click="Action_Click"/>
             <MenuItem Header="문서 내보내기…" Tag="export" Click="Action_Click"/>
             <Separator/><MenuItem Header="샘플 문서 다시 열기" Tag="sample" Click="Action_Click"/>
@@ -32,9 +33,12 @@
             <MenuItem Header="이동…" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
             <MenuItem Header="새 블록 추가" InputGestureText="Ctrl+Enter" Tag="addBlock" Click="Action_Click"/>
             <MenuItem Header="현재 쪽 블록 선택…" Tag="selectBlocks" Click="Action_Click"/>
+            <MenuItem Header="블록 내용 비우기" Tag="clearBlock" Click="Action_Click"/>
             <MenuItem Header="블록 삭제" Tag="deleteBlock" Click="Action_Click"/>
             <MenuItem Header="현재 줄 지우기" Tag="clearLine" Click="Action_Click"/>
             <MenuItem Header="점자 규정…" Tag="rules" Click="Action_Click"/>
+            <MenuItem Header="표 구조 편집…" Tag="table" Click="Action_Click"/>
+            <MenuItem Header="메모 목록…" Tag="memos" Click="Action_Click"/>
             <MenuItem Header="현재 줄 메모…" Tag="memo" Click="Action_Click"/>
             <MenuItem Header="대체 초안…" Tag="drafts" Click="Action_Click"/>
           </MenuItem>

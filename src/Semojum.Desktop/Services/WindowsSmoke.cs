@@ -30,8 +30,8 @@ internal static class WindowsSmoke
             "Figma panel headers and toolbar controls retain compact geometry");
         foreach (var icon in new[] { window.CutIcon, window.DraftIcon, window.LinenoIcon })
         {
-            Check(icon.ActualWidth == 16 && icon.ActualHeight == 16 && icon.Drawings is { Bounds.IsEmpty: false },
-                "Local Figma SVG loaded at native 16px: " + icon.Name);
+            Check(Math.Abs(icon.ActualWidth - 16) < 0.01 && Math.Abs(icon.ActualHeight - 16) < 0.01 && icon.Drawings is { Bounds.IsEmpty: false },
+                $"Local Figma SVG loaded at native 16px: {icon.Name} ({icon.ActualWidth}×{icon.ActualHeight}, bounds={icon.Drawings?.Bounds})");
         }
         var initialVersion = window.Session.ChangeVersion;
         window.HidePanel("hideOriginal"); window.UpdateLayout();
