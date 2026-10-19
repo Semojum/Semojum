@@ -11,6 +11,18 @@ public partial class MainWindow
 {
     private readonly LocalWorkspace workspace = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Semojum", "preferences.json"));
     private EditorPreferences preferences = new();
+    private AccountPreferences accountPreferences = new();
+    private readonly AccountPreferenceStore profiles = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Semojum", "accounts"));
+
+    private void LoadAccountPreferences()
+    {
+        if (smoke || api.Account is null) return;
+        try { accountPreferences = profiles.Load(api.Account.LoginId); }
+        catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException or ArgumentException) { accountPreferences = new(); session.Status = "계정 설정을 읽지 못했습니다: " + ex.Message; }
+        sixDotKeys = accountPreferences.SixDotKeys; Braille.ConfigureKeys(sixDotKeys);
+        Braille.SpaceEnabled = accountPreferences.SpaceEnabled; Braille.EnterEnabled = accountPreferences.EnterEnabled; CopyBrailleSettings(); ApplyAppearance(accountPreferences.Appearance ?? new());
+    }
+    private Task PersistAccountPreferencesAsync() => smoke || api.Account is null ? Task.CompletedTask : profiles.SaveAsync(api.Account.LoginId, accountPreferences);
 
     private void RestorePreferences()
     {
@@ -41,7 +53,7 @@ public partial class MainWindow
         if (sender != e.Source) return;
         RecentFilesMenu.Items.Clear();
         var missing = false;
-        foreach (var path in preferences.RecentFiles ?? [])
+        foreach (var path in (preferences.RecentFiles ?? []).Take(appearance.RecentCount))
         {
             if (!File.Exists(path)) { preferences = LocalWorkspace.Forget(preferences, path); missing = true; continue; }
             var file = new FileInfo(path);

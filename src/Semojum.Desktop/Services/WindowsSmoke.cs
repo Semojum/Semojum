@@ -112,7 +112,9 @@ internal static class WindowsSmoke
         var loaded = await SmjFile.LoadAsync(path);
         Check(loaded.Blocks[0].Braille == block.Braille && loaded.Blocks[0].HasManualBraille, "Saved file preserves detached manual edits");
         window.Session.IsDirty = false;
+        var originalDocument = window.Session;
         await window.OpenAsync(path);
+        Check(window.DocumentTabs.Items.Count == 2, "Opening a work file retains the previous document tab");
         Check(window.SourceEditor.CaretOffset == 8 && window.Braille.Editor.CaretOffset == 3, "Reopening SMJ restores saved editor carets");
         window.SourceEditor.Document.Insert(0, "편집 중 ");
         var unsaved = window.SourceEditor.Text;
@@ -151,9 +153,29 @@ internal static class WindowsSmoke
                 directory, "12-find-replace.png");
         }
         finally { searchWindow.PrepareSmokeShutdown(); searchWindow.Close(); }
+        var editing = new MainWindow(smoke: true);
+        try
+        {
+            editing.Show();
+            var count = editing.Session.Blocks.Count;
+            await editing.AddBlockAsync();
+            Check(editing.Session.Blocks.Count == count + 1, "Ctrl+Enter action adds a paired block");
+            editing.SourceEditor.Undo();
+            Check(editing.Session.Blocks.Count == count, "Page history undoes structural insertion");
+            editing.SourceEditor.Redo();
+            Check(editing.Session.Blocks.Count == count + 1, "Page history redoes structural insertion");
+            var revision = editing.Session.ChangeVersion;
+            editing.ApplyAppearance(new(HighContrast: true, CursorWidth: 4, TextSize: 18, Bold: true));
+            editing.UpdateLayout();
+            Check(editing.SourceEditor.FontSize == 18 && editing.SourceEditor.Background == Brushes.Black && editing.Session.ChangeVersion == revision,
+                "Appearance changes are visible without editing the document");
+            await RenderAsync(editing, Path.Combine(directory, "16-high-contrast.png"));
+            await CaptureDialogAsync(new AppearanceDialog(new(), editing.ApplyAppearance) { Owner = editing }, directory, "17-appearance.png");
+        }
+        finally { editing.PrepareSmokeShutdown(); editing.Close(); }
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
-        var real = new MainWindow();
+        var real = new MainWindow(testWithoutAccount: true);
         try
         {
             real.Show();

@@ -15,6 +15,8 @@ public partial class BraillePane : UserControl, IDisposable
     private EditorBlock? active;
     private bool switchingBlock;
     private readonly SixDotInput chord = new();
+    public Brush NormalForeground { get; set; } = Brushes.Black;
+    public void RefreshAppearance() => RefreshIndicators();
     public bool SixDotEnabled { get; set; }
     public bool SpaceEnabled { get; set; } = true;
     public bool EnterEnabled { get; set; } = true;
@@ -94,7 +96,7 @@ public partial class BraillePane : UserControl, IDisposable
         StateLabel.Text = active.State;
         var lineNumber = Math.Clamp(Editor.TextArea.Caret.Line, 1, Editor.Document.LineCount);
         var line = Editor.Document.GetLineByNumber(lineNumber);
-        Editor.Foreground = active.HasManualBraille ? Brushes.Firebrick : Brushes.Black;
+        Editor.Foreground = active.HasManualBraille ? Brushes.Firebrick : NormalForeground;
         if (line.Length > session.Layout.Columns) StateLabel.Text += $" · 판면 초과 +{line.Length - session.Layout.Columns}칸";
     }
     public void SetLinePreview(int line, string cells) => PreviewStrip.SetPreview(line, cells);

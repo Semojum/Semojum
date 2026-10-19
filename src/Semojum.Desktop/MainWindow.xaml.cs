@@ -44,7 +44,7 @@ public partial class MainWindow : Window
     internal Window? DetachedWindow => detachedWindow;
     internal void PrepareSmokeShutdown() => allowClose = true;
 
-    public MainWindow(bool smoke = false)
+    internal MainWindow(bool smoke = false, bool testWithoutAccount = false)
     {
         this.smoke = smoke;
         api = new(http); jobs = new(api);
@@ -52,6 +52,8 @@ public partial class MainWindow : Window
         else { sidecar = EngineRuntime.Create(); engine = new LocalBrailleEngine(sidecar, () => session.Options); }
         translator = new(engine);
         InitializeComponent();
+        PopulateTagMenu();
+        InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         SourceEditor.Options.HighlightCurrentLine = true;
         SourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 245, 163));
@@ -66,27 +68,26 @@ public partial class MainWindow : Window
         Braille.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(Braille.Editor);
         Braille.DetachRequested += (_, _) => ToggleDetached();
         Braille.HideRequested += (_, _) => HidePanel("hideBraille");
-        Braille.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
+        Braille.Editor.TextArea.Caret.PositionChanged += (_, _) => { RefreshEditorStatus(); SpeakCaret(Braille.Editor); };
         LineStrip.CloseRequested += (_, _) => SetLinePreviewVisible(false);
         SourceEditor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
         OriginalPanel.PreviewMouseDown += (_, _) => SetActiveEditor(null);
         ZoomPicker.ItemsSource = new[] { "75%", "100%", "125%", "150%", "175%", "200%" };
         ZoomPicker.SelectedItem = "100%";
         SetSession(smoke ? DocumentSession.Sample() : BlankDocument(), null, smoke);
-        RestorePreferences();
-        if (!smoke && preferences.WorkFolder is not null)
-            Loaded += async (_, _) => { try { await OpenWorkFolderAsync(false); } catch (Exception ex) { ShowError(ex); } };
+        RestorePreferences(); ApplyAppearance(new());
+        if (!smoke && !testWithoutAccount) Loaded += async (_, _) => await StartAccountAsync();
         TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
         BindCommonKeys(this);
         UpdatePanelLayout(); RefreshEditorStatus();
-        Closed += async (_, _) => { documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); documents.Dispose(); http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
+        Closed += async (_, _) => { dotSpeech.Dispose(); documentLifetime.Cancel(); documentLifetime.Dispose(); Braille.Dispose(); foreach (var opened in openDocuments) opened.Buffers.Dispose(); http.Dispose(); if (sidecar is not null) await sidecar.DisposeAsync(); };
     }
 
     private static DocumentSession BlankDocument()
     {
         var model = new DocumentSession();
         model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "새 문서" });
-        return model;
+        model.IsDirty = false; return model;
     }
 
     private void SetSession(DocumentSession model, string? path, bool showOriginal)
@@ -96,10 +97,15 @@ public partial class MainWindow : Window
         {
             documentLifetime.Cancel(); documentLifetime.Dispose(); documentLifetime = new();
             if (session is not null) session.PropertyChanged -= SessionChanged;
-            documents.Dispose(); documents = new(); translator = new(engine); translatedRevisions.Clear();
+            StoreActiveDocument();
+            openDocument = RegisterDocument(model, path, showOriginal);
+            documents = openDocument.Buffers; translator = new(engine); translatedRevisions.Clear();
+            foreach (var pair in openDocument.Translated) translatedRevisions[pair.Key] = pair.Value;
             previewGeneration++; debounce?.Cancel(); pendingSourceTranslation = false;
-            session = model; filePath = path;
-            foreach (var block in session.Blocks) translatedRevisions[block] = block.Braille.Length != 0
+            SelectionPane.Visibility = Visibility.Collapsed; BlockSelectionList.UnselectAll();
+            session = model; filePath = openDocument.Path;
+            tabSwitching = true; DocumentTabs.SelectedItem = openDocument.Tab; tabSwitching = false;
+            foreach (var block in session.Blocks.Where(b => !translatedRevisions.ContainsKey(b))) translatedRevisions[block] = block.Braille.Length != 0
                 && (block.Translation?.SourceText is null || block.Translation.SourceText == block.Source) ? block.SourceRevision : -1;
             DataContext = session;
             foreach (var window in detachedPanels.Values)
@@ -132,6 +138,7 @@ public partial class MainWindow : Window
         var wasSwitching = switching; switching = true;
         try
         {
+            if (SelectionPane.Visibility == Visibility.Visible) PopulateBlockSelection();
             currentPreviewLine = 0; currentPreviewCells = "";
             LineStrip.SetPreview(0, ""); detachedPane?.SetLinePreview(0, "");
             SourceEditor.Document = documents.Source(block);
@@ -212,21 +219,22 @@ public partial class MainWindow : Window
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }
             switch (action)
             {
-                case "new":
-                    if (await ConfirmDiscardAsync())
-                    {
-                        SetSession(BlankDocument(), null, false);
-                    }
+                case "new": await NewTextDocumentAsync(); break;
+                case "closeDocument": if (openDocument is not null) await CloseDocumentAsync(openDocument); break;
+                case "defaults": if (EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog(); break;
+                case "forms":
+                    if (EnsureAccount()) { var form = new FormDialog(new(api), session.Layout, session.Options) { Owner = this }; if (form.ShowDialog() == true && form.Selected is { } selected) { session.Layout = selected.Layout; session.Options = selected.Options; } }
                     break;
-                case "sample": if (await ConfirmDiscardAsync()) SetSession(DocumentSession.Sample(), null, true); break;
+                case "sample": SetSession(DocumentSession.Sample(), null, true); break;
                 case "open": await OpenAsync(); break;
                 case "workFolder": await OpenWorkFolderAsync(true); break;
                 case "lastFolder": await OpenWorkFolderAsync(false); break;
                 case "save": await SaveAsync(false); break;
                 case "saveAs": await SaveAsync(true); break;
                 case "export": await ExportAsync(); break;
+                case "version": ShowVersion(); break;
                 case "login": new AccountDialog(api) { Owner = this }.ShowDialog(); RefreshAccount(); break;
-                case "logout": await api.LogoutAsync(); RefreshAccount(); break;
+                case "logout": await LogoutAccountAsync(); break;
                 case "serverOpen": await OpenServerAsync(); break;
                 case "upload": await UploadAsync(); break;
                 case "cancelJob": if (session.JobId is { } jobId) { await jobs.CancelAsync(jobId); session.Status = "변환 중단을 요청했습니다. 처리 중인 쪽이 마무리되면 반영됩니다."; } break;
@@ -238,9 +246,9 @@ public partial class MainWindow : Window
                 case "close": Close(); break;
                 case "undo": (lastEditor ?? SourceEditor).Undo(); break;
                 case "redo": (lastEditor ?? SourceEditor).Redo(); break;
-                case "cut": (lastEditor ?? SourceEditor).Cut(); break;
-                case "copy": (lastEditor ?? SourceEditor).Copy(); break;
-                case "paste": (lastEditor ?? SourceEditor).Paste(); break;
+                case "cut": if (!CopySelectedBlocks(true)) (lastEditor ?? SourceEditor).Cut(); break;
+                case "copy": if (!CopySelectedBlocks(false)) (lastEditor ?? SourceEditor).Copy(); break;
+                case "paste": if (!PasteSelectedBlocks()) (lastEditor ?? SourceEditor).Paste(); break;
                 case "find": await ShowSearchAsync(false); break;
                 case "replace": await ShowSearchAsync(true); break;
                 case "findNext":
@@ -248,6 +256,12 @@ public partial class MainWindow : Window
                     else session.Status = await FindNextAsync(searchQuery, ActiveSearchPanel);
                     break;
                 case "goto": ShowGoTo(); break;
+                case "addBlock": await AddBlockAsync(); break;
+                case "selectBlocks": selectionPanel = ActiveSearchPanel; SelectionPane.Visibility = Visibility.Visible; PopulateBlockSelection(); break;
+                case "deleteBlock": case "moveBlockUp": case "moveBlockDown": case "indent": case "unindent": SelectionEdit(action); break;
+                case "clearLine": ClearCurrentLine(); break;
+                case "board": if (EnsureAccount()) new BoardDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
+                case "notifications": if (EnsureAccount()) new NotificationsDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
                 case "hideOriginal": case "hideSource": case "hideBraille": HidePanel(action); break;
                 case "lineNumbers": LineNumbersToggle.IsChecked = !LineNumbersToggle.IsChecked; ApplyLineNumbers(); break;
                 case "previous": MoveBlock(-1); break;
@@ -289,20 +303,12 @@ public partial class MainWindow : Window
                         }
                     }
                     break;
-                case "drafts":
-                    if (session.ActiveBlock is { Translation.Drafts.Length: > 0 } draftBlock)
-                    {
-                        var draftDialog = new DraftDialog(draftBlock.Translation.Drafts) { Owner = this };
-                        if (draftDialog.ShowDialog() == true && ChooseTranslation(draftBlock) == ManualEditDecision.Overwrite)
-                        {
-                            var draft = draftBlock.Translation.Drafts[draftDialog.SelectedIndex];
-                            draftBlock.Metadata = draftBlock.Metadata with { RenderMode = draft.RenderMode };
-                            draftBlock.Braille = draft.Cells; draftBlock.Translation = draftBlock.Translation with { Cells = draft.Cells, Breaks = draft.Breaks, RenderMode = draft.RenderMode };
-                            draftBlock.HasManualBraille = false; draftBlock.State = "표 초안 · " + draft.Label;
-                        }
-                    }
-                    else session.Status = "이 블록의 표 점역 초안이 없습니다. 표를 점역한 후 선택할 수 있습니다.";
-                    break;
+                case "drafts": await ShowAlternativesAsync(); break;
+                case "rules": ShowRules(); break;
+                case "symbol": await InsertSymbolAsync(); break;
+                case "appearance": await EditAppearanceAsync(false); break;
+                case "colors": await EditAppearanceAsync(true); break;
+                case "snippets": await EditSnippetsAsync(); break;
                 case "math":
                     var math = new MathDialog { Owner = this };
                     if (math.ShowDialog() == true) InsertText($"<!수식>{math.Latex}<!/수식>");
@@ -320,15 +326,19 @@ public partial class MainWindow : Window
                         CopyBrailleSettings(); session.Status = $"6점키 · {sixDotKeys}";
                         preferences = preferences with { SixDotKeys = sixDotKeys, SpaceEnabled = sixdot.Space, EnterEnabled = sixdot.Enter };
                         await PersistPreferencesAsync();
+                        accountPreferences = accountPreferences with { SixDotKeys = sixDotKeys, SpaceEnabled = sixdot.Space, EnterEnabled = sixdot.Enter };
+                        await PersistAccountPreferencesAsync();
                     }
                     break;
                 case "translationOptions":
                     var options = new TranslationOptionsDialog(autoTranslate, session.Options) { Owner = this };
                     if (options.ShowDialog() == true) { autoTranslate = options.AutoTranslate; session.Options = options.Result; }
                     break;
-                case "help":
-                    MessageBox.Show(this, "세모점 편집기\n\n텍스트 입력이 멈추면 내장 엔진으로 점역합니다. 직접 고친 점자는 덮어쓰기 전에 확인합니다.\n\nCtrl+S로 .smj를 저장합니다. 연결된 서버 작업은 서버에도 저장하며 실패는 별도로 알립니다. 자동 저장은 없습니다.\n\n파일 메뉴에서 문서를 업로드하거나 BRF로 내보낼 수 있습니다. 점역 결과는 제작 전에 검수해 주세요.", "사용 안내", MessageBoxButton.OK, MessageBoxImage.Information);
+                case "help": new HelpWindow(ActiveSearchPanel == SearchPanel.Text ? "텍스트 고치기" : "점자 직접 고치기") { Owner = this }.Show(); break;
+                case "usage":
+                    if (EnsureAccount()) { var usage = new UsageDialog(api) { Owner = this }; if (usage.ShowDialog() == true && usage.JobId is { } id) await LoadJobAsync(id, Path.GetFileNameWithoutExtension(usage.FileName ?? "서버 작업") + ".smj"); }
                     break;
+                case "about": MessageBox.Show(this, $"세모점 {CurrentVersion.ToString(3)}\n운영 기관: 등록 전\n문의: contact-semojum@gmail.com", "세모점 정보"); break;
             }
         }
         catch (Exception ex) { ShowError(ex); }
@@ -362,7 +372,7 @@ public partial class MainWindow : Window
     internal void ToggleDetached()
     {
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
-        detachedPane = new BraillePane(); detachedPane.Attach(session, documents);
+        detachedPane = new BraillePane(); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
         detachedPane.HideRequested += (_, _) => detachedWindow?.Close();
@@ -371,7 +381,8 @@ public partial class MainWindow : Window
         detachedPane.SetLinePreview(currentPreviewLine, currentPreviewCells);
         detachedPane.DetachRequested += (_, _) => detachedWindow?.Close();
         BrailleToggle.IsChecked = true;
-        CopyBrailleSettings();
+        CopyBrailleSettings(); ApplyAppearance(appearance);
+        detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => { if (detachedPane is not null) SpeakCaret(detachedPane.Editor); };
         detachedWindow = new Window { Title = $"점자 — {session.Title}", Owner = this, Width = 680, Height = 760, MinWidth = 420, MinHeight = 420, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         detachedWindow.Closed += (_, _) =>
         {
@@ -422,7 +433,7 @@ public partial class MainWindow : Window
         {
             var owner = session; var version = owner.ChangeVersion; var snapshot = SmjFile.Snapshot(owner);
             await SmjFile.SaveAsync(path, snapshot);
-            filePath = path; owner.Title = Path.GetFileName(path);
+            filePath = path; if (openDocument is not null) openDocument.Path = path; owner.Title = Path.GetFileName(path);
             await RememberFileAsync(path);
             if (owner.JobId is not null)
             {
@@ -469,7 +480,9 @@ public partial class MainWindow : Window
         }
         if (filePath is not null && LocalWorkspace.SamePath(filePath, requestedPath))
         { Activate(); SourceEditor.Focus(); return; }
-        if (!await ConfirmDiscardAsync()) return;
+        var existing = openDocuments.FirstOrDefault(d => d.Path is not null && LocalWorkspace.SamePath(d.Path, requestedPath));
+        if (existing is not null) { SetSession(existing.Model, existing.Path, existing.ShowOriginal); return; }
+        if (!smoke && !EnsureAccount()) return;
         fileBusy = true; IsEnabled = false;
         try
         {
@@ -481,6 +494,7 @@ public partial class MainWindow : Window
                 model = new DocumentSession { Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj" };
                 model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "불러온 텍스트", Source = text, State = "점역 전" });
                 model.OriginalFiles[Path.GetFileName(requestedPath)] = await File.ReadAllBytesAsync(requestedPath);
+                if (!smoke) { var created = await jobs.CreateTextAsync(Path.GetFileNameWithoutExtension(requestedPath), model); model.JobId = created.JobId; model.OwnerLoginId = api.Account!.LoginId; }
                 model.IsDirty = true; SetSession(model, null, false);
             }
             else if (requestedPath.EndsWith(".mock.smi", StringComparison.OrdinalIgnoreCase))
@@ -496,7 +510,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (closing) return;
         closing = true;
-        try { if (await ConfirmDiscardAsync()) { allowClose = true; _ = Dispatcher.BeginInvoke(new Action(Close)); } }
+        try { if (await ConfirmAllDocumentsAsync()) { allowClose = true; _ = Dispatcher.BeginInvoke(new Action(Close)); } }
         finally { closing = false; }
     }
     private void ShowError(Exception ex) => MessageBox.Show(this, ex.Message, "작업을 완료하지 못했습니다", MessageBoxButton.OK, MessageBoxImage.Warning);

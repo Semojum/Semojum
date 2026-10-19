@@ -29,8 +29,8 @@ internal static class IntegrationChecks
         yield return ("Braille folding respects syllables, empty lines and note indicators", Folding);
         yield return ("Tags distinguish pairs, singletons and layout-only footer", Tags);
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_PYTHON") is { Length: > 0 } python)
-            yield return ("Real v3.4.17 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
-        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.17 Python executable");
+            yield return ("Real v3.4.24 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
+        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.24 Python executable");
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_EXECUTABLE") is { Length: > 0 } executable)
             yield return ("Packaged engine grades, table drafts and BRF round trip", () => RealEngine(executable, true));
     }
@@ -354,7 +354,7 @@ internal static class IntegrationChecks
         await using var sidecar = new BrailleSidecar(new(python, packaged ? [] : ["-m", "semojum_braille.sidecar"]));
         var engine = new LocalBrailleEngine(sidecar);
         var grade2 = await engine.TranslateElementAsync("가", new(), new()); Equal("⠫", grade2.Cells.Trim('⠀'));
-        Equal("3.4.17", sidecar.EngineVersion);
+        Equal("3.4.24", sidecar.EngineVersion);
         var grade1 = await engine.TranslateElementAsync("가", new(), new(KoreanGrade1: true)); Equal("⠈⠣", grade1.Cells.Trim('⠀'));
         var dropped = await engine.TranslateElementAsync("가▶나", new(), new()); True(dropped.NeedsReview); Equal("▶", dropped.Dropped[0].Text);
         var table = await engine.TranslateElementAsync("", new(Type: "table", TableSource: "<!표>\n<!행><!칸>구분<!칸>가<!/행>\n<!행><!칸>나<!칸>다<!/행>\n<!/표>", RenderMode: "table_grid"), new());
@@ -374,6 +374,13 @@ internal static class IntegrationChecks
         True(DocumentExport.BrailleText(selected).StartsWith("⠁⠃\r\n"));
         True(wholePages[0][^1] != selected[0][^1]); // Printed page numbers remain 8 and 9, rather than restarting at 7.
         var footer = await engine.TranslateElementAsync("Ⅳ", new(Type: "header_footer"), new()); True(footer.Cells.StartsWith('⠴'));
+        var symbols = await engine.SymbolsAsync(); True(symbols.Any(s => s.Char == "※" && s.Cells.Length > 0));
+        var unknown = await engine.TranslateElementAsync("<!모르는태그>가", new(), new()); True(unknown.NeedsReview && unknown.UnknownTags!.Contains("모르는태그"));
+        var breaks = new DocumentSession { Layout = new(Columns: 16, Lines: 4, ShowSourcePageNumber: false, ShowBraillePageNumber: false) };
+        breaks.Add(new EditorBlock { Id = 1, Page = 1, Source = "가", Braille = grade2.Cells });
+        breaks.Add(new EditorBlock { Id = 2, Page = 1, Source = "<!쪽바꿈>", Braille = "" });
+        breaks.Add(new EditorBlock { Id = 3, Page = 1, Source = "나", Braille = "⠉" });
+        Equal(2, DocumentExport.BrfPages(await engine.BuildBrfAsync(breaks)).Length);
         var priority = await engine.ReviewPriorityAsync(grade1.Cells, "가", new(), new(KoreanGrade1: true));
         True(new[] { "먼저 확인", "확인", "나중에 확인" }.Contains(priority));
         True((await engine.DecodeAsync(grade1.Cells, new(KoreanGrade1: true))).Contains('가'));

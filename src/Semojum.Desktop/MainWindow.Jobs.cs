@@ -22,7 +22,7 @@ public partial class MainWindow
     {
         if (fileBusy || !EnsureAccount()) return;
         var dialog = new TextValueDialog("서버 작업 열기", "작업 ID") { Owner = this };
-        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.Value) || !await ConfirmDiscardAsync()) return;
+        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.Value)) return;
         await LoadJobAsync(dialog.Value.Trim(), "서버 작업.smj");
     }
 
@@ -30,13 +30,19 @@ public partial class MainWindow
     {
         if (fileBusy || !EnsureAccount()) return;
         var dialog = new OpenFileDialog { Title = "AI 변환할 문서 선택", Multiselect = true, Filter = "문서와 이미지|*.pdf;*.hwp;*.hwpx;*.txt;*.jpg;*.jpeg;*.png" };
-        if (dialog.ShowDialog(this) != true || !await ConfirmDiscardAsync()) return;
+        if (dialog.ShowDialog(this) != true) return;
         if (dialog.FileNames.Sum(p => new FileInfo(p).Length) > JobClient.MaximumUploadBytes)
             throw new InvalidDataException("업로드 전체 크기는 100 MB까지입니다.");
+        if (dialog.FileNames.Length == 1 && Path.GetExtension(dialog.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase)) { await OpenAsync(dialog.FileName); return; }
+        var orderedFiles = dialog.FileNames;
+        if (orderedFiles.Length > 1) { var order = new ImageOrderDialog(orderedFiles) { Owner = this }; if (order.ShowDialog() != true) return; orderedFiles = order.Paths; }
         var defaults = await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/braille-options", cancellationToken: documentLifetime.Token);
         var settings = new DocumentSession { Options = JobClient.ReadOptions(defaults) };
         if (defaults.TryGetProperty("pageNumberLine", out var pageLine))
             settings.Layout = settings.Layout with { PageNumbers = pageLine.GetString() switch { "none" => "출력 안 함", "every" => "모든 페이지", _ => "홀수 페이지" } };
+        var form = new FormDialog(new(api), settings.Layout, settings.Options, defaults.TryGetProperty("formId", out var f) ? f.GetString() : null) { Owner = this };
+        if (form.ShowDialog() != true) return;
+        if (form.Selected is { } selected) { settings.Options = selected.Options; settings.Layout = selected.Layout; }
         var options = new TranslationOptionsDialog(autoTranslate, settings.Options) { Owner = this };
         if (options.ShowDialog() != true) return;
         settings.Options = options.Result;
@@ -48,9 +54,9 @@ public partial class MainWindow
         try
         {
             var files = new List<UploadFile>();
-            foreach (var path in dialog.FileNames) files.Add(new(Path.GetFileName(path), await File.ReadAllBytesAsync(path)));
+            foreach (var path in orderedFiles) files.Add(new(Path.GetFileName(path), await File.ReadAllBytesAsync(path)));
             session.Status = "파일 업로드 중…";
-            var job = await jobs.UploadAsync(files, settings, documentLifetime.Token);
+            var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, form.Selected?.FormId);
             await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(dialog.FileNames[0]) + ".smj", files);
         }
         finally { fileBusy = false; }

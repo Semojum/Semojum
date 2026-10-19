@@ -15,7 +15,7 @@ public sealed class LocalWorkspace(string preferencesPath)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly SemaphoreSlim writeGate = new(1, 1);
-    public const int RecentLimit = 10;
+    public const int RecentLimit = 50;
     public static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     public string? LoadWarning { get; private set; }
 

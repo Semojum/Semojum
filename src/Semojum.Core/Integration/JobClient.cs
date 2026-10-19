@@ -21,19 +21,17 @@ public sealed record RemotePage(int Number, string Status, EditorBlock[] Blocks,
 public sealed class JobClient(SemojumApiClient api)
 {
     public const long MaximumUploadBytes = 100L * 1024 * 1024;
-    public async Task<JobCreated> CreateTextAsync(string text, string fileName, DocumentSession settings, CancellationToken ct = default)
+    public async Task<JobCreated> CreateTextAsync(string fileName, DocumentSession settings, CancellationToken ct = default, string? formId = null)
     {
-        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("AI 변환할 본문을 입력해 주세요.");
-        if (Encoding.UTF8.GetByteCount(text) > MaximumUploadBytes) throw new ArgumentException("텍스트는 100 MB까지 변환할 수 있습니다.");
         var result = await api.SendAuthenticatedAsync(HttpMethod.Post, "/api/jobs/text", new
         {
-            text, fileName, insertPageNumber = settings.Layout.ShowSourcePageNumber, footerText = settings.FooterText,
+            fileName, formId, insertPageNumber = settings.Layout.ShowSourcePageNumber, footerText = settings.FooterText,
             layoutOptions = LayoutBody(settings.Layout), brailleOptions = OptionsBody(settings.Options)
         }, ct);
         return Created(result);
     }
 
-    public async Task<JobCreated> UploadAsync(IReadOnlyList<UploadFile> files, DocumentSession settings, CancellationToken ct = default)
+    public async Task<JobCreated> UploadAsync(IReadOnlyList<UploadFile> files, DocumentSession settings, CancellationToken ct = default, string? formId = null)
     {
         var allowed = new[] { ".pdf", ".hwp", ".hwpx", ".txt", ".png", ".jpg", ".jpeg" };
         if (files.Count == 0 || files.Any(f => !allowed.Contains(Path.GetExtension(f.FileName).ToLowerInvariant())))
@@ -54,6 +52,7 @@ public sealed class JobClient(SemojumApiClient api)
             }
             foreach (var pair in LayoutBody(settings.Layout).Concat(OptionsBody(settings.Options)).Where(p => p.Key != "visualDescriptions"))
                 form.Add(new StringContent(pair.Value is string s ? s : JsonSerializer.Serialize(pair.Value)), pair.Key);
+            if (formId is not null) form.Add(new StringContent(formId), "formId");
             form.Add(new StringContent(settings.FooterText), "footerText");
             form.Add(new StringContent(settings.Layout.ShowSourcePageNumber ? "true" : "false"), "insertPageNumber");
             return form;
@@ -118,7 +117,9 @@ public sealed class JobClient(SemojumApiClient api)
                         Text(item, "table_source"), Text(item, "render_mode"), Text(item, "tn_text"), Number(item, "table_box_level"),
                         boxes.TryGetValue(id, out var box) ? [Number(box, "x"), Number(box, "y"), Number(box, "x2"), Number(box, "y2")] : null,
                         item.TryGetProperty("selected_idx", out var index) && index.ValueKind == JsonValueKind.Number && index.TryGetInt32(out var i) ? i : null,
-                        type == "table" ? source : null),
+                        type == "table" ? source : null,
+                        ReadDrafts(item, braille.GetValueOrDefault(id)), ReadRules(item, braille.GetValueOrDefault(id)), source,
+                        Text(item, "visual_subtype"), Bool(item, "is_blocked")),
                     // A restored server result may contain manual edits. Do not overwrite on open.
                     HasManualBraille = braille.ContainsKey(id)
                 };
@@ -142,7 +143,7 @@ public sealed class JobClient(SemojumApiClient api)
     public async Task<JobSaveResult> SaveAsync(SmjSnapshot snapshot, CancellationToken ct = default)
     {
         var m = snapshot.Manifest;
-        if (string.IsNullOrWhiteSpace(m.JobId)) throw new InvalidOperationException("서버 작업이 없는 로컬 초안입니다. AI 변환으로 작업을 만든 후 서버에 저장할 수 있습니다.");
+        if (string.IsNullOrWhiteSpace(m.JobId)) throw new InvalidOperationException("서버 작업이 없는 로컬 초안입니다. 새 텍스트 작업을 만든 후 서버에 저장할 수 있습니다.");
         if (api.Account?.LoginId != m.OwnerLoginId) throw new InvalidOperationException("이 작업을 만든 계정으로 로그인해 주세요.");
         if (m.JobStatus is "PENDING" or "IN_PROGRESS") throw new InvalidOperationException("변환이 끝난 뒤 서버에 저장해 주세요.");
         if (m.Blocks.Any(b => b.ServerId is null)) throw new InvalidOperationException("서버 id가 없는 새 블록의 저장 규칙이 아직 확정되지 않았습니다. 로컬 파일은 보존됩니다.");
@@ -195,6 +196,21 @@ public sealed class JobClient(SemojumApiClient api)
         o.TryGetProperty("visualDescriptions", out var v) && v.ValueKind == JsonValueKind.Object
             ? v.Deserialize<Dictionary<string, VisualDescription>>(new JsonSerializerOptions(JsonSerializerDefaults.Web)) : null);
     private static JobCreated Created(JsonElement e) => new(Required(e, "jobId"), Number(e, "totalPages"), Required(e, "status"));
+    private static AlternativeDraft[] ReadDrafts(JsonElement text, JsonElement braille)
+    {
+        var items = Array(text, "drafts");
+        if (items.Length == 0 && braille.ValueKind == JsonValueKind.Object) items = Array(braille, "drafts");
+        return items.Select(d => new AlternativeDraft(Text(d, "label") ?? "초안", Text(d, "text") ?? "",
+            Text(d, "tn_text"), d.TryGetProperty("contents", out _) ? Contents(d) : null,
+            Text(d, "reason") ?? Text(d, "rationale"))).ToArray();
+    }
+    private static RuleEvidence[] ReadRules(JsonElement text, JsonElement braille)
+    {
+        var items = Array(text, "rule_trail").Concat(braille.ValueKind == JsonValueKind.Object ? Array(braille, "rule_trail") : []);
+        return items.Select(r => new RuleEvidence(Text(r, "rule_id") ?? "", Text(r, "source") ?? "", Text(r, "section") ?? "",
+            Text(r, "title") ?? "", Text(r, "excerpt") ?? "", Number(r, "line_no"), Number(r, "col_start"), Number(r, "col_end")))
+            .Distinct().ToArray();
+    }
     private static string JobPath(string id, string suffix) { ArgumentException.ThrowIfNullOrWhiteSpace(id); return $"/api/jobs/{Uri.EscapeDataString(id)}/{suffix}"; }
     private static string[] Lines(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
     private static string Contents(JsonElement e) => string.Join("\n", Array(e, "contents").Select(x => x.GetString() ?? ""));

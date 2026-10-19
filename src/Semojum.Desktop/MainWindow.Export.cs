@@ -23,7 +23,7 @@ public partial class MainWindow
         {
             var owner = session;
             var snapshot = SmjFile.Snapshot(owner).Manifest;
-            var invalid = owner.Blocks.Where(b => b.IsBrailleLocked || b.Braille.Length == 0 && b.Source.Length > 0
+            var invalid = owner.Blocks.Where(b => b.IsBrailleLocked || b.Braille.Length == 0 && b.Source.Length > 0 && !LocalBrailleEngine.IsLayoutMarker(b.Source)
                 || !b.HasManualBraille && translatedRevisions.GetValueOrDefault(b, -1) != b.SourceRevision).Select(b => b.Id).ToHashSet();
             var plainText = dialog.FilterIndex == 2;
             var local = engine as LocalBrailleEngine;
@@ -34,7 +34,9 @@ public partial class MainWindow
                 if (selected.Blocks.Any(b => invalid.Contains(b.Id)))
                     throw new InvalidOperationException("선택한 범위에 점역하지 못했거나 원문·옵션 변경 후 점역이 필요한 블록이 있습니다. 재점역 후 내보내 주세요.");
                 if (local is null) throw new InvalidOperationException("샘플 엔진에서는 점자 문서를 내보낼 수 없습니다.");
-                return await local.BuildBrfAsync(selected, ct);
+                var result = await local.ComposeAsync(selected, ct);
+                if (result.Replaced.Count > 0 && MessageBox.Show(this, "BRF에서 빈칸으로 바뀌는 문자: " + string.Join(", ", result.Replaced.Select(p => $"{p.Key}({p.Value})")) + "\n계속 내보내시겠습니까?", "문자 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) throw new OperationCanceledException("내보내기를 취소했습니다.");
+                return result.Brf;
             }
             async Task<int> CountAsync()
             {

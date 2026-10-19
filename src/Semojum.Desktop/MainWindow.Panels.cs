@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
+using Semojum.Core;
 
 namespace Semojum.Desktop;
 
@@ -13,8 +14,18 @@ public partial class MainWindow
 
     private void BindCommonKeys(Window target)
     {
-        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace"), (Key.G, "goto") })
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("help")), new KeyGesture(Key.F1)));
+        for (var i = 0; i < 10; i++)
+        {
+            var slot = i;
+            target.InputBindings.Add(new KeyBinding(new RelayCommand(() => InsertSnippet(slot, SearchPanel.Text)), new KeyGesture(Key.D0 + i, ModifierKeys.Control)));
+            target.InputBindings.Add(new KeyBinding(new RelayCommand(() => InsertSnippet(slot, SearchPanel.Braille)), new KeyGesture(Key.D0 + i, ModifierKeys.Alt)));
+        }
+        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace"), (Key.G, "goto"), (Key.W, "closeDocument"), (Key.C, "copy"), (Key.X, "cut"), (Key.V, "paste") })
             target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync(action)), new KeyGesture(key, ModifierKeys.Control)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("appearance")), new KeyGesture(Key.S, ModifierKeys.Alt)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("colors")), new KeyGesture(Key.C, ModifierKeys.Alt)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("defaults")), new KeyGesture(Key.G, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("findNext")), new KeyGesture(Key.F3)));
     }

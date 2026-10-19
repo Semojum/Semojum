@@ -8,6 +8,15 @@ namespace Semojum.Desktop.Services;
 public sealed class EditorDocuments : IDisposable
 {
     private readonly Dictionary<EditorBlock, Buffers> buffers = [];
+    private readonly Dictionary<int, UndoStack> history = [];
+    public UndoStack History(int page)
+    { if (!history.TryGetValue(page, out var stack)) history[page] = stack = new UndoStack { SizeLimit = 100 }; return stack; }
+    private static void Sync(TextDocument document, string text)
+    {
+        // Engine/model restoration is not an additional user edit; retain the shared page history.
+        var stack = document.UndoStack; document.UndoStack = new UndoStack();
+        try { document.Text = text; } finally { document.UndoStack = stack; }
+    }
     private sealed class Buffers
     {
         public required TextDocument Source { get; init; }
@@ -27,12 +36,13 @@ public sealed class EditorDocuments : IDisposable
             entry.Updating = true;
             try
             {
-                if (args.PropertyName == nameof(EditorBlock.Source) && entry.Source.Text != block.Source) entry.Source.Text = block.Source;
-                if (args.PropertyName == nameof(EditorBlock.Braille) && entry.Braille.Text != block.Braille) entry.Braille.Text = block.Braille;
+                if (args.PropertyName == nameof(EditorBlock.Source) && entry.Source.Text != block.Source) Sync(entry.Source, block.Source);
+                if (args.PropertyName == nameof(EditorBlock.Braille) && entry.Braille.Text != block.Braille) Sync(entry.Braille, block.Braille);
             }
             finally { entry.Updating = false; }
         };
         entry = new Buffers { Source = new(block.Source), Braille = new(block.Braille), Listener = listener };
+        entry.Source.UndoStack = History(block.Page); entry.Braille.UndoStack = History(block.Page);
         entry.Source.TextChanged += (_, _) =>
         {
             if (entry.Updating) return;

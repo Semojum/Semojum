@@ -7,7 +7,7 @@ namespace Semojum.Desktop.Controls;
 
 public sealed partial class TagColorizer : DocumentColorizingTransformer
 {
-    private static readonly Brush TagBrush = new SolidColorBrush(Color.FromRgb(45, 96, 158));
+    public Brush TagBrush { get; set; } = new SolidColorBrush(Color.FromRgb(45, 96, 158));
     [GeneratedRegex(@"<![^>]*>")] private static partial Regex Tags();
     protected override void ColorizeLine(DocumentLine line)
     {

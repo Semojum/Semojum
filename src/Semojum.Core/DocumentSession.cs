@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.ComponentModel;
+using System.Collections.Specialized;
 
 namespace Semojum.Core;
 
@@ -41,6 +43,25 @@ public sealed partial class EditorBlock : ObservableObject
 
 public sealed partial class DocumentSession : ObservableObject
 {
+    private readonly HashSet<EditorBlock> observedBlocks = [];
+    public DocumentSession()
+    {
+        Blocks.CollectionChanged += (_, _) =>
+        {
+            foreach (var block in observedBlocks.Where(b => !Blocks.Contains(b)).ToArray())
+            { block.PropertyChanged -= BlockChanged; block.Memos.CollectionChanged -= MemosChanged; observedBlocks.Remove(block); }
+            foreach (var block in Blocks.Where(b => !observedBlocks.Contains(b)))
+            { block.PropertyChanged += BlockChanged; block.Memos.CollectionChanged += MemosChanged; observedBlocks.Add(block); }
+            MarkChanged();
+        };
+    }
+    public void MarkChanged() { ChangeVersion++; IsDirty = true; }
+    private void MemosChanged(object? sender, NotifyCollectionChangedEventArgs e) => MarkChanged();
+    private void BlockChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Braille) or nameof(EditorBlock.Memo)
+            or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation)) MarkChanged();
+    }
     public ObservableCollection<EditorBlock> Blocks { get; } = [];
     public Dictionary<string, byte[]> OriginalFiles { get; } = [];
     public long ChangeVersion { get; private set; }
@@ -66,13 +87,6 @@ public sealed partial class DocumentSession : ObservableObject
     public void Add(EditorBlock block)
     {
         Blocks.Add(block);
-        block.Memos.CollectionChanged += (_, _) => { ChangeVersion++; IsDirty = true; };
-        block.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Braille)
-                or nameof(EditorBlock.Memo) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata)
-                or nameof(EditorBlock.Translation)) { ChangeVersion++; IsDirty = true; }
-        };
         ActiveBlock ??= block;
     }
 
