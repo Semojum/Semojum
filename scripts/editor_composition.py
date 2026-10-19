@@ -109,7 +109,8 @@ def compose(job):
                         flat.append((line.substitute(a.ORIG_PAGE_TAG, a._number(op)), op, cover))
                 marker = match.group()
                 if marker in (a.PAGE_BREAK_TAG, a.CHAPTER_TAG):
-                    flat.append((Line(a._BREAK if marker == a.PAGE_BREAK_TAG else a._CHAPTER, [], kind="break"), op, cover))
+                    flat.append((Line(a._BREAK if marker == a.PAGE_BREAK_TAG else a._CHAPTER, [],
+                        end=[block.get("id"), match.start()], kind="break"), op, cover))
                 else:
                     text = a.rule_line(marker, opts.cols)
                     flat.append((Line(text, [None] * len(text), kind="rule"), op, cover))
@@ -146,10 +147,12 @@ def compose(job):
                 break
         return number, f if a._has_page_row(bp, footer_on) else ""
 
-    def finish(body, bp, op, cover, head=""):
+    def finish(body, bp, op, cover, head="", empty_anchor=None):
         number, footer = page_policy(bp)
         has_row = not cover and (number or bool(footer))
         cap = opts.rows - int(has_row) - int(bool(head))
+        if not body and empty_anchor is not None:
+            body.append(Line("", [], end=empty_anchor))
         body += [Line("", [], kind="padding") for _ in range(cap - len(body))]
         if head:
             h = a._header_line(head, op, a._number(bp), opts.cols)
@@ -169,7 +172,7 @@ def compose(job):
         while pos <= last and flat[pos][0].kind == "break":
             marker, op, cover = flat[pos]
             if marker.text == a._BREAK:
-                finish([], bpn, op if prev_op is None else prev_op, cover)
+                finish([], bpn, op if prev_op is None else prev_op, cover, empty_anchor=marker.end)
                 if not cover:
                     bpn += 1
             else:

@@ -427,7 +427,12 @@ internal static class IntegrationChecks
         var inlineResult = await engine.ComposeAsync(SmjFile.Snapshot(inlineDoc).Manifest);
         Equal(3, inlineResult.Pages!.Length);
         True(inlineResult.Pages[1].Lines.All(l => l.All(c => c == '⠀')));
-        _ = BrailleGrid.FromComposition(inlineResult, inlineDoc.Blocks, inlineDoc.Layout);
+        var inlineGrid = BrailleGrid.FromComposition(inlineResult, inlineDoc.Blocks, inlineDoc.Layout);
+        var blank = inlineGrid[1].Rows[1][2]!;
+        True(blank.IsInsertion);
+        BlockRange.Replace(inlineDoc, [new(blank.Block, blank.Offset, 0)], SearchPanel.Braille, blank.Prefix + "⠿");
+        var filled = await engine.ComposeAsync(SmjFile.Snapshot(inlineDoc).Manifest);
+        True(filled.Pages![1].Lines[1][2] == '⠿' && filled.Pages[2].Lines[0].Any(c => c != '⠀'));
         headerDoc.Blocks[1].Source = "다<!머리말>가<!/머리말>나";
         await Reject<ArgumentException>(() => engine.BuildBrfAsync(headerDoc)); // Unknown manual position cannot silently become global.
     }

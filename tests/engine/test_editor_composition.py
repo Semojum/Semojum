@@ -56,6 +56,7 @@ class CompositionTests(unittest.TestCase):
         result = compose(job)
         self.assertEqual(3, len(result['pages']))
         self.assertTrue(all(not s.strip('⠀') for s in result['pages'][1]))
+        self.assertEqual([7, text.rindex('<!쪽바꿈>')], result['ends'][1][0])
         self.assertEqual([7, len(text) - 1], result['maps'][2][0][0])
 
     def test_none_recovers_body_row_and_independent_footer(self):

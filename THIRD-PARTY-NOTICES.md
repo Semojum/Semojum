@@ -21,3 +21,5 @@ This editor uses the following components. The linked projects contain their com
 License texts and font notices are retained in the `licenses` directory. The self-contained Windows distribution also includes the .NET runtime and its bundled third-party notices.
 
 The engine distribution retains upstream NOTICE.md, LICENSE-MIT, LICENSE-APACHE, third_party notices and dependency licenses under engine. The optional kiwi dependency is neither installed nor bundled.
+
+The desktop composition adapter (`scripts/editor_composition.py`) reuses the pinned semojum-braille `assist` and BRF helpers and follows its pagination structure. The upstream license and NOTICE files are included with the engine distribution.
