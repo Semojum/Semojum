@@ -41,7 +41,7 @@ public partial class MainWindow : Window
     internal Task ReleaseResourcesAsync() => cleanup ??= ReleaseResourcesCoreAsync();
     private async Task ReleaseResourcesCoreAsync()
     {
-        appLifetime.Cancel(); debounce?.Cancel(); dotSpeech.Dispose(); documentLifetime.Cancel(); Braille.Dispose();
+        appLifetime.Cancel(); debounce?.Cancel(); dotSpeech.Dispose(); documentLifetime.Cancel(); Braille.Dispose(); PageEditor.Dispose();
         foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); }
         if (sidecar is not null) await sidecar.DisposeAsync();
         documentLifetime.Dispose(); http.Dispose();
@@ -62,6 +62,7 @@ public partial class MainWindow : Window
         translator = new(engine);
         InitializeComponent();
         PopulateTagMenu();
+        InitializeContinuousEditor();
         SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)));
         Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
@@ -80,7 +81,7 @@ public partial class MainWindow : Window
         Braille.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(Braille.Editor);
         Braille.DetachRequested += (_, _) => ToggleDetached();
         Braille.HideRequested += (_, _) => HidePanel("hideBraille");
-        Braille.NavigateGridAsync = cell => NavigateToAsync(new(cell.Block, SearchPanel.Braille, cell.Offset));
+        ConnectGrid(Braille);
         Braille.Editor.TextArea.Caret.PositionChanged += (_, _) => { RefreshEditorStatus(); SpeakCaret(Braille.Editor); };
         LineStrip.CloseRequested += (_, _) => SetLinePreviewVisible(false);
         SourceEditor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
@@ -128,6 +129,7 @@ public partial class MainWindow : Window
             }
             if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
             session.PropertyChanged += SessionChanged;
+            PageEditor.Attach(session); PageEditor.Visibility = Visibility.Collapsed; SourceEditor.Visibility = Visibility.Visible;
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
             OriginalEmpty.Visibility = showOriginal ? Visibility.Collapsed : Visibility.Visible;
             ShowActiveBlock();
@@ -236,6 +238,21 @@ public partial class MainWindow : Window
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }
             if (session.IsReadOnly && (action.StartsWith("tag:") || new[] { "undo", "redo", "cut", "paste", "replace", "addBlock", "deleteBlock", "moveBlockUp", "moveBlockDown", "indent", "unindent", "clearLine", "clearBlock", "table", "memo", "memos", "drafts", "symbol", "math", "footer", "layout", "translationOptions", "translate", "translateAll" }.Contains(action)))
                 throw new InvalidOperationException("읽기 전용 문서입니다. 다른 이름으로 저장한 뒤 편집해 주세요.");
+            if (action is "copy" or "cut" or "paste")
+            {
+                if (lastEditor == PageEditor.Editor)
+                {
+                    if (action == "copy") PageEditor.Editor.Copy(); else if (action == "cut") PageEditor.Editor.Cut(); else PageEditor.Editor.Paste();
+                    return;
+                }
+                var grid = lastGrid;
+                if (grid is not null)
+                {
+                    if (action == "paste") { if (Clipboard.ContainsText()) await grid.InsertAsync(Clipboard.GetText()); }
+                    else grid.Copy(action == "cut");
+                    return;
+                }
+            }
             switch (action)
             {
                 case "autoUpdate": preferences = preferences with { AutoCheckUpdates = AutoUpdateToggle.IsChecked }; await PersistPreferencesAsync(); break;
@@ -369,17 +386,19 @@ public partial class MainWindow : Window
     internal void InsertTag(string tag)
     {
         if (session.IsReadOnly || SourceEditor.IsReadOnly) return;
-        var selected = SourceEditor.SelectedText;
-        var start = SourceEditor.SelectionStart;
+        var target = PageEditor.Visibility == Visibility.Visible ? PageEditor.Editor : SourceEditor;
+        var selected = target.SelectedText;
+        var start = target.SelectionStart;
         var definition = BrailleTags.Get(tag);
         var open = definition.Open;
-        SourceEditor.SelectedText = definition.Insert(selected);
-        SourceEditor.Select(start + open.Length, selected.Length); SourceEditor.Focus();
+        target.SelectedText = definition.Insert(selected);
+        target.Select(start + open.Length, selected.Length); target.Focus();
     }
-    private void InsertText(string value) { if (session.IsReadOnly || SourceEditor.IsReadOnly) return; SourceEditor.SelectedText = value; SourceEditor.Focus(); }
+    private void InsertText(string value) { if (session.IsReadOnly || SourceEditor.IsReadOnly) return; var target = PageEditor.Visibility == Visibility.Visible ? PageEditor.Editor : SourceEditor; target.SelectedText = value; target.Focus(); }
     private void SetFontSize(double size)
     {
         SourceEditor.FontSize = Math.Clamp(size, 10, 32);
+        PageEditor.Editor.FontSize = SourceEditor.FontSize;
         Braille.Editor.FontSize = SourceEditor.FontSize * 22 / 14;
         if (detachedPane is not null) detachedPane.Editor.FontSize = Braille.Editor.FontSize;
         FontSizeLabel.Content = SourceEditor.FontSize.ToString("0") + " px";
@@ -390,9 +409,8 @@ public partial class MainWindow : Window
     internal void ToggleDetached()
     {
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
-        detachedPane = new BraillePane(); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
+        detachedPane = new BraillePane(); ConnectGrid(detachedPane); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
         InstallEditorMenu(detachedPane.Editor);
-        detachedPane.NavigateGridAsync = cell => NavigateToAsync(new(cell.Block, SearchPanel.Braille, cell.Offset));
         detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();

@@ -18,15 +18,15 @@ public sealed record SmjSnapshot(SmjManifest Manifest, IReadOnlyDictionary<strin
 public static class SmjFile
 {
     public const string Format = "semojum-work";
-    public const int Version = 1;
+    public const int Version = 2;
     public const long MaximumExpandedBytes = 512L * 1024 * 1024;
     private const long MaximumManifestBytes = 64L * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public static SmjSnapshot Snapshot(DocumentSession session)
+    public static SmjSnapshot Snapshot(DocumentSession session, bool includeOriginals = true)
     {
         var assets = new Dictionary<string, byte[]>();
-        var originals = session.OriginalFiles.Select((pair, index) =>
+        var originals = (includeOriginals ? session.OriginalFiles : new Dictionary<string, byte[]>()).Select((pair, index) =>
         {
             var entry = $"originals/{index:D4}";
             var bytes = pair.Value.ToArray(); assets.Add(entry, bytes);
@@ -137,7 +137,7 @@ public static class SmjFile
 
     private static void Validate(SmjManifest m)
     {
-        if (m.Format != Format || m.Version != Version) throw new InvalidDataException("지원하지 않는 .smj 형식 또는 버전입니다.");
+        if (m.Format != Format || m.Version is not (1 or Version)) throw new InvalidDataException("지원하지 않는 .smj 형식 또는 버전입니다.");
         if (m.Layout is null || m.Options is null || m.FooterText is null || m.Blocks is not { Length: > 0 } || m.Originals is null)
             throw new InvalidDataException("작업 필수 정보가 없습니다.");
         m.Layout.Validate();

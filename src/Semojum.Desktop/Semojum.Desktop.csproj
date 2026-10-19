@@ -15,4 +15,5 @@
     <PackageReference Include="PDFtoImage" Version="5.4.0" />
     <PackageReference Include="WpfMath" Version="2.1.0" />
   </ItemGroup>
+  <ItemGroup><Content Include="../../scripts/engine-entry.py" Link="engine-adapter/engine-entry.py" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../scripts/editor_composition.py" Link="engine-adapter/editor_composition.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

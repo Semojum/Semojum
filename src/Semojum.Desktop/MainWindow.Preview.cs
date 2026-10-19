@@ -29,9 +29,10 @@ public partial class MainWindow
             var translate = pendingSourceTranslation; pendingSourceTranslation = false;
             if (translate && autoTranslate && translatedRevisions.GetValueOrDefault(block, -1) != block.SourceRevision)
                 await TranslateAsync(block, ChooseTranslation(block), interactive: false);
-            if (generation != previewGeneration || !SourceEditor.IsKeyboardFocusWithin || LinePreviewToggle.IsChecked != true) return;
-            var line = SourceEditor.Document.GetLineByNumber(SourceEditor.TextArea.Caret.Line);
-            var result = await local.TranslateElementAsync(SourceEditor.Document.GetText(line), new(), session.Options, ct);
+            if (generation != previewGeneration || !(SourceEditor.IsKeyboardFocusWithin || PageEditor.Editor.IsKeyboardFocusWithin) || LinePreviewToggle.IsChecked != true) return;
+            var source = PageEditor.Editor.IsKeyboardFocusWithin ? PageEditor.Editor : SourceEditor;
+            var line = source.Document.GetLineByNumber(source.TextArea.Caret.Line);
+            var result = await local.TranslateElementAsync(source.Document.GetText(line), new(), session.Options, ct);
             if (generation == previewGeneration && session == owner)
             {
                 currentPreviewLine = line.LineNumber; currentPreviewCells = result.Cells;

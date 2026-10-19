@@ -1,7 +1,7 @@
 namespace Semojum.Core;
 
 /// <summary>Ranges use printed braille numbers; unnumbered cover faces are excluded by the engine.</summary>
-public sealed record FooterRange(int Start, int? End, string Text)
+public sealed record FooterRange(int Start, int? End, string Text, string? Alignment = null)
 {
     public static void Validate(IReadOnlyList<FooterRange> ranges)
     {
@@ -9,7 +9,7 @@ public sealed record FooterRange(int Start, int? End, string Text)
         var end = 0;
         foreach (var range in ranges.OrderBy(r => r?.Start))
         {
-            if (range is null || range.Start < 1 || range.Start <= end || range.End < range.Start || range.Text is null || range.Text.Length > 200)
+            if (range is null || range.Start < 1 || range.Start <= end || range.End < range.Start || range.Text is null || range.Text.Length > 200 || range.Alignment is not (null or "left" or "center" or "right"))
                 throw new ArgumentException("시작 면은 1 이상, 끝 면은 시작 면 이상으로 입력하고 범위가 겹치지 않게 해 주세요. 꼬리말은 200자까지입니다.");
             end = range.End ?? int.MaxValue;
         }

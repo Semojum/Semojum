@@ -22,13 +22,13 @@ public static class BlockRange
         }
         return spans.ToArray();
     }
-    public static EditorBlock Replace(DocumentSession document, IReadOnlyList<BlockSpan> spans, SearchPanel panel, string replacement)
+    public static EditorBlock Replace(DocumentSession document, IReadOnlyList<BlockSpan> spans, SearchPanel panel, string replacement, bool allowLayoutMarkers = false)
     {
         if (spans.Count == 0) throw new ArgumentException("선택한 구간이 없습니다.");
         if (document.IsReadOnly || spans.Any(s => s.Block.Metadata.IsBlocked || panel == SearchPanel.Braille && s.Block.IsBrailleLocked)) throw new ArgumentException("읽기 전용 또는 잠긴 블록은 수정할 수 없습니다.");
         if (spans.Any(s => !document.Blocks.Contains(s.Block) || s.Start < 0 || s.Length < 0 || (long)s.Start + s.Length > Value(s.Block, panel).Length)
             || spans.Select(s => s.Block).Distinct().Count() != spans.Count) throw new ArgumentException("선택한 내용이 바뀌었습니다. 다시 선택해 주세요.");
-        if (panel == SearchPanel.Braille && !DocumentSearch.IsBrailleText(replacement)) throw new ArgumentException("점자와 공백만 붙여 넣을 수 있습니다.");
+        if (panel == SearchPanel.Braille && !DocumentSearch.IsBrailleText(allowLayoutMarkers ? BrailleMarkup.VisibleText(replacement) : replacement)) throw new ArgumentException("점자와 공백만 붙여 넣을 수 있습니다.");
         var first = spans[0]; var last = spans[^1];
         if (panel == SearchPanel.Braille)
         {

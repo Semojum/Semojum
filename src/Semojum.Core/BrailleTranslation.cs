@@ -13,7 +13,9 @@ public sealed record BrailleTranslation(string Cells, int[] Breaks, DroppedChara
     public bool NeedsReview => Blocked || Dropped.Length != 0 || UnknownTags?.Length > 0;
 }
 public sealed record BrailleSymbol(string Char, string Cells, string Group);
-public sealed record ComposedBraille(string Brf, Dictionary<string, int> Replaced);
+public sealed record CellAddress(int BlockId, int Offset);
+public sealed record ComposedPage(int? Number, string[] Lines, CellAddress?[][] Cells, CellAddress?[] Ends, string[] Kinds);
+public sealed record ComposedBraille(string Brf, Dictionary<string, int> Replaced, ComposedPage[]? Pages = null);
 public sealed record BlockMetadata(string Type = "text", int HeadingLevel = 0, bool MathPage = false,
     string? TableSource = null, string? RenderMode = null, string? TranslatorNote = null, int TableBoxLevel = 0,
     double[]? BoundingBox = null, int? SelectedIndex = null, string? TableDisplayText = null,

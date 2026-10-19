@@ -242,6 +242,63 @@ internal static class WindowsSmoke
             await real.ReplaceMatchesAsync("가", "나", SearchPanel.Text, true);
             Check(real.Session.ActiveBlock.Source == "나" && real.Session.ActiveBlock.Translation?.SourceText == "나"
                 && real.Session.ActiveBlock.Braille.Trim('⠀') != "⠫", "Source replacement retranslates with production engine");
+            real.Session.Layout = new(Columns: 16, Lines: 6, PageNumbers: "모든 페이지", Footer: "모든 페이지");
+            real.Session.FooterText = "검수";
+            var firstBlock = real.Session.ActiveBlock;
+            await real.AddBlockAsync(); real.SourceEditor.Text = "다";
+            var secondBlock = real.Session.ActiveBlock!;
+            deadline = DateTime.UtcNow.AddSeconds(15);
+            while ((secondBlock.Translation?.SourceText != "다" || real.Braille.GridView.IsReadOnly) && DateTime.UtcNow < deadline) await Task.Delay(100);
+            var grid = real.Braille.GridView;
+            Check(!grid.IsReadOnly && grid.Items.Count > 0, "Production composed grid is available after translation");
+            var faces = grid.Items.Cast<BrailleGridFace>().ToArray();
+            Check(faces.All(f => f.Text is not null) && faces.SelectMany(f => f.Kinds!).Contains("page"), "Grid uses exported BRF and protected generated page rows");
+            var beforeFirst = firstBlock!.Braille; var beforeSecond = secondBlock.Braille;
+            grid.Point(new(firstBlock, 0, '⠀'), false);
+            grid.Point(new(secondBlock, Math.Min(1, secondBlock.Braille.Length), '⠀'), true);
+            await grid.InsertAsync("⠿");
+            Check(firstBlock.Braille == "⠿" && secondBlock.Braille == beforeSecond[1..], "Grid selection edits across blocks without generated rows entering text");
+            real.ReplayHistory();
+            Check(firstBlock.Braille == beforeFirst && secondBlock.Braille == beforeSecond, "One undo restores cross-block grid edit");
+            await Task.Delay(300);
+            grid.Point(new(firstBlock, 0, '⠀'), false);
+            for (var i = 0; i < 12; i++) await grid.InsertAsync("⠿");
+            Check(firstBlock.Braille.StartsWith(new string('⠿', 12)), "Rapid grid input is retained while asynchronous layout refreshes");
+            await Task.Delay(300);
+            await RenderAsync(real, Path.Combine(directory, "23-composed-grid.png"));
+            Check(real.CaretStatus.Text.Contains("줄"), "Grid status refreshes line and cell coordinates after asynchronous composition");
+            real.ToggleDetached(); await Task.Delay(300);
+            Check(real.DetachedPane!.GridView.Items.Cast<BrailleGridFace>().SelectMany(f => f.Text ?? []).SequenceEqual(
+                real.Braille.GridView.Items.Cast<BrailleGridFace>().SelectMany(f => f.Text ?? [])), "Detached grid composes the same shared document");
+            real.ToggleDetached();
+            await Task.Delay(300);
+            grid.Point(new(firstBlock, 1, '⠀'), false); await grid.InsertPageBreakAsync();
+            Check(firstBlock.Braille.Contains("<!쪽바꿈>"), "Grid page break preserves a structural marker");
+            await Task.Delay(300);
+            grid.Point(new(firstBlock, 0, '⠀'), false); grid.Point(new(firstBlock, firstBlock.Braille.Length, '⠀'), true);
+            Check(grid.HasSelection, "Grid selection is available before a render pass");
+            grid.Copy(false);
+            Check(!Clipboard.GetText().Contains("<!"), "Grid clipboard omits generated layout markers");
+            await grid.InsertAsync("⠿");
+            Check(firstBlock.Braille.Contains("<!쪽바꿈>"), "Replacing grid body preserves selected layout markers");
+            real.ReplayHistory(); real.ReplayHistory(); await Task.Delay(300);
+            real.Session.ActiveBlock = secondBlock; real.SourceEditor.Focus(); real.SelectTextRange();
+            var oldSource = BlockRange.Text(real.Session.Blocks.ToArray(), SearchPanel.Text);
+            real.PageEditor.Editor.CaretOffset = real.PageEditor.Editor.Document.TextLength;
+            real.PageEditor.SelectContext();
+            Check(real.PageEditor.Editor.SelectedText == secondBlock.Source, "First Ctrl+A selects current source block in continuous editor");
+            real.PageEditor.SelectContext();
+            Check(real.PageEditor.Editor.SelectedText == oldSource, "Second Ctrl+A selects original page in continuous editor");
+            real.PageEditor.Editor.Select(real.PageEditor.Editor.Document.TextLength, 0);
+            Check(real.SourceEditor.CaretOffset == secondBlock.Source.Length, "Continuous source caret reaches block-based memo and preview commands");
+            real.PageEditor.Editor.Document.Insert(real.PageEditor.Editor.Document.TextLength, "연속 편집");
+            Check(secondBlock.Source.EndsWith("연속 편집"), "Inline page editor writes through to original block");
+            real.ReplayHistory(); await Task.Delay(100);
+            Check(BlockRange.Text(real.Session.Blocks.ToArray(), SearchPanel.Text) == oldSource && real.PageEditor.Editor.Text == oldSource,
+                "Inline page editor synchronizes structural undo");
+            await RenderAsync(real, Path.Combine(directory, "24-continuous-source.png"));
+            real.Session.IsReadOnly = true; await Task.Delay(100);
+            Check(real.PageEditor.Editor.IsReadOnly, "Continuous source honors read-only documents");
         }
         finally { await real.ReleaseResourcesAsync(); real.PrepareSmokeShutdown(); real.Close(); }
         window.Session.IsDirty = false;

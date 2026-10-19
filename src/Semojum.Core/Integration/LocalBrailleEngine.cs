@@ -21,6 +21,22 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
     public async Task<BrailleTranslation> TranslateElementAsync(string text, BlockMetadata metadata, BrailleOptions settings,
         CancellationToken cancellationToken = default)
     {
+        // Layout markers belong to composition, not translation (the upstream
+        // translator drops them). Translate each surrounding paragraph and retain
+        // the marker with explicit logical boundaries in the editable buffer.
+        var layoutPattern = @"<!(?:쪽바꿈|장바꿈|상단줄|중단줄|하단줄|상단굵은줄|하단굵은줄|표시작|표중앙|표끝|표구분선|표지시작|표지세로|표지끝)>";
+        if (metadata.Type != "table" && !text.Contains("<!표>", StringComparison.Ordinal) && Regex.IsMatch(text, layoutPattern))
+        {
+            var pieces = Regex.Split(text, "(" + layoutPattern + ")").Where(p => p.Length > 0).ToArray();
+            var translated = new List<BrailleTranslation>();
+            foreach (var piece in pieces)
+                translated.Add(Regex.IsMatch(piece, "^" + layoutPattern + "$") ? BrailleTranslation.Plain(piece) :
+                    await TranslateElementAsync(piece, metadata, settings, cancellationToken));
+            var compositeCells = string.Join("\n", translated.Select(t => t.Cells)); var offset = 0; var breaks = new List<int>();
+            foreach (var t in translated) { breaks.AddRange(t.Breaks.Select(b => offset + b)); offset += t.Cells.Length + 1; }
+            return new(compositeCells, breaks.ToArray(), translated.SelectMany(t => t.Dropped).ToArray(), translated.Any(t => t.Blocked), [],
+                UnknownTags: translated.SelectMany(t => t.UnknownTags ?? []).Distinct().ToArray());
+        }
         JsonElement response;
         if (metadata.Type == "table" && !text.Contains("<!표>", StringComparison.Ordinal))
         {
@@ -105,7 +121,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             orig_page = page.Key,
             blocks = page.Select((b, order) => new
             {
-                order, heading_level = b.Metadata.HeadingLevel,
+                id = b.Id, order, heading_level = b.Metadata.HeadingLevel,
                 braille = !b.HasManualBraille && IsLayoutMarker(b.Source) ? b.Source.Trim() : b.Braille,
                 breaks = b.HasManualBraille ? Array.Empty<int>() : b.Translation?.Breaks ?? [],
                 align = Regex.Matches(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>").LastOrDefault()?.Groups[1].Value switch
@@ -113,18 +129,26 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             }).ToArray()
         }).ToArray();
         var footers = new Dictionary<int, string>();
-        Task<JsonElement> Build(object sources, bool pad) => sidecar.InvokeAsync("build_brf", new { job = new
+        var footerAligns = new Dictionary<int, string>();
+        var footerRules = new List<object>();
+        foreach (var range in snapshot.FooterRanges ?? [])
+            footerRules.Add(new { start = range.Start, end = range.End,
+                cells = range.Text.Length == 0 ? "" : (await TranslateElementAsync(range.Text, new(Type: "header_footer"), settings, cancellationToken)).Cells,
+                align = range.Alignment });
+        Task<JsonElement> Build(object sources, bool pad) => sidecar.InvokeAsync("compose_editor", new { job = new
             {
-                sources, footer, header, headers, footers,
+                sources, footer, header, headers, footers, footer_aligns = footerAligns, footer_ranges = footerRules,
                 opts = new
                 {
                     cols = layout.Columns, rows = layout.Lines, pad_to_even = pad,
-                    page_row_pages = layout.PageNumbers == "모든 페이지" ? "every" : "odd",
+                    page_row_pages = PagePolicy(layout.PageNumbers), footer_pages = PagePolicy(layout.Footer),
+                    number_ranges = layout.NumberRanges?.Select(r => new[] { r.Start, r.End ?? int.MaxValue }).ToArray(),
+                    show_change_line = layout.ShowChangeLine,
                     first_braille_page = layout.StartPage,
                     footer_align = layout.FooterAlign, wrap = settings.LineBreakUnit,
                     cover_orig_page_count = layout.CoverPages, orig_page_first_no = layout.SourcePageStart,
-                    show_orig_page = layout.PageNumbers != "출력 안 함" && layout.ShowSourcePageNumber,
-                    show_braille_page = layout.PageNumbers != "출력 안 함" && layout.ShowBraillePageNumber
+                    show_orig_page = layout.ShowSourcePageNumber,
+                    show_braille_page = layout.ShowBraillePageNumber
                 }
             } }, cancellationToken: cancellationToken);
 
@@ -169,31 +193,23 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         }
         var sources = Sources(snapshot.Blocks);
         var result = await Build(sources, layout.PadToEven).ConfigureAwait(false);
-        if (layout.Footer != "출력 안 함" && ((snapshot.FooterRanges?.Length ?? 0) > 0 || layout.Footer == "홀수 페이지" && layout.PageNumbers == "모든 페이지"))
-        {
-            // Footer contents do not change body capacity. Count once, then expand only existing face numbers.
-            // Cover faces consume no printed number, so this upper bound deliberately includes a few unused keys.
-            var count = DocumentExport.BrfPages(result.GetProperty("brf").GetString() ?? "").Length;
-            var upper = Math.Min(int.MaxValue, (long)layout.StartPage + count - 1);
-            foreach (var range in snapshot.FooterRanges ?? [])
-            {
-                var first = Math.Max(layout.StartPage, range.Start); var last = Math.Min(upper, range.End ?? int.MaxValue);
-                if (first > last) continue;
-                var cells = range.Text.Length == 0 ? "" : (await TranslateElementAsync(range.Text, new(Type: "header_footer"), settings, cancellationToken)).Cells;
-                for (long page = first; page <= last; page++) footers[(int)page] = cells;
-            }
-            if (layout.Footer == "홀수 페이지")
-                for (long page = layout.StartPage; page <= upper; page++) if (page % 2 == 0) footers[(int)page] = "";
-            result = await Build(sources, layout.PadToEven).ConfigureAwait(false);
-        }
         var brf = result.GetProperty("brf").GetString() ?? throw new SidecarException("BRF 결과가 없습니다.");
         if (brf.Any(c => c > 127)) throw new SidecarException("BRF 응답에 ASCII가 아닌 문자가 있습니다.");
         var replaced = result.TryGetProperty("replaced", out var r) ? r.Deserialize<Dictionary<string, int>>() ?? [] : [];
-        return new(brf, replaced);
+        var pages = result.GetProperty("pages").Deserialize<string[][]>() ?? [];
+        var maps = result.GetProperty("maps").Deserialize<int[]?[][][]>() ?? [];
+        var ends = result.GetProperty("ends").Deserialize<int[]?[][]>() ?? [];
+        var kinds = result.GetProperty("kinds").Deserialize<string[][]>() ?? [];
+        var numbers = result.GetProperty("numbers").Deserialize<int?[]>() ?? [];
+        CellAddress? Address(int[]? value) => value is { Length: 2 } ? new(value[0], value[1]) : null;
+        return new(brf, replaced, pages.Select((lines, i) => new ComposedPage(numbers[i], lines,
+            maps[i].Select(row => row.Select(Address).ToArray()).ToArray(), ends[i].Select(Address).ToArray(), kinds[i])).ToArray());
     }
 
+    private static string PagePolicy(string value) => value switch { "모든 페이지" => "every", "짝수 페이지" => "even", "출력 안 함" => "none", _ => "odd" };
+
     public static bool IsLayoutMarker(string source) => source.Trim() is "<!쪽바꿈>" or "<!장바꿈>" or "<!상단줄>" or "<!중단줄>" or "<!하단줄>"
-        or "<!상단굵은줄>" or "<!하단굵은줄>" or "<!표시작>" or "<!표중앙>" or "<!표끝>" or "<!표구분선>";
+        or "<!상단굵은줄>" or "<!하단굵은줄>" or "<!표시작>" or "<!표중앙>" or "<!표끝>" or "<!표구분선>" or "<!표지시작>" or "<!표지세로>" or "<!표지끝>";
 
     public static bool IsNonPrintingTag(string source) => source.Length > 0 &&
         Regex.Replace(source, "<!머리말>.*?<!/머리말>|<!(?:왼쪽|가운데|오른쪽)정렬>", "", RegexOptions.Singleline).Trim().Length == 0;

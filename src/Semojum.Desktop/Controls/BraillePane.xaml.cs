@@ -17,16 +17,21 @@ public partial class BraillePane : UserControl, IDisposable
     private bool switchingBlock;
     private readonly HashSet<EditorBlock> gridBlocks = [];
     private readonly System.Windows.Threading.DispatcherTimer gridTimer = new() { Interval = TimeSpan.FromMilliseconds(80) };
+    public Func<DocumentSession, Task<ComposedBraille>>? ComposeGridAsync { get; set; }
+    public Func<BlockSpan[], string, Task>? ReplaceGridAsync { get; set; }
+    private bool gridBusy, gridPending;
+    private long gridVersion = -1;
     public Func<GridCell, Task>? NavigateGridAsync { get; set; }
     private readonly SixDotInput chord = new();
     public Brush NormalForeground { get; set; } = Brushes.Black;
     public void RefreshAppearance() => RefreshIndicators();
-    public bool SixDotEnabled { get; set; }
-    public bool SpaceEnabled { get; set; } = true;
-    public bool EnterEnabled { get; set; } = true;
+    public bool SixDotEnabled { get => GridView.SixDotEnabled; set => GridView.SixDotEnabled = value; }
+    public bool SpaceEnabled { get => GridView.SpaceEnabled; set => GridView.SpaceEnabled = value; }
+    public bool EnterEnabled { get => GridView.EnterEnabled; set => GridView.EnterEnabled = value; }
     public event EventHandler? DetachRequested;
     public event EventHandler? HideRequested;
     public event EventHandler? PreviewCloseRequested;
+    public event Action? GridRefreshed;
     public BraillePane()
     {
         InitializeComponent();
@@ -35,8 +40,17 @@ public partial class BraillePane : UserControl, IDisposable
         {
             if (NavigateGridAsync is not null) await NavigateGridAsync(cell);
             else if (session is not null) { session.ActiveBlock = cell.Block; Editor.CaretOffset = Math.Min(cell.Offset, Editor.Document.TextLength); }
-            Editor.Focus();
+            GridView.Focus();
+            LayoutLabel.Text = GridView.DescribeCaret();
         };
+        GridView.ReplaceAsync = async (spans, value) =>
+        {
+            if (session is null || gridVersion != session.ChangeVersion) throw new ArgumentException("조판 갱신 후 다시 선택해 주세요.");
+            if (ReplaceGridAsync is not null) await ReplaceGridAsync(spans, value);
+            gridVersion = session.ChangeVersion; GridView.IsReadOnly = session.IsReadOnly;
+        };
+        GridView.Notify = message => { if (session is not null) session.Status = message; };
+        GridView.LostKeyboardFocus += (_, _) => chord.Reset();
         Editor.Options.HighlightCurrentLine = true;
         Editor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 245, 163));
         Editor.TextArea.TextView.CurrentLineBorder = null;
@@ -73,11 +87,11 @@ public partial class BraillePane : UserControl, IDisposable
         session.Blocks.CollectionChanged += GridBlocksChanged; ObserveGridBlocks(); RefreshGrid();
         SwitchBlock();
     }
-    public void ConfigureKeys(string keys) => chord.Configure(keys);
+    public void ConfigureKeys(string keys) { chord.Configure(keys); GridView.ConfigureKeys(keys); }
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DocumentSession.ActiveBlock)) SwitchBlock();
-        if (e.PropertyName == nameof(DocumentSession.Layout)) RefreshGrid();
+        if (e.PropertyName is nameof(DocumentSession.Layout) or nameof(DocumentSession.Options) or nameof(DocumentSession.FooterText) or nameof(DocumentSession.FooterRanges)) QueueGrid();
         RefreshIndicators();
     }
     private void GridBlocksChanged(object? sender, NotifyCollectionChangedEventArgs e) { ObserveGridBlocks(); QueueGrid(); }
@@ -87,13 +101,38 @@ public partial class BraillePane : UserControl, IDisposable
         if (session is not null) foreach (var b in session.Blocks.Where(b => !gridBlocks.Contains(b))) { b.PropertyChanged += GridBlockChanged; gridBlocks.Add(b); }
     }
     private void GridBlockChanged(object? sender, PropertyChangedEventArgs e)
-    { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata)) QueueGrid(); }
-    private void QueueGrid() { gridTimer.Stop(); gridTimer.Start(); }
-    private void RefreshGrid()
+    { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation) or nameof(EditorBlock.Source)) QueueGrid(); }
+    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; gridTimer.Stop(); gridTimer.Start(); }
+    public async void RefreshGrid()
     {
         if (session is null) return;
-        GridView.ItemsSource = BrailleGrid.Project(session.Blocks, session.Layout);
-        GridView.ActiveBlock = session.ActiveBlock; GridView.CaretOffset = Editor.CaretOffset;
+        if (gridBusy) { gridPending = true; return; }
+        var owner = session; var version = owner.ChangeVersion;
+        gridBusy = true; GridView.IsReadOnly = true;
+        try
+        {
+            var composition = ComposeGridAsync is null ? null : await ComposeGridAsync(owner);
+            if (owner != session || version != owner.ChangeVersion) { gridPending = true; return; }
+            GridView.Blocks = owner.Blocks.ToArray();
+            GridView.ItemsSource = composition?.Pages is { Length: > 0 }
+                ? BrailleGrid.FromComposition(composition, GridView.Blocks, owner.Layout)
+                : BrailleGrid.Project(owner.Blocks, owner.Layout);
+            gridVersion = version; GridView.CoordinatesCurrent = true; GridView.IsReadOnly = owner.IsReadOnly;
+            GridView.ActiveBlock = owner.ActiveBlock; GridView.CaretOffset = Editor.CaretOffset;
+            if (GridView.IsKeyboardFocusWithin) LayoutLabel.Text = GridView.DescribeCaret();
+            GridRefreshed?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            if (owner != session) return;
+            GridView.ItemsSource = null;
+            owner.Status = "모눈 조판 실패: " + ex.Message;
+        }
+        finally
+        {
+            gridBusy = false;
+            if (gridPending && session is not null) { gridPending = false; QueueGrid(); }
+        }
     }
     private void GridToggle_Click(object sender, RoutedEventArgs e)
     { GridView.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed; GridHeight.Height = GridToggle.IsChecked == true ? new GridLength(2, GridUnitType.Star) : new GridLength(0); }
@@ -121,6 +160,7 @@ public partial class BraillePane : UserControl, IDisposable
     {
         if (session is null || active is null) return;
         Editor.IsReadOnly = active.IsBrailleLocked || session.IsReadOnly;
+        GridView.IsReadOnly = session.IsReadOnly || gridVersion != session.ChangeVersion;
         Editor.Options.ColumnRulerPosition = session.Layout.Columns;
         LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄 · {Editor.TextArea.Caret.Line}줄 {Editor.TextArea.Caret.Column}칸";
         GridView.ActiveBlock = active; GridView.CaretOffset = Editor.CaretOffset; GridView.InvalidateFaces();
@@ -141,7 +181,7 @@ public partial class BraillePane : UserControl, IDisposable
         else if (e.Key == Key.Space)
         {
             e.Handled = true;
-            if (SpaceEnabled && !e.IsRepeat) Editor.SelectedText = "⠀";
+            if (SpaceEnabled && !e.IsRepeat) { if (sender == GridView) _ = GridView.InsertAsync("⠀"); else Editor.SelectedText = "⠀"; }
         }
         else if (e.Key == Key.Enter && !EnterEnabled) e.Handled = true;
     }
@@ -152,7 +192,7 @@ public partial class BraillePane : UserControl, IDisposable
         if (key.Length != 1 || !chord.IsMapped(key[0])) return;
         e.Handled = true;
         var cell = chord.Release(key[0]);
-        if (cell is not null && !Editor.IsReadOnly) Editor.SelectedText = cell;
+        if (cell is not null && !Editor.IsReadOnly) { if (sender == GridView) _ = GridView.InsertAsync(cell); else Editor.SelectedText = cell; }
     }
     private void Detach_Click(object sender, RoutedEventArgs e) => DetachRequested?.Invoke(this, EventArgs.Empty);
     public void Dispose()
@@ -162,6 +202,6 @@ public partial class BraillePane : UserControl, IDisposable
         foreach (var b in gridBlocks) b.PropertyChanged -= GridBlockChanged;
         gridBlocks.Clear();
         if (active is not null) active.PropertyChanged -= BlockChanged;
-        chord.Reset();
+        chord.Reset(); session = null; gridPending = false; gridVersion = -1; GridView.ResetSelection();
     }
 }
