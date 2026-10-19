@@ -47,7 +47,7 @@ public partial class MainWindow
             if (!wideCarets.TryGetValue(editor, out var caret)) { caret = new(editor); wideCarets[editor] = caret; view.BackgroundRenderers.Add(caret); }
             caret.Width = value.CursorWidth; view.Redraw();
         }
-        Apply(SourceEditor, false); Apply(Braille.Editor, true); if (detachedPane is not null) Apply(detachedPane.Editor, true);
+        Apply(SourceEditor, false); Apply(PageEditor.Editor, false); Apply(Braille.Editor, true); if (detachedPane is not null) Apply(detachedPane.Editor, true);
         Braille.NormalForeground = value.HighContrast ? Brushes.White : C(value.BrailleColor);
         if (detachedPane is not null) detachedPane.NormalForeground = Braille.NormalForeground;
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();

@@ -41,6 +41,14 @@ class CompositionTests(unittest.TestCase):
                     if end:
                         self.assertLessEqual(end[1], len(by_id[end[0]]))
 
+    def test_crlf_offsets_and_tab_space_cells(self):
+        raw = '⠁\r\n⠃\r⠉\n⠙\t⠑'
+        r = compose(dict(sources=[dict(orig_page=1, blocks=[dict(id=1, braille=raw)])],
+            opts=dict(rows=8, cols=16, page_row_pages='none')))
+        self.assertEqual(['⠁', '⠃', '⠉', '⠙⠀⠑'], r['pages'][0][:4])
+        self.assertEqual([1, 3], r['maps'][0][1][0])
+        self.assertEqual([1, 8], r['maps'][0][3][1])
+
     def test_inline_and_repeated_breaks_keep_offsets(self):
         text = '⠁\n<!쪽바꿈>\n<!쪽바꿈>\n⠃'
         job = dict(sources=[dict(orig_page=1, blocks=[dict(id=7, braille=text)])],

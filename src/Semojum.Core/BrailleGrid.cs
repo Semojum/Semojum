@@ -20,7 +20,7 @@ public static class BrailleGrid
                     if (address is null || !byId.TryGetValue(address.BlockId, out var b)) return null;
                     if (address.Offset < 0 || address.Offset > b.Braille.Length || !insertion && address.Offset == b.Braille.Length)
                         throw new InvalidDataException("조판 좌표가 편집 내용과 일치하지 않습니다.");
-                    if (!insertion && b.Braille[address.Offset] != value && !(b.Braille[address.Offset] == ' ' && value == '⠀'))
+                    if (!insertion && b.Braille[address.Offset] != value && !(b.Braille[address.Offset] is ' ' or '\t' && value == '⠀'))
                         throw new InvalidDataException("조판 이후 점자 내용이 바뀌었습니다.");
                     return new(b, address.Offset, value, insertion);
                 }

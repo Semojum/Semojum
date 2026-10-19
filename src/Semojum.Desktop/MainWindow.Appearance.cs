@@ -43,7 +43,7 @@ public partial class MainWindow
     private void LineNumbersToggle_Click(object sender, RoutedEventArgs e) => ApplyLineNumbers();
     private void ApplyLineNumbers()
     {
-        SourceEditor.ShowLineNumbers = Braille.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
+        SourceEditor.ShowLineNumbers = PageEditor.Editor.ShowLineNumbers = Braille.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
         if (detachedPane is not null) detachedPane.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
     }
 

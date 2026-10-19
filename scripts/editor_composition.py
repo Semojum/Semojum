@@ -3,7 +3,7 @@
 Uses the pinned Semojum/braille 3.4.24 helpers for wrapping, rules, numbers,
 alignment and BRF encoding. Pagination follows assist.build_pages; this adapter
 adds coordinates and independent footer/number policies. No translation rules
-are reimplemented here. See tests/test_editor_composition.py for upstream parity.
+are reimplemented here. See tests/engine/test_editor_composition.py for upstream parity.
 """
 from collections import Counter
 import re
@@ -48,11 +48,12 @@ def fold(block, opts):
         return [Line(text, [None] * len(text), kind="rule")]
     if not raw:
         return []
-    lines = raw.split("\n")
-    if raw.endswith("\n"):
+    lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", raw)
+    if lines and not lines[-1]:
         lines.pop()
     result, base = [], block.get("offset_base", 0)
-    for logical in lines:
+    for original in lines:
+        logical = original.rstrip("\r\n").replace("\t", a.SPACE).replace(" ", a.SPACE)
         breaks = [b - base for b in block.get("breaks", []) if base < b < base + len(logical)]
         center = block.get("heading_level") == 1
         # The exact upstream wrap output is authoritative. Match each fragment
@@ -70,7 +71,7 @@ def fold(block, opts):
             end = [ident, base + pos + len(content)]
             result.append(Line(chunk, refs, end, block.get("align", "")))
             cursor = pos + len(content)
-        base += len(logical) + 1
+        base += len(original)
     return result
 
 
@@ -113,7 +114,9 @@ def compose(job):
                     text = a.rule_line(marker, opts.cols)
                     flat.append((Line(text, [None] * len(text), kind="rule"), op, cover))
                 cursor = match.end()
-                if raw[cursor:cursor + 1] == "\n":
+                if raw[cursor:cursor + 2] == "\r\n":
+                    cursor += 2
+                elif raw[cursor:cursor + 1] in ("\r", "\n"):
                     cursor += 1
             if cursor < len(raw):
                 for line in fold(dict(block, braille=raw[cursor:], offset_base=cursor), opts):

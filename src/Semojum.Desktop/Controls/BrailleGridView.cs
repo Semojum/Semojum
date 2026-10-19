@@ -88,13 +88,14 @@ public sealed partial class BrailleGridView : ListBox
         }
         private GridCell? Hit(Point p)
         {
-            if (Data is null) return null;
+            if (Data is null || Owner?.CoordinatesCurrent != true) return null;
             var row = (int)Math.Floor((p.Y - 26) / CellHeight); var col = (int)Math.Floor((p.X - 30) / CellWidth);
             if (row < 0 || row >= Data.Rows.Length || col < 0 || col >= Data.Rows[row].Length) return null;
             return Data.Rows[row][col] ?? Data.Rows[row].Take(col).LastOrDefault(c => c is not null);
         }
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
+            if (Owner?.CoordinatesCurrent != true) return;
             var p = e.GetPosition(this);
             if (p.X is >= 16 and < 30 && Data is not null)
             {

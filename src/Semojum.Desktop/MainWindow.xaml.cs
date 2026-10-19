@@ -82,7 +82,6 @@ public partial class MainWindow : Window
         Braille.DetachRequested += (_, _) => ToggleDetached();
         Braille.HideRequested += (_, _) => HidePanel("hideBraille");
         ConnectGrid(Braille);
-        Braille.NavigateGridAsync = cell => NavigateToAsync(new(cell.Block, SearchPanel.Braille, cell.Offset));
         Braille.Editor.TextArea.Caret.PositionChanged += (_, _) => { RefreshEditorStatus(); SpeakCaret(Braille.Editor); };
         LineStrip.CloseRequested += (_, _) => SetLinePreviewVisible(false);
         SourceEditor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
@@ -399,6 +398,7 @@ public partial class MainWindow : Window
     private void SetFontSize(double size)
     {
         SourceEditor.FontSize = Math.Clamp(size, 10, 32);
+        PageEditor.Editor.FontSize = SourceEditor.FontSize;
         Braille.Editor.FontSize = SourceEditor.FontSize * 22 / 14;
         if (detachedPane is not null) detachedPane.Editor.FontSize = Braille.Editor.FontSize;
         FontSizeLabel.Content = SourceEditor.FontSize.ToString("0") + " px";
@@ -409,10 +409,8 @@ public partial class MainWindow : Window
     internal void ToggleDetached()
     {
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
-        detachedPane = new BraillePane(); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
+        detachedPane = new BraillePane(); ConnectGrid(detachedPane); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
         InstallEditorMenu(detachedPane.Editor);
-        ConnectGrid(detachedPane);
-        detachedPane.NavigateGridAsync = cell => NavigateToAsync(new(cell.Block, SearchPanel.Braille, cell.Offset));
         detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();

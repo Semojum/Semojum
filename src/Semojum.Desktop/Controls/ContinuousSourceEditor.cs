@@ -16,10 +16,11 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     public TextEditor Editor { get; } = new() { ShowLineNumbers = true, WordWrap = true, FontSize = 16, Padding = new(8) };
     public Action<BlockSpan[], string>? Replace { get; set; }
     public Action<bool>? Replay { get; set; }
+    public Action? InsertPageBreak { get; set; }
     public event Action? CloseRequested;
     private DocumentSession? model;
     private readonly HashSet<EditorBlock> observed = [];
-    private bool syncing, queued;
+    private bool syncing, queued, selectedBlock;
     private int page;
     public ContinuousSourceEditor()
     {
@@ -30,6 +31,15 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         DockPanel.SetDock(header, Dock.Top); Children.Add(header); Children.Add(Editor);
         Editor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         Editor.Document.UndoStack.SizeLimit = 0;
+        Editor.PreviewKeyDown += (_, e) =>
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.A)
+            { e.Handled = true; SelectContext(); return; }
+            selectedBlock = false;
+            if (!Editor.IsReadOnly && Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Enter)
+            { e.Handled = true; InsertPageBreak?.Invoke(); }
+        };
+        Editor.PreviewMouseDown += (_, _) => selectedBlock = false;
         Editor.Document.Changed += (_, e) =>
         {
             if (syncing || model is null) return;
@@ -63,6 +73,16 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         }));
     }
     private EditorBlock[] Blocks() => model?.Blocks.Where(b => b.Page == page).ToArray() ?? [];
+    public BlockSpan[] Selection => BlockRange.Select(Blocks(), SearchPanel.Text, Editor.SelectionStart, Editor.SelectionLength);
+    internal void SelectContext()
+    {
+        if (selectedBlock) { Editor.SelectAll(); return; }
+        var blocks = Blocks();
+        var span = BlockRange.Select(blocks, SearchPanel.Text, Editor.CaretOffset, 0).FirstOrDefault();
+        if (span is null) return;
+        var start = blocks.TakeWhile(b => b != span.Block).Sum(b => b.Source.Length + 1);
+        Editor.Select(start, span.Block.Source.Length); selectedBlock = true;
+    }
     public void Attach(DocumentSession session)
     {
         Dispose(); model = session; page = session.ActiveBlock?.Page ?? 1;

@@ -24,7 +24,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         // Layout markers belong to composition, not translation (the upstream
         // translator drops them). Translate each surrounding paragraph and retain
         // the marker with explicit logical boundaries in the editable buffer.
-        var layoutPattern = @"<!(?:쪽바꿈|장바꿈|상단줄|중단줄|하단줄|상단굵은줄|하단굵은줄|표시작|표중앙|표끝|표구분선)>";
+        var layoutPattern = @"<!(?:쪽바꿈|장바꿈|상단줄|중단줄|하단줄|상단굵은줄|하단굵은줄|표시작|표중앙|표끝|표구분선|표지시작|표지세로|표지끝)>";
         if (metadata.Type != "table" && !text.Contains("<!표>", StringComparison.Ordinal) && Regex.IsMatch(text, layoutPattern))
         {
             var pieces = Regex.Split(text, "(" + layoutPattern + ")").Where(p => p.Length > 0).ToArray();
@@ -209,7 +209,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
     private static string PagePolicy(string value) => value switch { "모든 페이지" => "every", "짝수 페이지" => "even", "출력 안 함" => "none", _ => "odd" };
 
     public static bool IsLayoutMarker(string source) => source.Trim() is "<!쪽바꿈>" or "<!장바꿈>" or "<!상단줄>" or "<!중단줄>" or "<!하단줄>"
-        or "<!상단굵은줄>" or "<!하단굵은줄>" or "<!표시작>" or "<!표중앙>" or "<!표끝>" or "<!표구분선>";
+        or "<!상단굵은줄>" or "<!하단굵은줄>" or "<!표시작>" or "<!표중앙>" or "<!표끝>" or "<!표구분선>" or "<!표지시작>" or "<!표지세로>" or "<!표지끝>";
 
     public static bool IsNonPrintingTag(string source) => source.Length > 0 &&
         Regex.Replace(source, "<!머리말>.*?<!/머리말>|<!(?:왼쪽|가운데|오른쪽)정렬>", "", RegexOptions.Singleline).Trim().Length == 0;

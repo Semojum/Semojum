@@ -101,7 +101,7 @@ public partial class BraillePane : UserControl, IDisposable
     }
     private void GridBlockChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation) or nameof(EditorBlock.Source)) QueueGrid(); }
-    private void QueueGrid() { GridView.IsReadOnly = true; gridTimer.Stop(); gridTimer.Start(); }
+    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; gridTimer.Stop(); gridTimer.Start(); }
     public async void RefreshGrid()
     {
         if (session is null) return;
@@ -116,7 +116,7 @@ public partial class BraillePane : UserControl, IDisposable
             GridView.ItemsSource = composition?.Pages is { Length: > 0 }
                 ? BrailleGrid.FromComposition(composition, GridView.Blocks, owner.Layout)
                 : BrailleGrid.Project(owner.Blocks, owner.Layout);
-            gridVersion = version; GridView.IsReadOnly = owner.IsReadOnly;
+            gridVersion = version; GridView.CoordinatesCurrent = true; GridView.IsReadOnly = owner.IsReadOnly;
             GridView.ActiveBlock = owner.ActiveBlock; GridView.CaretOffset = Editor.CaretOffset;
         }
         catch (Exception ex)
@@ -157,6 +157,7 @@ public partial class BraillePane : UserControl, IDisposable
     {
         if (session is null || active is null) return;
         Editor.IsReadOnly = active.IsBrailleLocked || session.IsReadOnly;
+        GridView.IsReadOnly = session.IsReadOnly || gridVersion != session.ChangeVersion;
         Editor.Options.ColumnRulerPosition = session.Layout.Columns;
         LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄 · {Editor.TextArea.Caret.Line}줄 {Editor.TextArea.Caret.Column}칸";
         GridView.ActiveBlock = active; GridView.CaretOffset = Editor.CaretOffset; GridView.InvalidateFaces();

@@ -8,6 +8,7 @@ public sealed partial class BrailleGridView
 {
     public IReadOnlyList<EditorBlock> Blocks { get; set; } = [];
     public bool IsReadOnly { get; set; }
+    public bool CoordinatesCurrent { get; set; } = true;
     public Func<BlockSpan[], string, Task>? ReplaceAsync { get; set; }
     public Action<EditorBlock, EditorBlock>? MoveBlock { get; set; }
     public Action<bool>? ReplayHistory { get; set; }
@@ -33,6 +34,16 @@ public sealed partial class BrailleGridView
         }
     }
     public bool HasSelection => drawSelection.Any(s => s.Length > 0) || Selection.Length > 1;
+    private GridCell[] CurrentRow() => !CoordinatesCurrent || caret is null ? [] :
+        Items.Cast<BrailleGridFace>().SelectMany(f => f.Rows).FirstOrDefault(r => r.Any(c => c?.Block == caret.Block && c.Offset == caret.Offset))?.OfType<GridCell>().ToArray() ?? [];
+    public async Task ClearLineAsync()
+    {
+        var row = CurrentRow(); if (row.Length == 0) return;
+        var last = row.LastOrDefault(c => !c.IsInsertion);
+        if (last is null) return;
+        Point(row[0], false); Point(new(last.Block, last.Offset + 1, '⠀', true), true);
+        await InsertAsync("");
+    }
     private bool IsSelected(GridCell cell) => drawSelection.Any(s => s.Block == cell.Block && cell.Offset >= s.Start && cell.Offset < s.Start + s.Length);
     internal void Point(GridCell cell, bool extend)
     {
@@ -43,10 +54,12 @@ public sealed partial class BrailleGridView
     }
     public void ResetSelection()
     { anchor = caret = null; selectedBlock = false; InvalidateFaces(); }
-    public async Task InsertAsync(string text)
+    public Task InsertAsync(string text) => InsertCoreAsync(text, false);
+    public Task InsertPageBreakAsync() => InsertCoreAsync("\n<!쪽바꿈>\n", true);
+    private async Task InsertCoreAsync(string text, bool layoutMarker)
     {
         if (editing || IsReadOnly || ReplaceAsync is null || caret is null) return;
-        if (!DocumentSearch.IsBrailleText(text)) { Notify?.Invoke("점자와 공백만 입력할 수 있습니다."); return; }
+        if (!DocumentSearch.IsBrailleText(layoutMarker ? BrailleMarkup.VisibleText(text) : text)) { Notify?.Invoke("점자와 공백만 입력할 수 있습니다."); return; }
         var spans = Selection;
         if (spans.Length == 0 || spans.Any(s => s.Block.IsBrailleLocked || s.Block.Metadata.IsBlocked)) return;
         editing = true;
@@ -65,13 +78,14 @@ public sealed partial class BrailleGridView
     public bool Copy(bool cut)
     {
         if (!HasSelection) return false;
-        Clipboard.SetText(string.Join("\n", Selection.Select(s => s.Block.Braille.Substring(s.Start, s.Length))));
+        Clipboard.SetText(string.Join("\n", Selection.Select(s => BrailleMarkup.VisibleText(s.Block.Braille.Substring(s.Start, s.Length)))));
         if (cut) _ = InsertAsync("");
         return true;
     }
     private void Move(int direction, bool extend, bool vertical = false)
     {
         if (caret is null) return;
+        if (vertical && !CoordinatesCurrent) return;
         if (vertical)
         {
             var lines = Items.Cast<BrailleGridFace>().SelectMany(f => f.Rows).ToArray();
@@ -88,7 +102,7 @@ public sealed partial class BrailleGridView
         var page = Blocks.Where(b => b.Page == block.Page).ToArray(); var index = Array.IndexOf(page, block);
         if (offset < 0 && index > 0) { block = page[index - 1]; offset = block.Braille.Length; }
         else if (offset > block.Braille.Length && index + 1 < page.Length) { block = page[index + 1]; offset = 0; }
-        Point(new(block, Math.Clamp(offset, 0, block.Braille.Length), '⠀', true), extend);
+        Point(new(block, BrailleMarkup.MovePastMarker(block.Braille, offset, direction), '⠀', true), extend);
     }
     public string DescribeCaret()
     {
@@ -135,11 +149,19 @@ public sealed partial class BrailleGridView
             selectedBlock = false;
             if (ctrl && e.Key is Key.C or Key.X) { e.Handled = true; Copy(e.Key == Key.X); return; }
             if (ctrl && e.Key == Key.V) { e.Handled = true; if (Clipboard.ContainsText()) await InsertAsync(Clipboard.GetText()); return; }
+            if (ctrl && e.Key == Key.Enter) { e.Handled = true; await InsertPageBreakAsync(); return; }
             if (ctrl) return;
             if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
             { e.Handled = true; Move(e.Key is Key.Left or Key.Up ? -1 : 1, shift, e.Key is Key.Up or Key.Down); }
             else if (e.Key is Key.Home or Key.End)
-            { e.Handled = true; Point(new(caret.Block, e.Key == Key.Home ? 0 : caret.Block.Braille.Length, '⠀', true), shift); }
+            {
+                e.Handled = true; var row = CurrentRow();
+                if (row.Length > 0)
+                {
+                    var last = row.LastOrDefault(c => !c.IsInsertion) ?? row[0];
+                    Point(e.Key == Key.Home ? row[0] : new(last.Block, last.Offset + (last.IsInsertion ? 0 : 1), '⠀', true), shift);
+                }
+            }
             else if (e.Key is Key.Delete or Key.Back)
             { e.Handled = true; if (!HasSelection) Move(e.Key == Key.Back ? -1 : 1, true); await InsertAsync(""); }
             else if (e.Key is Key.Enter or Key.Space)

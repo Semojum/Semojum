@@ -14,6 +14,7 @@ internal static class RemainingChecks
         yield return ("Slow translation locks braille at 400ms and unlocks when the current result arrives", DelayedTranslation);
         yield return ("Partial cross-block replacement preserves unselected text, original bounds and memo provenance", PartialRanges);
         yield return ("Footer ranges reject overlap and preserve open-ended and blank overrides in SMJ", Footers);
+        yield return ("SMJ v1 migrates missing layout fields and saves as v2 without losing content", LegacySmj);
         yield return ("Table grid round trips cells and rejects nested structural markers", Tables);
         yield return ("Work file writer lease excludes a second writer and releases on close", Leases);
         yield return ("Resolved memo state survives explicit SMJ save", ResolvedMemos);
@@ -26,6 +27,24 @@ internal static class RemainingChecks
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
         yield return ("AI alternatives and rule evidence survive page parsing and SMJ persistence", Alternatives);
+    }
+    private static async Task LegacySmj()
+    {
+        var session = new DocumentSession(); session.Add(new EditorBlock { Id = 1, Page = 1, Source = "이전 파일", Braille = "⠁" });
+        var snapshot = SmjFile.Snapshot(session);
+        var json = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(snapshot.Manifest, new JsonSerializerOptions(JsonSerializerDefaults.Web)))!;
+        json["version"] = 1; json["layout"]!.AsObject().Remove("numberRanges"); json.AsObject().Remove("footerRanges");
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".smj");
+        try
+        {
+            using (var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create))
+            using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(json.ToJsonString());
+            var loaded = await SmjFile.LoadAsync(path);
+            Check(loaded.Blocks[0].Source == "이전 파일" && loaded.Layout.NumberRanges is null && loaded.FooterRanges.Length == 0);
+            var migrated = SmjFile.Snapshot(loaded); Check(migrated.Manifest.Version == 2);
+            await SmjFile.SaveAsync(path, migrated); Check((await SmjFile.LoadAsync(path)).Blocks[0].Braille == "⠁");
+        }
+        finally { File.Delete(path); }
     }
     private static async Task Footers()
     {
@@ -68,6 +87,9 @@ internal static class RemainingChecks
     }
     private static Task GridCoordinates()
     {
+        var marked = "⠁<!쪽바꿈>⠃";
+        Check(BrailleMarkup.VisibleText(marked) == "⠁⠃" && BrailleMarkup.Markers(marked) == "<!쪽바꿈>");
+        Check(BrailleMarkup.MovePastMarker(marked, 2, 1) == marked.Length - 1 && BrailleMarkup.MovePastMarker(marked, marked.Length - 2, -1) == 1);
         var first = new EditorBlock { Id = 1, Page = 1, Braille = "⠁⠃⠉⠙⠑⠋⠛⠓⠊\n\n⠚" };
         var second = new EditorBlock { Id = 2, Page = 2, Braille = "⠿" };
         var original = first.Braille; var faces = BrailleGrid.Project([first, second], new(Columns: 8, Lines: 4));

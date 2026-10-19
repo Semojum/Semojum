@@ -22,6 +22,8 @@ public partial class MainWindow
     {
         PageEditor.CloseRequested += () => { PageEditor.Visibility = Visibility.Collapsed; SourceEditor.Visibility = Visibility.Visible; SourceEditor.Focus(); };
         PageEditor.Replay = redo => ReplayHistory(redo);
+        PageEditor.InsertPageBreak = () => InsertTag("쪽바꿈");
+        InstallEditorMenu(PageEditor.Editor);
         PageEditor.Replace = (spans, value) =>
         {
             if (spans.Length == 0 || session.IsReadOnly) return;
@@ -38,6 +40,7 @@ public partial class MainWindow
             QueuePreview(decision != ManualEditDecision.Keep);
         };
         PageEditor.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(PageEditor.Editor);
+        PageEditor.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
     }
     private void InstallEditorMenu(TextEditor editor)
     {
@@ -178,6 +181,33 @@ public partial class MainWindow
     }
     private void SelectionEdit(string action)
     {
+        if (action is "indent" or "unindent" && SelectedBlocks().Length == 0)
+        {
+            var panel = ActiveSearchPanel;
+            var editor = lastEditor ?? SourceEditor;
+            var spans = lastGrid is not null ? lastGrid.Selection : editor == PageEditor.Editor ? PageEditor.Selection :
+                session.ActiveBlock is { } b ? [new BlockSpan(b, editor.SelectionStart, editor.SelectionLength)] : Array.Empty<BlockSpan>();
+            if (spans.Length == 0 || spans.Any(s => s.Block.IsBrailleLocked || s.Block.Metadata.IsBlocked)) return;
+            session.ActiveBlock = spans[0].Block;
+            EditStructure(() =>
+            {
+                foreach (var span in spans)
+                {
+                    var text = BlockRange.Value(span.Block, panel);
+                    var start = span.Start == 0 ? 0 : text.LastIndexOf('\n', span.Start - 1) + 1;
+                    var end = span.Start + span.Length;
+                    if (span.Length > 0 && end > start && text[end - 1] == '\n') end--;
+                    var stop = text.IndexOf('\n', end); if (stop < 0) stop = text.Length;
+                    var blank = panel == SearchPanel.Text ? ' ' : '⠀';
+                    var value = string.Join("\n", text[start..stop].Split('\n').Select(line =>
+                        BrailleMarkup.Markers(line).Length > 0 ? line : action == "indent" ? blank + line : line.StartsWith(blank) ? line[1..] : line));
+                    value = text[..start] + value + text[stop..];
+                    if (panel == SearchPanel.Text) span.Block.Source = value; else span.Block.EditBraille(value);
+                }
+            });
+            if (panel == SearchPanel.Text) QueuePreview(true);
+            return;
+        }
         var blocks = SelectedBlocks(); if (blocks.Length == 0 && session.ActiveBlock is { } active) blocks = [active];
         if (blocks.Length == 0 || blocks.Any(b => b.IsBrailleLocked)) return;
         EditStructure(() =>
@@ -202,6 +232,7 @@ public partial class MainWindow
     }
     private void ClearCurrentLine()
     {
+        if (lastGrid is not null) { _ = lastGrid.ClearLineAsync(); return; }
         var editor = lastEditor ?? SourceEditor; if (editor.IsReadOnly) return;
         var line = editor.Document.GetLineByOffset(editor.CaretOffset); editor.Document.Remove(line.Offset, line.Length);
     }
