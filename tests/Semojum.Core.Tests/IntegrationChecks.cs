@@ -206,8 +206,9 @@ internal static class IntegrationChecks
         var api = new SemojumApiClient(http); await api.LoginAsync("test", "pw"); var client = new JobClient(api);
         var session = new DocumentSession { JobId = "job_test", OwnerLoginId = "test" };
         session.Add(new EditorBlock { Id = 1, Page = 1, ServerId = "t1", Source = "old\r\nsecond", Braille = "⠫" });
+        session.ServerPages[1] = [new("t1", true)];
         var snapshot = SmjFile.Snapshot(session); session.ActiveBlock!.Source = "changed";
-        var saved = await client.SaveAsync(snapshot); True(!saved.Complete(1)); Equal(1, saves);
+        var saved = await client.SaveAsync(snapshot); True(!saved.Complete); Equal(1, saved.Plan.ExpectedPages); Equal(1, saves);
         session.OwnerLoginId = "someone";
         await Reject<InvalidOperationException>(() => client.SaveAsync(SmjFile.Snapshot(session))); Equal(1, saves);
         session.OwnerLoginId = "test"; session.ActiveBlock.ServerId = null;

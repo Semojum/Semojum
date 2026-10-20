@@ -80,6 +80,12 @@ public sealed partial class DocumentSession : ObservableObject
     public string JobStatus { get; set; } = "COMPLETED";
     public Dictionary<int, string> PageStatuses { get; } = [];
     public Dictionary<int, OriginalPage> OriginalPages { get; } = [];
+    /// <summary>Blocks the server is known to hold per page (last read or last confirmed save). Drives deletion and braille-panel planning.</summary>
+    public Dictionary<int, ServerBlockRecord[]> ServerPages { get; } = [];
+    /// <summary>Server quality report per page. Replaced on every page read; kept in .smj for offline review.</summary>
+    public Dictionary<int, QualityIssue[]> QualityReports { get; } = [];
+    /// <summary>Last "kept locally only" notice shown for this document, so repeated saves do not repeat the same dialog. Not persisted.</summary>
+    public string? LastSyncNotice { get; set; }
     public string WindowTitle => $"{(IsDirty ? "● " : "")}{Title} — 세모점";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(WindowTitle));
@@ -113,10 +119,23 @@ public sealed partial class DocumentSession : ObservableObject
 }
 
 public sealed record OriginalPage(string Type, string? AssetName, string[]? Lines = null, int Width = 0, int Height = 0);
-public sealed record ConversionProgress(int Total, int Completed, int Failed, string Estimate)
+/// <summary>A block the server holds for a page. <see cref="HasBraille"/> is whether a braille element with the same id exists there.</summary>
+public sealed record ServerBlockRecord(string Id, bool HasBraille);
+/// <summary>Server quality report entry. <see cref="Severity"/> is "error" (critical_errors) or "review" (review_flags).</summary>
+public sealed record QualityIssue(string Severity, string Type, string? ElementId, string Message)
 {
-    public int Finished => Math.Min(Total, Completed + Failed);
-    public string Label => $"{Total}쪽 중 {Finished}쪽 처리 · 성공 {Completed} · 확인 필요 {Failed}" + (Estimate.Length == 0 ? "" : " · " + Estimate);
+    public string SeverityLabel => Severity == "error" ? "오류" : "검토";
+}
+/// <summary>
+/// Page counts are disjoint: Succeeded (COMPLETED/NEEDS_REVIEW) + Failed (BLOCKED/FAILED/CANCELED) = Finished,
+/// and Finished + Running + Pending = Total. The server's completedPages already includes failed pages.
+/// </summary>
+public sealed record ConversionProgress(int Total, int Succeeded, int Failed, int Running, string Estimate)
+{
+    public int Finished => Math.Min(Total, Succeeded + Failed);
+    public int Remaining => Math.Max(0, Total - Finished);
+    public string Label => $"{Total}쪽 중 {Finished}쪽 처리 · 성공 {Succeeded} · 확인 필요 {Failed}"
+        + (Running > 0 ? $" · 변환 중 {Running}" : "") + (Estimate.Length == 0 ? "" : " · " + Estimate);
 }
 
 public sealed record PageLayout(int Columns = 32, int Lines = 26, int StartPage = 1, string PageNumbers = "홀수 페이지", string Footer = "홀수 페이지",

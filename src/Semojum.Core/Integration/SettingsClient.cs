@@ -26,6 +26,9 @@ public sealed class SettingsClient(SemojumApiClient api)
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 100) throw new ArgumentException("양식 이름은 1–100자입니다.");
         if (id?.StartsWith("builtin:", StringComparison.Ordinal) == true) throw new ArgumentException("기본 양식은 수정할 수 없습니다.");
         layout.Validate();
+        // A form lives only on the server: a value it cannot hold would be dropped or rewritten, so it is rejected up front (C-04).
+        if (ServerContract.UnsupportedInForm(layout) is { Length: > 0 } unsupported)
+            throw new ArgumentException("서버 양식에 저장할 수 없는 설정입니다: " + string.Join(", ", unsupported) + ". 값을 바꾸거나 작업 설정으로만 사용해 주세요.");
         return ReadForm(await api.SendAuthenticatedAsync(id is null ? HttpMethod.Post : HttpMethod.Patch,
             "/api/users/braille-forms" + (id is null ? "" : "/" + Uri.EscapeDataString(id)),
             new { name = name.Trim(), baseFormId = baseId, layoutOptions = JobClient.LayoutBody(layout), brailleOptions = JobClient.OptionsBody(options) }, ct));

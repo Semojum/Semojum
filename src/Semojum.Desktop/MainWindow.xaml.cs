@@ -291,7 +291,8 @@ public partial class MainWindow : Window
                     break;
                 case "pageStatus":
                     var pageStatus = new PageStatusDialog(session) { Owner = this };
-                    if (pageStatus.ShowDialog() == true && session.Blocks.FirstOrDefault(b => b.Page == pageStatus.SelectedPage && b.ServerId is not null) is { } pageBlock)
+                    if (pageStatus.ShowDialog() == true && (session.Blocks.FirstOrDefault(b => pageStatus.SelectedBlockId is { } wanted && b.Id == wanted)
+                        ?? session.Blocks.FirstOrDefault(b => b.Page == pageStatus.SelectedPage && b.ServerId is not null)) is { } pageBlock)
                         BlockPicker.SetCurrentValue(Selector.SelectedItemProperty, pageBlock);
                     break;
                 case "close": Close(); break;
@@ -349,7 +350,12 @@ public partial class MainWindow : Window
                     break;
                 case "layout":
                     var layout = new LayoutDialog(session.Layout) { Owner = this };
-                    if (layout.ShowDialog() == true) { session.Layout = layout.Result; session.Status = $"판면 설정 · {layout.Result.Columns}칸 × {layout.Result.Lines}줄"; }
+                    if (layout.ShowDialog() == true)
+                    {
+                        session.Layout = layout.Result; session.Status = $"판면 설정 · {layout.Result.Columns}칸 × {layout.Result.Lines}줄";
+                        if (ServerContract.LocalOnlyLayout(layout.Result, session.FooterRanges) is { Length: > 0 } unsupported)
+                            session.Status += $" · 서버 미보존 설정 {unsupported.Length}건(.smj에만 보존)";
+                    }
                     break;
                 case "sixdot":
                     var sixdot = new SixDotDialog(sixDotKeys, Braille.SpaceEnabled, Braille.EnterEnabled) { Owner = this };
@@ -485,13 +491,18 @@ public partial class MainWindow : Window
             owner.IsReadOnly = false; ShowActiveBlock();
             filePath = path; if (openDocument is not null) openDocument.Path = path; owner.Title = Path.GetFileName(path);
             await RememberFileAsync(path);
+            string[] localOnly = [];
             if (owner.JobId is not null)
             {
                 try
                 {
                     var result = await jobs.SaveAsync(snapshot);
-                    if (!result.Complete(snapshot.Manifest.Blocks.Where(b => !b.Metadata.IsBlocked).Select(b => b.Page).Distinct().Count()))
-                        throw new InvalidOperationException($"서버 저장 실패 쪽: {string.Join(", ", result.FailedPages)}. {result.SavedPages}쪽만 저장되었습니다.");
+                    // Only pages the server confirmed become the new server baseline; the snapshot, not the live document, is the source.
+                    JobClient.ApplySaved(owner, result);
+                    localOnly = result.Plan.LocalOnly;
+                    if (!result.Complete)
+                        throw new InvalidOperationException($"서버 저장 실패 쪽: {string.Join(", ", result.FailedPages)}. 전송한 {result.Plan.ExpectedPages}쪽 중 {result.SavedPages}쪽만 저장되었습니다."
+                            + (result.Plan.Pages.Length == 0 ? " 전송할 서버 블록이 없었습니다." : ""));
                 }
                 catch (Exception ex)
                 {
@@ -503,7 +514,16 @@ public partial class MainWindow : Window
             }
             owner.IsDirty = owner.ChangeVersion != version;
             owner.Status = owner.IsDirty ? "저장 완료 · 저장 중 편집한 내용은 한 번 더 저장해 주세요." : owner.JobId is null ? "로컬 초안 저장 완료 · 서버 작업 없음" : "로컬·서버 저장 완료 · " + path;
-            if (owner.FooterRanges.Length > 0) owner.Status += " · 꼬리말 범위는 .smj에 보존";
+            if (localOnly.Length > 0)
+            {
+                owner.Status += $" · 서버 미보존 {localOnly.Length}건(.smj에만 보존)";
+                var notice = string.Join("\n", localOnly);
+                if (notice != owner.LastSyncNotice)
+                {
+                    owner.LastSyncNotice = notice;
+                    MessageBox.Show(this, "서버 저장은 완료했지만 다음 항목은 현재 서버 계약에 없어 .smj 파일에만 보존됩니다. 서버에서 다시 열면 복원되지 않으니 .smj를 보관하세요.\n\n" + notice, "서버에 저장되지 않은 항목", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
             return !owner.IsDirty;
         }
         catch (Exception ex) { ShowError(ex); return false; }

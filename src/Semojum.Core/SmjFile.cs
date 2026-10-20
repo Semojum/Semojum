@@ -11,14 +11,15 @@ public sealed record SmjBlock(int Id, string? ServerId, int Page, string Heading
 public sealed record OriginalAsset(string Entry, string FileName, long Length, string Sha256);
 public sealed record SmjManifest(string Format, int Version, string? JobId, string? OwnerLoginId, string JobStatus,
     PageLayout Layout, BrailleOptions Options, string FooterText, int? ActiveBlockId, SmjBlock[] Blocks, OriginalAsset[] Originals,
-    Dictionary<int, string>? PageStatuses = null, Dictionary<int, OriginalPage>? OriginalPages = null, FooterRange[]? FooterRanges = null);
+    Dictionary<int, string>? PageStatuses = null, Dictionary<int, OriginalPage>? OriginalPages = null, FooterRange[]? FooterRanges = null,
+    Dictionary<int, ServerBlockRecord[]>? ServerPages = null, Dictionary<int, QualityIssue[]>? QualityReports = null);
 public sealed record SmjSnapshot(SmjManifest Manifest, IReadOnlyDictionary<string, byte[]> Assets);
 
 /// <summary>Versioned, self-contained ZIP. All reading happens in memory; archive paths are never extracted.</summary>
 public static class SmjFile
 {
     public const string Format = "semojum-work";
-    public const int Version = 2;
+    public const int Version = 3;
     public const long MaximumExpandedBytes = 512L * 1024 * 1024;
     private const long MaximumManifestBytes = 64L * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -36,7 +37,8 @@ public static class SmjFile
             b.Memo, b.HasManualBraille, b.Metadata, b.Translation, b.Memos.ToArray(), b.SourceCaret, b.BrailleCaret)).ToArray();
         var manifest = new SmjManifest(Format, Version, session.JobId, session.OwnerLoginId, session.JobStatus,
             session.Layout, session.Options, session.FooterText, session.ActiveBlock?.Id, blocks, originals,
-            new(session.PageStatuses), new(session.OriginalPages), session.FooterRanges.ToArray());
+            new(session.PageStatuses), new(session.OriginalPages), session.FooterRanges.ToArray(),
+            new(session.ServerPages), new(session.QualityReports));
         // Detach nested arrays from live editor/engine state before awaiting disk or network I/O.
         manifest = JsonSerializer.Deserialize<SmjManifest>(JsonSerializer.SerializeToUtf8Bytes(manifest, Json), Json)!;
         Validate(manifest);
@@ -119,6 +121,9 @@ public static class SmjFile
         };
         foreach (var pair in manifest.PageStatuses ?? []) model.PageStatuses.Add(pair.Key, pair.Value);
         foreach (var pair in manifest.OriginalPages ?? []) model.OriginalPages.Add(pair.Key, pair.Value);
+        // v1/v2 files carry no server page records: saves from them leave the server braille panel untouched (JobClient.PlanSave).
+        foreach (var pair in manifest.ServerPages ?? []) model.ServerPages.Add(pair.Key, pair.Value ?? []);
+        foreach (var pair in manifest.QualityReports ?? []) model.QualityReports.Add(pair.Key, pair.Value ?? []);
         foreach (var b in manifest.Blocks)
         {
             var block = new EditorBlock
@@ -137,11 +142,14 @@ public static class SmjFile
 
     private static void Validate(SmjManifest m)
     {
-        if (m.Format != Format || m.Version is not (1 or Version)) throw new InvalidDataException("지원하지 않는 .smj 형식 또는 버전입니다.");
+        if (m.Format != Format || m.Version is not (1 or 2 or Version)) throw new InvalidDataException("지원하지 않는 .smj 형식 또는 버전입니다.");
         if (m.Layout is null || m.Options is null || m.FooterText is null || m.Blocks is not { Length: > 0 } || m.Originals is null)
             throw new InvalidDataException("작업 필수 정보가 없습니다.");
         m.Layout.Validate();
         FooterRange.Validate(m.FooterRanges ?? []);
+        if ((m.ServerPages ?? []).Any(p => p.Key < 1 || p.Value is null || p.Value.Any(b => b is null || string.IsNullOrEmpty(b.Id)))
+            || (m.QualityReports ?? []).Any(p => p.Key < 1 || p.Value is null || p.Value.Any(q => q is null || q.Severity is not ("error" or "review") || q.Type is null || q.Message is null)))
+            throw new InvalidDataException("서버 블록 기록 또는 품질 보고서가 올바르지 않습니다.");
         if (m.Options.LineBreakUnit is not ("syllable" or "word")) throw new InvalidDataException("알 수 없는 줄바꿈 옵션입니다.");
         if (m.Blocks.Any(b => b is null || b.Id < 1 || b.Page < 1 || b.Heading is null || b.Source is null || b.Braille is null
             || b.Memo is null || b.Metadata is null || b.Memos is null || b.Memos.Any(x => x is null || x.Panel is not ("TEXT" or "BRAILLE") || x.LineIndex < 0 || x.Body is null))

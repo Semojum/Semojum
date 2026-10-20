@@ -14,7 +14,7 @@ internal static class RemainingChecks
         yield return ("Slow translation locks braille at 400ms and unlocks when the current result arrives", DelayedTranslation);
         yield return ("Partial cross-block replacement preserves unselected text, original bounds and memo provenance", PartialRanges);
         yield return ("Footer ranges reject overlap and preserve open-ended and blank overrides in SMJ", Footers);
-        yield return ("SMJ v1 migrates missing layout fields and saves as v2 without losing content", LegacySmj);
+        yield return ("SMJ v1 migrates missing layout fields and saves as the current version without losing content", LegacySmj);
         yield return ("Table grid round trips cells and rejects nested structural markers", Tables);
         yield return ("Work file writer lease excludes a second writer and releases on close", Leases);
         yield return ("Resolved memo state survives explicit SMJ save", ResolvedMemos);
@@ -41,7 +41,7 @@ internal static class RemainingChecks
             using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(json.ToJsonString());
             var loaded = await SmjFile.LoadAsync(path);
             Check(loaded.Blocks[0].Source == "이전 파일" && loaded.Layout.NumberRanges is null && loaded.FooterRanges.Length == 0);
-            var migrated = SmjFile.Snapshot(loaded); Check(migrated.Manifest.Version == 2);
+            var migrated = SmjFile.Snapshot(loaded); Check(migrated.Manifest.Version == SmjFile.Version && SmjFile.Version == 3);
             await SmjFile.SaveAsync(path, migrated); Check((await SmjFile.LoadAsync(path)).Blocks[0].Braille == "⠁");
         }
         finally { File.Delete(path); }
