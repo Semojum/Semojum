@@ -16,7 +16,7 @@
 - C-04 `ServerContract`: ‘짝수 페이지’는 `pageNumberLine` 키를 생략(서버 값 유지)하고 저장 결과·업로드 확인·판면 설정 상태에 서버 미보존 항목(짝수 면·번호 범위·꼬리말 출력 면·꼬리말 범위·짝수 면 보정·메모 해결 상태·로컬 점자)을 안내. 서버 양식 저장은 미지원 값이면 거부(값을 바꿔 저장하지 않음).
 - 검사: `tests/Semojum.Core.Tests/SyncChecks.cs` 5건 추가, 기존 `JobSave` 검사 갱신. WPF smoke의 쪽 상태 캡처에 품질 보고서 fixture 추가.
 
-**검증:** [검증 기록](verification.md) 최신 항목 참조. Windows 실행·WPF 캡처는 저장소에 push 후 기존 워크플로로 다시 받아야 한다(이 세션은 GitHub push 권한이 없었다).
+**검증:** 브랜치 `codex/client-c01-c04`, 커밋 `7e08f3c` → [Windows editor 39393969579](https://github.com/Semojum/Semojum/actions/runs/39393969579) 성공: 핵심 60/60, 실제 엔진 포함 62/62, Python 5개, WPF 73/73·종료 코드 0 ([검증 기록](verification.md)). macOS `.build/dotnet` 사전 빌드·검사도 통과. main 병합은 PR로 진행한다. `tmp/`는 세션 실행 보조 파일이며 커밋 대상이 아니다.
 
 **사용자 확인이 필요한 사항:**
 
