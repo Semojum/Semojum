@@ -71,7 +71,9 @@ public partial class MainWindow
         var layout = new LayoutDialog(settings.Layout) { Owner = this };
         if (layout.ShowDialog() != true) return;
         settings.Layout = layout.Result;
-        if (MessageBox.Show(this, $"{dialog.FileNames.Length}개 파일을 서버에 업로드해 AI 변환합니다. 성공한 쪽에 크레딧이 사용됩니다.\n\n진행하시겠습니까?", "AI 변환", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
+        var localOnly = ServerContract.LocalOnlyLayout(settings.Layout, null);
+        var localNote = localOnly.Length == 0 ? "" : "\n\n서버에 저장되지 않아 .smj에만 보존되는 설정:\n" + string.Join("\n", localOnly);
+        if (MessageBox.Show(this, $"{dialog.FileNames.Length}개 파일을 서버에 업로드해 AI 변환합니다. 성공한 쪽에 크레딧이 사용됩니다.{localNote}\n\n진행하시겠습니까?", "AI 변환", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
         fileBusy = true;
         try
         {
@@ -105,7 +107,7 @@ public partial class MainWindow
     {
         var model = context.Model; var ct = context.JobLifetime.Token;
         var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
-        var started = System.Diagnostics.Stopwatch.StartNew(); var initialCompleted = status.CompletedPages;
+        var started = System.Diagnostics.Stopwatch.StartNew(); var initialFinished = status.FinishedPages;
         void RememberRevision(EditorBlock b, int revision)
         {
             context.Translated[b] = revision;
@@ -121,16 +123,18 @@ public partial class MainWindow
             {
                 model.JobStatus = status.OverallStatus;
                 foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
-                var failed = status.Pages.Count(p => p.Value is "FAILED" or "BLOCKED" or "CANCELLED" or "CANCELED");
-                var completedSinceOpen = status.CompletedPages - initialCompleted;
-                var remainingSeconds = completedSinceOpen > 0 ? started.Elapsed.TotalSeconds / completedSinceOpen * Math.Max(0, status.TotalPages - status.CompletedPages - failed) : 0;
-                model.Progress = status.IsTerminal ? null : new(status.TotalPages, status.CompletedPages, failed,
+                // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
+                // count twice nor shorten the estimate a second time (C-02).
+                var finishedSinceOpen = status.FinishedPages - initialFinished;
+                var remainingSeconds = finishedSinceOpen > 0 ? started.Elapsed.TotalSeconds / finishedSinceOpen * status.RemainingPages : 0;
+                model.Progress = status.IsTerminal ? null : status.ToProgress(
                     remainingSeconds > 0 ? $"잔여 약 {Math.Max(1, Math.Ceiling(remainingSeconds / 60))}분 (처리 속도 기준)" : "남은 시간 계산 중");
-                model.Status = $"AI 변환 {status.CompletedPages}/{status.TotalPages}쪽 · {status.OverallStatus}";
-                foreach (var page in status.Pages.Where(p => p.Value is "COMPLETED" or "NEEDS_REVIEW" or "FAILED" or "BLOCKED").OrderBy(p => p.Key))
+                model.Status = $"AI 변환 {status.FinishedPages}/{status.TotalPages}쪽 처리 · 성공 {status.SucceededPages} · 확인 필요 {status.FailedPages} · {status.Label}";
+                foreach (var page in status.Pages.Where(p => JobStatus.IsSucceededPage(p.Value) || JobStatus.IsFailedPage(p.Value)).OrderBy(p => p.Key))
                 {
                     if (loadedPages.Contains(page.Key)) continue;
                     var result = await jobs.PageAsync(model.JobId!, page.Key, nextId, ct);
+                    JobClient.Remember(model, result);
                     await CacheOriginalAsync(model, result, ct);
                     if (result.Blocks.Length == 0 && page.Value is "FAILED" or "BLOCKED")
                         result = result with { Blocks = [new EditorBlock { Id = nextId++, Page = page.Key, Heading = "변환 실패 · 원본 확인", State = page.Value, IsBrailleLocked = true, Metadata = new(IsBlocked: true) }] };
@@ -153,8 +157,9 @@ public partial class MainWindow
             if (waiting && status.TotalPages == 0 && status.OverallStatus == "COMPLETED")
             { model.ActiveBlock = null; model.Blocks.Clear(); model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "새 문서" }); }
             model.IsDirty = status.TotalPages > 0;
-            var blocked = status.Pages.Count(p => p.Value is "BLOCKED" or "FAILED");
-            model.Status = $"변환 {status.OverallStatus} · 확인할 쪽 {blocked}개 · Ctrl+S로 저장하세요.";
+            var issues = model.QualityReports.Values.Sum(q => q.Length);
+            model.Status = $"{status.Label} · 성공 {status.SucceededPages}쪽 · 확인할 쪽 {status.FailedPages}개"
+                + (issues > 0 ? $" · 서버 검토 항목 {issues}건(쪽별 변환 상태에서 확인)" : "") + " · Ctrl+S로 저장하세요.";
             if (session == model) ShowActiveBlock();
         }
         catch (OperationCanceledException) { }

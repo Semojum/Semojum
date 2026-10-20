@@ -152,6 +152,8 @@ public sealed class FormEditDialog : CompactDialog
         panel.Children.Add(Button("페이지 설정…", () => { var d = new LayoutDialog(layout) { Owner = this }; if (d.ShowDialog() == true) { layout = d.Result; UpdateLayoutText(); } return Task.CompletedTask; }));
         panel.Children.Add(editor);
         Action("저장", async () => { Saved = await client.SaveFormAsync(current?.FormId, name.Text, (basis.SelectedItem as BrailleForm)?.FormId, layout, editor.Value, Lifetime.Token); DialogResult = true; }, true);
+        panel.Children.Add(new TextBlock { Text = "양식은 서버에만 저장됩니다. 짝수 면 번호·번호 범위·꼬리말 출력 면·짝수 면 보정은 서버 양식에 없으므로 저장이 거부됩니다(값을 바꿔 저장하지 않습니다).",
+            TextWrapping = TextWrapping.Wrap, Foreground = System.Windows.Media.Brushes.DimGray, FontSize = 12, Margin = new(0, 8, 0, 4) });
         Action("취소", () => DialogResult = false);
         Action("바탕 양식 값으로", () => { if (basis.SelectedItem is BrailleForm f) { layout = f.Layout; editor.Set(f.Options); UpdateLayoutText(); } });
     }

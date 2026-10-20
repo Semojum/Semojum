@@ -129,7 +129,9 @@ internal static class WindowsSmoke
         await CaptureDialogAsync(new ExportRangeDialog([1, 2, 3, 4], () => Task.FromResult(7)) { Owner = window }, directory, "13-export-range.png");
         var statusDocument = new DocumentSession(); statusDocument.PageStatuses[1] = "COMPLETED";
         statusDocument.PageStatuses[2] = "FAILED"; statusDocument.PageStatuses[3] = "BLOCKED";
-        statusDocument.Add(new EditorBlock { Id = 1, Page = 1, ServerId = "status-fixture" });
+        statusDocument.Add(new EditorBlock { Id = 1, Page = 1, ServerId = "status-fixture", Source = "수정된 원문", Metadata = new(OriginalSource: "원문") });
+        statusDocument.QualityReports[1] = [new("error", "unsupported_char", "status-fixture", "지원하지 않는 문자가 있습니다"),
+            new("review", "low_confidence", "deleted-block", "인식 신뢰도가 낮습니다"), new("review", "layout", null, "쪽 전체 검토")];
         await CaptureDialogAsync(new PageStatusDialog(statusDocument) { Owner = window }, directory, "14-page-status.png");
         var searchWindow = new MainWindow(smoke: true);
         try
@@ -213,9 +215,10 @@ internal static class WindowsSmoke
         await CaptureDialogAsync(new BraillePreviewDialog([["⠼⠁", "⠫⠉⠊"], ["⠼⠃", "⠱⠑⠘⠃"]], "#a\r\ngnd\r\n\f#b\r\n\f", new(), "조판 검증") { Owner = window }, directory, "19-braille-pages.png");
         await CaptureDialogAsync(new FooterDialog(window.Session) { Owner = window }, directory, "20-footer-ranges.png");
         await CaptureDialogAsync(new RangeSelectionDialog(() => window.Session.Blocks.Where(b => b.Page == window.Session.ActiveBlock!.Page).ToArray(), SearchPanel.Text, (_, _) => Task.CompletedTask) { Owner = window }, directory, "21-range-selection.png");
-        window.Session.Progress = new(128, 47, 1, "잔여 약 2분 (처리 속도 기준)");
+        window.Session.Progress = new(128, 47, 1, 2, "잔여 약 2분 (처리 속도 기준)");
         await RenderAsync(window, Path.Combine(directory, "22-conversion-progress.png"));
-        Check(window.ConversionBanner.IsVisible, "Conversion progress exposes page counts and cancellation");
+        Check(window.ConversionBanner.IsVisible && window.Session.Progress.Finished == 48 && window.Session.Progress.Remaining == 80,
+            "Conversion progress exposes disjoint page counts and cancellation");
         window.Session.Progress = null;
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.

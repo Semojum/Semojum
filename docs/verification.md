@@ -2,6 +2,13 @@
 
 2026-10-20. 아래는 실제 실행 결과이며 운영 서버 E2E나 점역 규정 전체의 정확도 인증과 구분한다.
 
+## 2026-10-20 C-01~C-04 변경 후 macOS 실행 (진행 중)
+
+환경: macOS arm64, 프로젝트 내 `.build/dotnet` 10.0.401, `tmp/run-checks.command`(`dotnet build Semojum.sln -c Release` → `dotnet run --project tests/Semojum.Core.Tests -c Release --no-build`). 엔진 환경 변수 없이 실행해 실제 엔진 검사는 SKIP이며 통과로 세지 않는다. Windows 실행·WPF smoke는 아직 재실행하지 않았다.
+
+- 1차 실행 10:49 KST: 핵심 검사 59/60 — 새 `SyncChecks` 5건 전부 통과, 실패 1건은 `.smj` 버전 상수(2→3)만 확인하던 기존 검사라 `SmjFile.Version` 기준으로 고쳤다. Desktop 교차 빌드는 WPF smoke fixture의 `ConversionProgress` 생성자 인수 누락 1건으로 실패해 수정했다.
+- 2차 실행: 아래 ‘통과한 실행’에 결과를 기록할 때까지 미완료 상태다.
+
 ## 통과한 실행
 
 - 구현 커밋 `114860bd35c1668b02115898d133e126a44be00c`: [Windows editor 39274987611](https://github.com/Semojum/Semojum/actions/runs/39274987611), 전체 성공.
