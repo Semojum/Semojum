@@ -20,6 +20,7 @@ public partial class MainWindow
     private async Task DownloadUpdateAsync()
     {
         if (smoke || availableVersion is null || downloadingUpdate) return;
+        if (availableVersion.DownloadUrl is null) { updateStatus = "업데이트 다운로드 주소가 아직 등록되지 않았습니다. 관리자에게 문의해 주세요."; return; }
         downloadingUpdate = true;
         try { await AppUpdates.DownloadAsync(availableVersion, new Progress<string>(s => { updateStatus = s; session.Status = s; }), appLifetime.Token); }
         catch (OperationCanceledException) { }
@@ -43,7 +44,7 @@ public partial class MainWindow
             }
             if (!EnsureAccount()) { allowClose = true; Close(); return; }
             LoadAccountPreferences();
-            if (availableVersion?.Available(CurrentVersion) == true) _ = DownloadUpdateAsync();
+            if (availableVersion?.Available(CurrentVersion) == true && availableVersion.DownloadUrl is not null) _ = DownloadUpdateAsync();
             if (preferences.WorkFolder is not null) await OpenWorkFolderAsync(false);
             await RestoreActiveJobAsync();
         }
@@ -57,6 +58,7 @@ public partial class MainWindow
         message += $"최신 버전: {info.Latest}\n{info.ReleaseNotes}\n{updateStatus}";
         if (info.Required(CurrentVersion)) message += "\n이 버전은 더 이상 지원되지 않습니다. 업데이트 후 실행해 주세요.";
         if (!info.Available(CurrentVersion)) { MessageBox.Show(this, message + "\n최신 버전입니다.", "버전 정보"); return; }
+        if (info.DownloadUrl is null) { MessageBox.Show(this, message + "\n업데이트 다운로드 주소가 아직 등록되지 않았습니다. 관리자에게 문의해 주세요.", "버전 정보"); return; }
         if (MessageBox.Show(this, message + "\n\n업데이트를 다운로드하시겠습니까?", "버전 정보", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
             _ = DownloadUpdateAsync();
     }

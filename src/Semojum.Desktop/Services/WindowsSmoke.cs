@@ -302,8 +302,40 @@ internal static class WindowsSmoke
             await RenderAsync(real, Path.Combine(directory, "24-continuous-source.png"));
             real.Session.IsReadOnly = true; await Task.Delay(100);
             Check(real.PageEditor.Editor.IsReadOnly, "Continuous source honors read-only documents");
+            real.Session.IsReadOnly = false;
+            real.SourceEditor.Text = "종료 직전 자동 점역 대기";
+            await real.ReleaseResourcesAsync();
+            var shutdownBraille = real.Session.ActiveBlock!.Braille;
+            real.SourceEditor.CaretOffset = 0; // late editor notification after tokens/buffers have been released
+            await Task.Delay(600); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Check(real.Session.ActiveBlock!.Braille == shutdownBraille, "Shutdown cancels pending translation and ignores late caret events");
         }
         finally { await real.ReleaseResourcesAsync(); real.PrepareSmokeShutdown(); real.Close(); }
+        var memoModel = new DocumentSession();
+        var memoBlock = new EditorBlock { Id = 1, Page = 1, Source = "회귀 검사" }; memoModel.Add(memoBlock);
+        memoBlock.Memos.Add(new("open", null, "TEXT", 0, "회귀 검사", "미해결 회신", DateTimeOffset.Now));
+        memoBlock.Memos.Add(new("resolved", null, "TEXT", 0, "회귀 검사", "해결된 메모", DateTimeOffset.Now, true));
+        var thread = new MemoThreadDialog(memoBlock, "TEXT", 0, "회귀 검사", action => action(), memoModel) { Owner = window };
+        thread.Show();
+        try
+        {
+            Check(thread.MemoItems.Items.Count == 1, "Resolved memos are hidden from the default thread");
+            thread.MemoItems.SelectedIndex = 0; thread.ResolveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(thread.MemoItems.Items.Count == 0 && memoBlock.Memos.Count == 2 && memoBlock.Memos.All(m => m.Resolved), "Resolving hides a memo without deleting its body or replies");
+            thread.ShowResolved.IsChecked = true;
+            Check(thread.MemoItems.Items.Count == 2, "Resolved memos can be retrieved explicitly");
+            thread.MemoItems.SelectedIndex = 0; thread.ResolveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            thread.ShowResolved.IsChecked = false;
+            Check(thread.MemoItems.Items.Count == 1 && !memoBlock.Memos[0].Resolved, "Reopening a resolved memo restores its default visibility");
+            await RenderAsync(thread, Path.Combine(directory, "25-memo-reopened.png"));
+        }
+        finally { thread.Close(); }
+        var memoList = new MemoListDialog(memoModel) { Owner = window };
+        Check(memoList.MemoItems.Items.Count == 1, "Memo overview hides resolved items by default");
+        memoList.ShowResolved.IsChecked = true;
+        Check(memoList.MemoItems.Items.Count == 2, "Memo overview exposes resolved items on request");
+        memoList.Close();
+        Check(window.RuleSearch.IsVisible && window.AllTagsMenu.Items.Count == 28, "Rule search is visible and automatic-only tags stay out of insertion menu");
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
     }

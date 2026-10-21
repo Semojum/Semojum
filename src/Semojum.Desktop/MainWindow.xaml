@@ -94,8 +94,13 @@
     <Border x:Name="EditorToolbar" DockPanel.Dock="Top" Height="40" Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="8,0">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Border BorderBrush="#B5B5B5" BorderThickness="1" Background="White" Margin="8,0,0,0" Padding="6,0">
+            <DockPanel><TextBlock Text="⌕" Margin="0,0,4,0"/><TextBox x:Name="RuleSearch" Width="210" Height="26" MinHeight="26" BorderThickness="0" MaxLength="100" ToolTip="점자 규정 검색 · Enter" AutomationProperties.Name="점자 규정 검색" KeyDown="RuleSearch_KeyDown"/></DockPanel>
+          </Border>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button Content="‹" Tag="previous" Click="Action_Click" Style="{StaticResource FormatButton}" ToolTip="이전 블록"/>
-          <ComboBox x:Name="BlockPicker" Width="235" Height="26" MinHeight="26" FontSize="12" Padding="4,0" ItemsSource="{Binding Blocks}" DisplayMemberPath="Label" SelectedItem="{Binding ActiveBlock, Mode=OneWay}" SelectionChanged="BlockPicker_SelectionChanged" AutomationProperties.Name="작업 블록 선택"/>
+          <ComboBox x:Name="BlockPicker" Width="150" Height="26" MinHeight="26" FontSize="12" Padding="4,0" ItemsSource="{Binding Blocks}" DisplayMemberPath="Label" SelectedItem="{Binding ActiveBlock, Mode=OneWay}" SelectionChanged="BlockPicker_SelectionChanged" AutomationProperties.Name="작업 블록 선택"/>
           <Button Content="›" Tag="next" Click="Action_Click" Style="{StaticResource FormatButton}" ToolTip="다음 블록"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -155,6 +160,10 @@
         <Button DockPanel.Dock="Right" Content="변환 중단" Tag="cancelJob" Click="Action_Click" Margin="12,0,0,0"/>
         <StackPanel><TextBlock Text="{Binding Progress.Label}" Margin="0,0,0,5"/><ProgressBar Minimum="0" Maximum="{Binding Progress.Total, Mode=OneWay}" Value="{Binding Progress.Finished, Mode=OneWay}" Height="8" AutomationProperties.Name="문서 변환 진행률"/></StackPanel>
       </DockPanel>
+    </Border>
+    <Border DockPanel.Dock="Top" Padding="12,8" Background="#FFF4D6">
+      <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding CreditNotice}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+      <StackPanel><TextBlock Text="{Binding CreditNotice}" TextWrapping="Wrap"/><TextBlock Text="처리된 쪽은 편집할 수 있습니다. 이어서 처리 기능은 서버 지원 준비 중입니다. 원본을 다시 올리면 별도 작업이 생성됩니다." TextWrapping="Wrap"/></StackPanel>
     </Border>
     <Border x:Name="SelectionPane" DockPanel.Dock="Top" Visibility="Collapsed" Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,1" Padding="8">
       <StackPanel>

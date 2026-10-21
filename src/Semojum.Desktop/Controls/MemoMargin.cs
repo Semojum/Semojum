@@ -22,10 +22,10 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
         if (TextView?.VisualLinesValid != true || active() is not { } block) return;
         foreach (var line in TextView.VisualLines)
         {
-            var memos = block.Memos.Where(m => m.Panel == panel && m.LineIndex == line.FirstDocumentLine.LineNumber - 1).ToArray();
+            var memos = block.Memos.Where(m => m.Panel == panel && m.LineIndex == line.FirstDocumentLine.LineNumber - 1 && !m.Resolved).ToArray();
             if (memos.Length == 0) continue;
             var y = line.VisualTop - TextView.VerticalOffset + Math.Min(10, line.Height / 2);
-            drawingContext.DrawEllipse(memos.All(m => m.Resolved) ? Brushes.LightGray : Brushes.Gold, new Pen(Brushes.DimGray, 1), new Point(8, y), 5, 5);
+            drawingContext.DrawEllipse(Brushes.Gold, new Pen(Brushes.DimGray, 1), new Point(8, y), 5, 5);
         }
     }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)

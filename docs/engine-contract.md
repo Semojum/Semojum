@@ -2,7 +2,9 @@
 
 확인일: 2026-10-20. 서비스 기획이 요구사항의 기준이며, 사용자 결정에 따라 어댑터는 **실제 엔진 코드**를 사용한다. 지원되지 않는 요구를 자체 점역 규칙으로 추측하지 않는다.
 
-기준: [Semojum/braille v3.4.24, 976b2048](https://github.com/Semojum/braille/tree/976b2048d1a1ad0b31a869001f80f9fa260b93af). `semojum_braille/sidecar.py`, `assist.py`, `docs/sidecar.md`를 확인했다. V3.4.17에 대한 이전 기록은 현재 어댑터의 계약이 아니다.
+2026-10-22 Windows 인수 수정: [Semojum/braille v3.4.31, 9b64349](https://github.com/Semojum/braille/tree/9b6434996bdeffa2536551d20cf2bdbcb82ecab5)로 고정 버전을 갱신했다. 기존 v3.4.24 어댑터의 급수·표·기호·역점역과 앱 `compose_editor` 경로를 실제 Python/패키징 엔진으로 재검사했다. Python 조판 5개(160개 난수 parity/좌표 사례 포함), 실제 엔진 포함 핵심 66개가 통과했다. upstream `footer_mode`·`footers_by_orig_page`를 앱 필드로 임의 변환하지 않고, 기존 인쇄 면 기준 범위·정렬을 앱 조판 브리지에서 유지한다.
+
+v3.4.31의 실제 `sidecar.translate`도 영어 문서 규정·혼용 규정·연속 공백 정책 필드를 제공하지 않는다. 이 옵션의 엔진 후속 범위는 그대로이며, 새 버전으로 올렸다는 이유만으로 지원 완료로 표시하지 않는다.
 
 | 항목 | 실제 계약과 앱 처리 |
 |---|---|
@@ -38,6 +40,6 @@ UTF-8 JSONL 요청/응답의 id, 시작 ping의 protocol=1을 검사한다. stde
 
 ## 검증과 미검증 범위
 
-실제 Python v3.4.24로 급수, 표 초안, 알 수 없는 태그, 기호, 검수 순서, BRF 생성·복원을 검사한다. Windows 패키징 엔진도 별도 CI로 검사한다. 전체 점역 정확도·모든 수식과 표·실제 점자 프린터의 물리 출력은 이 검사로 보증되지 않는다. 라이선스·NOTICE·third_party 고지는 배포물에 포함하고 kiwi는 번들하지 않는다.
+실제 Python v3.4.31로 급수, 표 초안, 알 수 없는 태그, 기호, 검수 순서, BRF 생성·복원을 검사한다. Windows 패키징 엔진도 별도 CI로 검사한다. 전체 점역 정확도·모든 수식과 표·실제 점자 프린터의 물리 출력은 이 검사로 보증되지 않는다. 라이선스·NOTICE·third_party 고지는 배포물에 포함하고 kiwi는 번들하지 않는다.
 
 `tests/engine/test_editor_composition.py`는 160개 난수 조합에서 기존 지원 범위의 BRF가 upstream과 같은지, 모든 본문 셀이 올바른 원문 위치인지 확인한다. 변경선 끄기·번호 없음의 공간 회수·독립 꼬리말·번호 범위·반복 쪽바꿈·개행 정규화는 별도 기대 결과로 검사한다. 이는 해당 사례의 조판 정합성 근거이며 한국 점자 규정 전체의 정확도 인증은 아니다.

@@ -71,6 +71,7 @@ public sealed partial class DocumentSession : ObservableObject
     [ObservableProperty] private bool isReadOnly;
     [ObservableProperty] private string status = "준비";
     [ObservableProperty] private ConversionProgress? progress;
+    [ObservableProperty] private string creditNotice = "";
     [ObservableProperty] private PageLayout layout = new();
     [ObservableProperty] private BrailleOptions options = new();
     [ObservableProperty] private string footerText = "";

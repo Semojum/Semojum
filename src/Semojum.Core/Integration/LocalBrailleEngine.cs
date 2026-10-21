@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace Semojum.Core.Integration;
 
-/// <summary>Wire adapter for Semojum/braille v3.4.24, commit 976b2048d1a1ad0b31a869001f80f9fa260b93af.</summary>
+/// <summary>Wire adapter for Semojum/braille v3.4.31, commit 9b6434996bdeffa2536551d20cf2bdbcb82ecab5.</summary>
 public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptions>? options = null) : ITranslationEngine
 {
     private static readonly JsonSerializerOptions Json = new()

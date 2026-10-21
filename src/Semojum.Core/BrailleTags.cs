@@ -22,6 +22,8 @@ public static class BrailleTags
         new("상자", true), new("상자끝", false), new("상자2", false), new("상자3", false),
         new("네모글", true), new("기울임", true)
     ];
+    // These structural tags are produced by proofreading. Keep parsing existing files, but do not offer manual insertion.
+    public static IReadOnlyList<BrailleTag> Menu { get; } = All.Where(t => t.Name is not ("상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임")).ToArray();
     public static BrailleTag Get(string name) => All.FirstOrDefault(t => t.Name == name)
         ?? throw new ArgumentException("지원하지 않는 점역 태그입니다: " + name, nameof(name));
 }

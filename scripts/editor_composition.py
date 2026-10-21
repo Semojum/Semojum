@@ -1,6 +1,6 @@
 """Desktop composition with reversible cell coordinates.
 
-Uses the pinned Semojum/braille 3.4.24 helpers for wrapping, rules, numbers,
+Uses the pinned Semojum/braille 3.4.31 helpers for wrapping, rules, numbers,
 alignment and BRF encoding. Pagination follows assist.build_pages; this adapter
 adds coordinates and independent footer/number policies. No translation rules
 are reimplemented here. See tests/engine/test_editor_composition.py for upstream parity.

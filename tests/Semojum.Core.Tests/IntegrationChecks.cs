@@ -29,8 +29,8 @@ internal static class IntegrationChecks
         yield return ("Braille folding respects syllables, empty lines and note indicators", Folding);
         yield return ("Tags distinguish pairs, singletons and layout-only footer", Tags);
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_PYTHON") is { Length: > 0 } python)
-            yield return ("Real v3.4.24 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
-        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.24 Python executable");
+            yield return ("Real v3.4.31 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
+        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.31 Python executable");
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_EXECUTABLE") is { Length: > 0 } executable)
             yield return ("Packaged engine grades, table drafts and BRF round trip", () => RealEngine(executable, true));
     }
@@ -355,7 +355,7 @@ internal static class IntegrationChecks
         await using var sidecar = new BrailleSidecar(new(python, packaged ? [] : ["-u", Path.Combine(AppContext.BaseDirectory, "engine-adapter", "engine-entry.py")]));
         var engine = new LocalBrailleEngine(sidecar);
         var grade2 = await engine.TranslateElementAsync("가", new(), new()); Equal("⠫", grade2.Cells.Trim('⠀'));
-        Equal("3.4.24", sidecar.EngineVersion);
+        Equal("3.4.31", sidecar.EngineVersion);
         var grade1 = await engine.TranslateElementAsync("가", new(), new(KoreanGrade1: true)); Equal("⠈⠣", grade1.Cells.Trim('⠀'));
         var dropped = await engine.TranslateElementAsync("가▶나", new(), new()); True(dropped.NeedsReview); Equal("▶", dropped.Dropped[0].Text);
         var table = await engine.TranslateElementAsync("", new(Type: "table", TableSource: "<!표>\n<!행><!칸>구분<!칸>가<!/행>\n<!행><!칸>나<!칸>다<!/행>\n<!/표>", RenderMode: "table_grid"), new());

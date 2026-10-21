@@ -11,11 +11,11 @@ public static class AppUpdates
     private static string Root => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Semojum", "updates");
     public static async Task DownloadAsync(AppVersionInfo info, IProgress<string> progress, CancellationToken ct)
     {
+        var url = info.DownloadUrl ?? throw new InvalidOperationException("업데이트 다운로드 주소가 아직 등록되지 않았습니다.");
         Directory.CreateDirectory(Root); var temporary = Path.Combine(Root, "download-" + Guid.NewGuid().ToString("N") + ".zip");
         try
         {
             using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
-            var url = info.DownloadUrl;
             HttpResponseMessage? response = null;
             try
             {
