@@ -38,9 +38,14 @@ public partial class MainWindow : Window
     private BraillePane? detachedPane;
     private TextEditor? lastEditor;
     private Task? cleanup;
+    private bool resourcesReleased;
     internal Task ReleaseResourcesAsync() => cleanup ??= ReleaseResourcesCoreAsync();
     private async Task ReleaseResourcesCoreAsync()
     {
+        // Disposing editor buffers raises caret/text events. Block new work before cancellation
+        // or the first await, otherwise those events can create a debounce against disposed tokens.
+        resourcesReleased = true;
+        previewGeneration++; pendingSourceTranslation = false;
         appLifetime.Cancel(); debounce?.Cancel(); dotSpeech.Dispose(); documentLifetime.Cancel(); Braille.Dispose(); PageEditor.Dispose();
         foreach (var opened in openDocuments) { opened.JobLifetime.Cancel(); opened.Lease?.Dispose(); opened.Buffers.Dispose(); }
         if (sidecar is not null) await sidecar.DisposeAsync();
@@ -106,6 +111,7 @@ public partial class MainWindow : Window
 
     private void SetSession(DocumentSession model, string? path, bool showOriginal)
     {
+        if (resourcesReleased) return;
         switching = true;
         try
         {
@@ -200,10 +206,11 @@ public partial class MainWindow : Window
 
     private async Task TranslateAsync(EditorBlock block, ManualEditDecision decision, bool interactive = true)
     {
+        if (resourcesReleased) return;
         var owner = session;
         var revision = block.SourceRevision;
         var result = await translator.TranslateAsync(block, decision, smoke ? TimeSpan.FromMilliseconds(400) : TimeSpan.FromSeconds(35), documentLifetime.Token);
-        if (owner != session) return;
+        if (resourcesReleased || owner != session) return;
         if (result is TranslationOutcome.Applied or TranslationOutcome.Kept) translatedRevisions[block] = revision;
         session.Status = result switch
         {
@@ -233,6 +240,7 @@ public partial class MainWindow : Window
 
     private async Task ExecuteAsync(string action)
     {
+        if (resourcesReleased) return;
         try
         {
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }

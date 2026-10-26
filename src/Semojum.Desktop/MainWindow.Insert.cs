@@ -8,19 +8,25 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
-    private void ShowLineMemos(SearchPanel panel, int? requestedLine = null)
+    private async void ShowLineMemos(SearchPanel panel, int? requestedLine = null, bool showResolved = false)
     {
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
         var editor = SearchEditor(panel); var line = requestedLine ?? editor.TextArea.Caret.Line - 1;
         if (line < 0 || line >= editor.Document.LineCount) return;
         var text = editor.Document.GetText(editor.Document.GetLineByNumber(line + 1));
-        new MemoThreadDialog(block, panel == SearchPanel.Text ? "TEXT" : "BRAILLE", line, text, EditStructure) { Owner = this }.ShowDialog();
+        var dialog = new MemoThreadDialog(block, panel == SearchPanel.Text ? "TEXT" : "BRAILLE", line, text, EditStructure, session, showResolved) { Owner = this };
+        dialog.ShowDialog();
         foreach (var margin in editor.TextArea.LeftMargins.OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
+        if (dialog.Destination is { } destination)
+        {
+            try { await NavigateToAsync(destination); ShowLineMemos(destination.Panel, showResolved: dialog.ShowResolved.IsChecked == true); }
+            catch (Exception ex) { ShowError(ex); }
+        }
     }
     private async Task ShowMemoListAsync()
     {
         var dialog = new MemoListDialog(session) { Owner = this };
-        if (dialog.ShowDialog() == true && dialog.Destination is { } d) { await NavigateToAsync(d); ShowLineMemos(d.Panel); }
+        if (dialog.ShowDialog() == true && dialog.Destination is { } d) { await NavigateToAsync(d); ShowLineMemos(d.Panel, showResolved: dialog.IncludeResolved); }
     }
     private async Task EditTableAsync()
     {
@@ -42,7 +48,7 @@ public partial class MainWindow
     }
     private void PopulateTagMenu()
     {
-        foreach (var tag in BrailleTags.All)
+        foreach (var tag in BrailleTags.Menu)
         {
             var item = new MenuItem { Header = tag.Name, Tag = "tag:" + tag.Name }; item.Click += Action_Click; AllTagsMenu.Items.Add(item);
         }
@@ -105,5 +111,11 @@ public partial class MainWindow
         var evidence = block.Metadata.Rules ?? [];
         new RuleDialog(api, evidence, SourceEditor.SelectedText.Length > 0 ? SourceEditor.SelectedText : block.Source,
             Braille.Editor.SelectedText.Length > 0 ? Braille.Editor.SelectedText : block.Braille) { Owner = this }.ShowDialog();
+    }
+    private void RuleSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.Enter) return;
+        e.Handled = true;
+        if (EnsureAccount()) new RuleDialog(api, [], "", "", RuleSearch.Text.Trim()) { Owner = this }.ShowDialog();
     }
 }

@@ -8,7 +8,7 @@ namespace Semojum.Core.Integration;
 /// Server status. <see cref="CompletedPages"/> is the server's <c>completedPages</c>, which counts every finished page —
 /// successful (COMPLETED/NEEDS_REVIEW) and failed (BLOCKED) alike (BE JobService.getJobStatus). Never add failures to it again.
 /// </summary>
-public sealed record JobStatus(string JobId, int TotalPages, int CompletedPages, string OverallStatus, Dictionary<int, string> Pages)
+public sealed record JobStatus(string JobId, int TotalPages, int CompletedPages, string OverallStatus, Dictionary<int, string> Pages, bool CreditExhausted = false)
 {
     public bool IsTerminal => OverallStatus is "COMPLETED" or "FAILED" or "CANCELLED" or "CANCELED";
     public static bool IsFailedPage(string status) => status is "FAILED" or "BLOCKED" or "CANCELLED" or "CANCELED";
@@ -100,18 +100,28 @@ public sealed class JobClient(SemojumApiClient api)
                     throw new InvalidDataException("서버 쪽 번호가 올바르지 않습니다.");
                 pages.Add(page, item.Value.GetString() ?? "UNKNOWN");
             }
-        return new(jobId, Number(data, "totalPages"), Number(data, "completedPages"), Required(data, "overallStatus"), pages);
+        return new(jobId, Number(data, "totalPages"), Number(data, "completedPages"), Required(data, "overallStatus"), pages, Bool(data, "creditExhausted"));
     }
 
     public Task<JsonElement> CancelAsync(string jobId, CancellationToken ct = default) =>
         api.SendAuthenticatedAsync(HttpMethod.Post, JobPath(jobId, "cancel"), cancellationToken: ct);
 
-    public async Task ReadSettingsAsync(DocumentSession model, CancellationToken ct = default)
+    public async Task ReadSettingsAsync(DocumentSession model, CancellationToken ct = default, DocumentSession? uploadSettings = null)
     {
         var data = await api.SendAuthenticatedAsync(HttpMethod.Get, JobPath(model.JobId!, "options"), cancellationToken: ct);
         if (data.TryGetProperty("layoutOptions", out var l)) model.Layout = ReadLayout(l);
         if (data.TryGetProperty("brailleOptions", out var b)) model.Options = ReadOptions(b);
         model.FooterText = Text(data, "footerText") ?? "";
+        // The upload dialog is the source of truth for this new local document. Server B-06 omits
+        // settings such as even pages and number ranges; its defaults must not erase the user's choices.
+        // Opening an existing server job has no local override and continues to use server values.
+        if (uploadSettings is not null)
+        {
+            model.Layout = uploadSettings.Layout with { NumberRanges = uploadSettings.Layout.NumberRanges?.ToArray() };
+            model.Options = uploadSettings.Options;
+            model.FooterText = uploadSettings.FooterText;
+            model.FooterRanges = uploadSettings.FooterRanges.ToArray();
+        }
     }
 
     public async Task<RemotePage> PageAsync(string jobId, int page, int firstLocalId, CancellationToken ct = default)

@@ -17,7 +17,7 @@ public partial class MainWindow
 
     private async void QueuePreview(bool sourceChanged)
     {
-        if (smoke || switching || session?.IsReadOnly == true || session?.ActiveBlock is not { } block || engine is not LocalBrailleEngine local) return;
+        if (resourcesReleased || smoke || switching || session?.IsReadOnly == true || session?.ActiveBlock is not { } block || engine is not LocalBrailleEngine local) return;
         pendingSourceTranslation |= sourceChanged;
         var generation = ++previewGeneration;
         debounce?.Cancel(); debounce?.Dispose(); debounce = new();
@@ -25,7 +25,7 @@ public partial class MainWindow
         try
         {
             await Task.Delay(450, waitToken);
-            if (session != owner || session.ActiveBlock != block) return;
+            if (resourcesReleased || ct.IsCancellationRequested || generation != previewGeneration || session != owner || session.ActiveBlock != block) return;
             var translate = pendingSourceTranslation; pendingSourceTranslation = false;
             if (translate && autoTranslate && translatedRevisions.GetValueOrDefault(block, -1) != block.SourceRevision)
                 await TranslateAsync(block, ChooseTranslation(block), interactive: false);

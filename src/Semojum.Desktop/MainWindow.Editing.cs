@@ -56,7 +56,7 @@ public partial class MainWindow
             var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
         }
         var insert = new MenuItem { Header = "삽입" };
-        foreach (var definition in BrailleTags.All)
+        foreach (var definition in BrailleTags.Menu)
         {
             var item = new MenuItem { Header = definition.Name }; item.Click += (_, _) => InsertTag(definition.Name); insert.Items.Add(item);
         }

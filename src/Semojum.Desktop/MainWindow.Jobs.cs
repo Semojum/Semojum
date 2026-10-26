@@ -81,12 +81,12 @@ public partial class MainWindow
             foreach (var path in orderedFiles) files.Add(new(Path.GetFileName(path), await File.ReadAllBytesAsync(path)));
             session.Status = "파일 업로드 중…";
             var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, form.Selected?.FormId);
-            await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(dialog.FileNames[0]) + ".smj", files);
+            await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(orderedFiles[0]) + ".smj", files, uploadSettings: settings);
         }
         finally { fileBusy = false; }
     }
 
-    private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null, int? restorePage = null)
+    private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null, int? restorePage = null, DocumentSession? uploadSettings = null)
     {
         var existing = openDocuments.FirstOrDefault(d => d.Model.JobId == id);
         if (existing is not null) { SetSession(existing.Model, existing.Path, existing.ShowOriginal); return; }
@@ -94,11 +94,12 @@ public partial class MainWindow
         try
         {
             var model = new DocumentSession { JobId = id, OwnerLoginId = api.Account!.LoginId, Title = title, JobStatus = "PENDING" };
-            await jobs.ReadSettingsAsync(model, documentLifetime.Token);
+            await jobs.ReadSettingsAsync(model, documentLifetime.Token, uploadSettings);
             var status = await jobs.StatusAsync(id, documentLifetime.Token);
             if (originals is not null) foreach (var file in originals) model.OriginalFiles[file.FileName] = file.Bytes;
             model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "변환 대기 중", State = "대기", IsBrailleLocked = true, Metadata = new(IsBlocked: true) });
-            SetSession(model, null, false);
+            SetSession(model, null, originals?.Any(f => !Path.GetExtension(f.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase)) ?? false);
+            openDocument!.OriginalKindKnown = originals is not null;
             _ = MonitorJobAsync(openDocument!, status, restorePage);
         }
         finally { fileBusy = false; }
@@ -122,6 +123,7 @@ public partial class MainWindow
             while (true)
             {
                 model.JobStatus = status.OverallStatus;
+                model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 변환 완료)" : "";
                 foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
                 // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
                 // count twice nor shorten the estimate a second time (C-02).
@@ -136,6 +138,12 @@ public partial class MainWindow
                     var result = await jobs.PageAsync(model.JobId!, page.Key, nextId, ct);
                     JobClient.Remember(model, result);
                     await CacheOriginalAsync(model, result, ct);
+                    if (!context.OriginalKindKnown && result.OriginalType is not null)
+                    {
+                        context.OriginalKindKnown = true;
+                        context.ShowOriginal = result.OriginalType != "text";
+                        if (session == model) { OriginalToggle.IsChecked = context.ShowOriginal; UpdatePanelLayout(); }
+                    }
                     if (result.Blocks.Length == 0 && page.Value is "FAILED" or "BLOCKED")
                         result = result with { Blocks = [new EditorBlock { Id = nextId++, Page = page.Key, Heading = "변환 실패 · 원본 확인", State = page.Value, IsBrailleLocked = true, Metadata = new(IsBlocked: true) }] };
                     if (result.Blocks.Length == 0) { loadedPages.Add(page.Key); continue; }

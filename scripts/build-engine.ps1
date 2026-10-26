@@ -5,11 +5,19 @@ $build = Join-Path $root 'artifacts/engine-build'
 $source = Join-Path $build 'source'
 New-Item -ItemType Directory -Force $build | Out-Null
 if (-not (Test-Path "$source/.git")) {
-    git clone --depth 1 --branch v3.4.24 https://github.com/Semojum/braille.git $source
+    git clone --depth 1 --branch v3.4.31 https://github.com/Semojum/braille.git $source
     if ($LASTEXITCODE -ne 0) { throw 'Engine source download failed.' }
 }
 $revision = git -C $source rev-parse HEAD
-if ($revision -ne '976b2048d1a1ad0b31a869001f80f9fa260b93af') { throw 'Unexpected engine revision.' }
+$expectedRevision = '9b6434996bdeffa2536551d20cf2bdbcb82ecab5'
+if ($revision -ne $expectedRevision) {
+    if (git -C $source status --porcelain) { throw 'Engine source contains local changes; refusing to replace them.' }
+    git -C $source fetch --depth 1 origin $expectedRevision
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned engine source download failed.' }
+    git -C $source checkout --detach $expectedRevision
+    if ($LASTEXITCODE -ne 0) { throw 'Pinned engine checkout failed.' }
+}
+if ((git -C $source rev-parse HEAD) -ne $expectedRevision) { throw 'Unexpected engine revision.' }
 python -m venv "$build/venv"
 if ($LASTEXITCODE -ne 0) { throw 'Engine build environment failed.' }
 $python = Join-Path $build 'venv/Scripts/python.exe'
@@ -28,4 +36,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Engine license collection failed.' }
 $ping = '{"op":"ping","id":1}' | & (Join-Path $Output 'semojum-engine.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Frozen engine failed to start.' }
 $response = $ping | ConvertFrom-Json
-if ($response.version -ne '3.4.24' -or $response.protocol -ne 1) { throw 'Frozen engine handshake mismatch.' }
+if ($response.version -ne '3.4.31' -or $response.protocol -ne 1) { throw 'Frozen engine handshake mismatch.' }
