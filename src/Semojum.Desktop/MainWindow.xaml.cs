@@ -677,13 +677,13 @@ public partial class MainWindow : Window
             { model = await WorkFile.LoadAsync(requestedPath); model.Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj"; SetSession(model, null, false); }
             else
             {
-                var lease = WorkFileLease.TryAcquire(requestedPath);
+                var lease = WorkFileLease.TryAcquire(requestedPath, out var accessDenied);
                 try
                 {
                     model = await SmjFile.LoadAsync(requestedPath); model.IsReadOnly = lease is null;
                     if (model.IsReadOnly)
                     {
-                        var readOnly = FileNotices.ReadOnlyDocument(); readOnly.Owner = this; readOnly.ShowDialog();
+                        var readOnly = FileNotices.ReadOnlyDocument(accessDenied); readOnly.Owner = this; readOnly.ShowDialog();
                         if (readOnly.Choice != 0) return;
                     }
                     SetSession(model, requestedPath, false); openDocument!.Lease = lease; lease = null;

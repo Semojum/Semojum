@@ -64,9 +64,12 @@ internal static class WindowsSmoke
 
         window.ToggleDetached();
         Check(ReferenceEquals(window.Braille.Editor.Document, window.DetachedPane!.Editor.Document), "Detached window shares the same document");
+        // Figma 1:1023 shows untouched braille scrolled to line 5 with the caret on line 6; capture that state before the manual edit below.
+        window.DetachedPane.Editor.TextArea.Caret.Line = Math.Min(6, window.DetachedPane.Editor.LineCount);
+        window.DetachedPane.Editor.ScrollToVerticalOffset(4 * 28);
+        await RenderAsync(window.DetachedWindow!, Path.Combine(directory, "02-detached.png"));
         window.DetachedPane.Editor.Document.Insert(0, "⠿");
         Check(block.Braille.StartsWith("⠿") && block.HasManualBraille, "Detached edits update model and manual-correction state");
-        await RenderAsync(window.DetachedWindow!, Path.Combine(directory, "02-detached.png"));
         window.ToggleDetached();
         Check(window.Braille.Editor.Text.StartsWith("⠿"), "Reattached panel retains detached edits");
         var versionBeforeDetach = window.Session.ChangeVersion;
@@ -357,6 +360,12 @@ internal static class WindowsSmoke
             await RenderAsync(thread, Path.Combine(directory, "25-memo-reopened.png"));
         }
         finally { thread.Close(); }
+        // Figma 1:1093 example thread, rendered by the same component for a same-data comparison.
+        var figmaMemoModel = new DocumentSession();
+        var figmaMemoBlock = new EditorBlock { Id = 1, Page = 12, Source = "원문이 「작다」인데 그래프를 보면 「크다」가 맞습니다." }; figmaMemoModel.Add(figmaMemoBlock);
+        figmaMemoBlock.Memos.Add(new("figma-1", null, "TEXT", 0, figmaMemoBlock.Source, "원문이 「작다」인데 그래프를 보면 「크다」가 맞습니다.", DateTimeOffset.Now, Author: "김점역"));
+        figmaMemoBlock.Memos.Add(new("figma-2", null, "TEXT", 0, figmaMemoBlock.Source, "확인했습니다. 출판사에 알려 두겠습니다.", DateTimeOffset.Now, Author: "이교정"));
+        await CaptureDialogAsync(new MemoThreadDialog(figmaMemoBlock, "TEXT", 0, figmaMemoBlock.Source, action => action(), figmaMemoModel, author: "김점역") { Owner = window }, directory, "85-memo-thread-figma.png");
         var memoList = new MemoListDialog(memoModel) { Owner = window };
         Check(memoList.MemoItems.Items.Count == 1, "Memo overview hides resolved items by default");
         memoList.ShowResolved.IsChecked = true;

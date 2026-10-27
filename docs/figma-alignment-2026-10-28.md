@@ -1,6 +1,6 @@
 # Figma 화면 반영과 검증 — 2026-10-28
 
-이 문서는 [QA 4차 기록](qa4-2026-10-27.md) 이후의 최신 상태다. 전체 설계 구현 또는 모든 화면의 픽셀 일치가 완료되었다는 뜻은 아니다. [남은 작업](remaining-work.md)과 [54개 화면 비교](visual-review/README.md)를 함께 본다.
+이 문서는 [QA 4차 기록](qa4-2026-10-27.md) 이후 PR #5(main 병합)까지의 1차 상태다. 그 뒤의 수정은 [2차 후속 기록](figma-alignment-2026-10-28-followup.md)에 있다. 전체 설계 구현 또는 모든 화면의 픽셀 일치가 완료되었다는 뜻은 아니다. [남은 작업](remaining-work.md)과 [54개 화면 비교](visual-review/README.md)를 함께 본다.
 
 ## 반영 범위
 

@@ -52,6 +52,7 @@ PASS QA4 choosing TXT re-enables conversion options
 PASS QA4 local SMJ remains openable when server settings are unavailable
 PASS QA4 hidden English grade remains preserved when other defaults are edited
 PASS QA4 defaults loads stored settings and real form values through the API contract
+PASS Figma 3966 form picker lists six forms in 24px rows without a scrollbar
 PASS Form picker accepts the keyboard-selected actual form on Enter
 PASS Form picker Escape cancels a changed choice without applying it to the caller
 PASS Text context menu preserves the 220x154 layout with thin separator rules
@@ -67,17 +68,20 @@ PASS QA4 normal account never requests privileged institution billing endpoints
 PASS QA4 job statuses use user-facing labels
 PASS QA4 footer manager has start, alignment and content columns
 PASS Memo author avatar renders the downloaded Figma SVG resource
+PASS Figma 4874 read-only notice names the lock or permission cause in one line each
 PASS Merge confirmation Escape cancels without authorizing manual-braille replacement
 PASS Merge confirmation retains the existing keep-manual-braille option
 PASS Partial conversion cannot request unsupported resume and keeps completed pages through its default action
 PASS Offline retry returns the retry action to the command handler
 PASS Offline continue returns without requesting command replay
 PASS Save failure Escape preserves the unsaved document without triggering another save
+PASS Figma 4904 login rejection states the 5-attempt / 10-minute lock policy with a 103px 비밀번호 찾기 button
 PASS Draft popover restores the selected draft and its braille preview
 PASS Draft selection previews a different draft without deleting alternatives or committing to the document before confirmation
 PASS Draft Enter returns the selected draft for caller confirmation without changing the document early
 PASS Draft Escape preserves the previous selection and every alternative
 PASS QA4 six-dot mapping exposes six individual editable keys
+PASS Figma 4641 help tabs read 내용 | 색인 | 검색 and the topic body is left-aligned
 PASS QA4 indentation tags create display-only space without changing source bytes
 PASS QA4 source search selects the visible continuous editor at the correct block offset
 PASS QA4 continuous memo line resolves to its owning block and local line

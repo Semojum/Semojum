@@ -12,9 +12,18 @@ public class NoticeDialog : Window
 {
     public int Choice { get; private set; } = -1;
     internal List<Button> ActionButtons { get; } = [];
+    // Figma sizes long labels individually (1:2385, 1:2355/1:2432, 1:2246, 1:2415, 1:2400, 1:2464); other buttons are 88px or text + 28px.
+    private static readonly Dictionary<string, double> DesignWidths = new()
+    {
+        ["비밀번호 찾기"] = 103, ["읽기 전용으로 열기"] = 134, ["다른 이름으로 저장"] = 134, ["실패한 쪽 다시 변환"] = 140,
+        ["그대로 열기"] = 91, ["크레딧 구매"] = 91, ["오프라인으로 계속"] = 127, ["범위 다시 지정"] = 110,
+    };
     protected StackPanel MessageBody { get; } = new();
+    internal string MessageText { get; }
+    internal string DetailText { get; }
     public NoticeDialog(string message, string detail, string[] labels, bool error = false, double width = 520, double height = 180)
     {
+        MessageText = message; DetailText = detail;
         Title = "세모점"; Width = width; Height = height; MinHeight = height; MinWidth = width;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Style = (Style)FindResource(typeof(Window)); Background = Brushes.White; FontSize = 12; UseLayoutRounding = true;
@@ -31,7 +40,7 @@ public class NoticeDialog : Window
         for (var i = 0; i < labels.Length; i++)
         {
             var choice = i; var label = labels[i];
-            var button = new Button { Content = label, MinWidth = 88, Height = 23, MinHeight = 23, Padding = new(8, 0, 8, 0), Margin = new(8, 0, 0, 0),
+            var button = new Button { Content = label, MinWidth = DesignWidths.GetValueOrDefault(label, 88), Height = 23, MinHeight = 23, Padding = new(14, 0, 14, 0), Margin = new(8, 0, 0, 0),
                 Background = new SolidColorBrush(Color.FromRgb(225, 225, 225)), BorderBrush = new SolidColorBrush(i == 0 ? Color.FromRgb(0, 120, 212) : Color.FromRgb(173, 173, 173)), IsDefault = i == 0, IsCancel = label == "취소" };
             button.Click += (_, _) => { Choice = choice; DialogResult = label != "취소"; }; buttons.Children.Add(button); ActionButtons.Add(button);
         }
@@ -59,7 +68,7 @@ public sealed class MergeBlocksDialog : NoticeDialog
         _ => Semojum.Core.ManualEditDecision.Cancel
     };
     public MergeBlocksDialog() : base("두 블록을 합치면 전체를 다시 점역합니다.",
-        "직접 고친 점자가 사라집니다. 고친 점자를 유지하며 합칠 수도 있습니다.", ["합치기", "고친 점자 유지", "취소"], width: 440) { }
+        "직접 고친 점자가 사라집니다.", ["합치기", "고친 점자 유지", "취소"], width: 440) { }
 }
 
 public sealed class DeleteFormDialog : CompactDialog

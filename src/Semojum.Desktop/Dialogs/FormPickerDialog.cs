@@ -19,13 +19,20 @@ public sealed class FormPickerDialog : CompactDialog
         close.Background = close.BorderBrush = Brushes.Transparent;
         System.Windows.Automation.AutomationProperties.SetName(close, "닫기");
         DockPanel.SetDock(close, Dock.Right); header.Children.Add(close);
-        header.Children.Add(new TextBlock { Text = Title, FontWeight = FontWeights.SemiBold });
-        var title = new Border { Height = 31, Background = new SolidColorBrush(Color.FromRgb(251, 251, 251)), BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = header };
+        // Figma 1:1447: semibold title text from y=7, #B5B5B5 rule at y=31, 24px rows from y=40 with the highlight spanning x=4..315.
+        header.Children.Add(new TextBlock { Text = Title, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 6, 0, 0) });
+        var title = new Border { Height = 31, Background = new SolidColorBrush(Color.FromRgb(251, 251, 251)), BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(0, 0, 0, 1), Child = header };
         DockPanel.SetDock(title, Dock.Top); panel.Children.Add(title);
         ChoicesList.ItemsSource = forms; ChoicesList.DisplayMemberPath = nameof(BrailleForm.Name); ChoicesList.SelectedItem = selected;
-        ChoicesList.BorderThickness = new(0); ChoicesList.Margin = new(3, 7, 3, 7); ChoicesList.Padding = new(0);
-        ScrollViewer.SetVerticalScrollBarVisibility(ChoicesList, ScrollBarVisibility.Auto);
-        ScrollViewer.SetHorizontalScrollBarVisibility(ChoicesList, ScrollBarVisibility.Disabled);
+        ChoicesList.BorderThickness = new(0); ChoicesList.Margin = new(3, 8, 3, 6); ChoicesList.Padding = new(0);
+        // The default ListBox template pads its border by 1px, which pushed six 24px rows past the viewport and showed a scrollbar.
+        var surface = new ControlTemplate(typeof(ListBox));
+        var scroll = new FrameworkElementFactory(typeof(ScrollViewer));
+        scroll.SetValue(ScrollViewer.FocusableProperty, false);
+        scroll.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+        scroll.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        scroll.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter)));
+        surface.VisualTree = scroll; ChoicesList.Template = surface;
         ChoicesList.ItemContainerStyle = (Style)FindResource("FormChoice"); panel.Children.Add(ChoicesList);
         void Accept() { if (Selected is not null) DialogResult = true; }
         ChoicesList.PreviewMouseLeftButtonUp += (_, e) =>
