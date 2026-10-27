@@ -100,7 +100,8 @@ public partial class MainWindow
         }
         finally { fileBusy = false; }
     }
-    private async Task MonitorJobAsync(OpenDocument context, JobStatus status, int? restorePage, bool applyInitialChoices = false)
+    // replacePages: pages being re-run by retry/resume/re-attach. Only their blocks are replaced in place; every other block stays as edited.
+    private async Task MonitorJobAsync(OpenDocument context, JobStatus status, int? restorePage, bool applyInitialChoices = false, HashSet<int>? replacePages = null)
     {
         var model = context.Model; var ct = context.JobLifetime.Token;
         model.ErrorNotice = "";
@@ -113,10 +114,10 @@ public partial class MainWindow
         }
         try
         {
-            var loadedPages = new HashSet<int>();
-            var waiting = true;
+            var loadedPages = replacePages is null ? new HashSet<int>() : status.Pages.Keys.Where(p => !replacePages.Contains(p)).ToHashSet();
+            var waiting = replacePages is null;
             await using var events = new JobEventWatch(api, model.JobId!, ct);
-            var nextId = 1;
+            var nextId = replacePages is null ? 1 : model.Blocks.Select(b => b.Id).DefaultIfEmpty(0).Max() + 1;
             while (true)
             {
                 model.JobStatus = status.OverallStatus;
@@ -146,7 +147,17 @@ public partial class MainWindow
                         result = result with { Blocks = [new EditorBlock { Id = nextId++, Page = page.Key, Heading = "변환 실패 · 원본 확인", State = page.Value, IsBrailleLocked = true, Metadata = new(IsBlocked: true) }] };
                     if (result.Blocks.Length == 0) { loadedPages.Add(page.Key); continue; }
                     if (waiting) { model.ActiveBlock = null; model.Blocks.Clear(); waiting = false; }
-                    foreach (var block in result.Blocks) { model.Add(block); nextId = Math.Max(nextId, block.Id + 1); RememberRevision(block, block.Braille.Length > 0 ? block.SourceRevision : -1); }
+                    int? insertAt = null;
+                    if (replacePages?.Contains(page.Key) == true)
+                    {
+                        foreach (var old in model.Blocks.Where(b => b.Page == page.Key).ToArray()) { if (model.ActiveBlock == old) model.ActiveBlock = null; model.Blocks.Remove(old); }
+                        insertAt = model.Blocks.TakeWhile(b => b.Page < page.Key).Count();
+                    }
+                    foreach (var block in result.Blocks)
+                    {
+                        if (insertAt is { } at) { model.Blocks.Insert(at, block); insertAt = at + 1; model.ActiveBlock ??= block; } else model.Add(block);
+                        nextId = Math.Max(nextId, block.Id + 1); RememberRevision(block, block.Braille.Length > 0 ? block.SourceRevision : -1);
+                    }
                     loadedPages.Add(page.Key);
                     if (restorePage == page.Key) { model.ActiveBlock = result.Blocks[0]; restorePage = null; }
                     foreach (var block in result.Blocks.Where(b => b.Braille.Length == 0 && !b.Metadata.IsBlocked))
@@ -184,6 +195,7 @@ public partial class MainWindow
             {
                 var disconnected = FileNotices.Disconnected(model.Blocks.Where(b => !b.Metadata.IsBlocked).Select(b => b.Page).Distinct().Count());
                 disconnected.Owner = this; disconnected.ShowDialog();
+                if (disconnected.Choice == 0) await ReattachAsync(context);
             }
         }
         finally { model.Progress = null; }
@@ -203,6 +215,10 @@ public partial class MainWindow
         {
             if (notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
+        else if (status.FailedPages > 0)
+        {
+            if (notice.Choice == 0) await RestartJobAsync(model, retry: true);
+        }
         else if (status.SucceededPages == 0)
         {
             if (notice.Choice == 0) await UploadAsync(openDocument?.UploadPaths);
@@ -210,6 +226,45 @@ public partial class MainWindow
             else if (notice.Choice == 2) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
     }
+
+    // BE 2026-10-27: retry re-queues AI-failed pages, resume re-queues credit-exhausted pages (기획 10-1). Only those pages are replaced.
+    private async Task RestartJobAsync(DocumentSession model, bool retry)
+    {
+        if (resourcesReleased || session != model || openDocument is null || model.JobId is null || !EnsureAccount()) return;
+        var ct = openDocument.JobLifetime.Token;
+        try
+        {
+            var restart = retry ? await jobs.RetryAsync(model.JobId, ct) : await jobs.ResumeAsync(model.JobId, ct);
+            if (restart.Pages.Length == 0)
+            {
+                model.Status = retry ? "다시 변환할 쪽이 없습니다. 취소했거나 크레딧 소진으로 멈춘 쪽은 대상이 아닙니다." : "이어서 처리할 쪽이 없습니다.";
+                return;
+            }
+            model.CreditNotice = "";
+            model.Status = $"{(retry ? "실패한 쪽 다시 변환" : "이어서 처리")} 요청 · {restart.Pages.Length}쪽 ({string.Join(", ", restart.Pages)}) · 성공한 쪽만 크레딧이 차감됩니다.";
+            var status = await jobs.StatusAsync(model.JobId, ct);
+            _ = MonitorJobAsync(openDocument, status, null, replacePages: restart.Pages.ToHashSet());
+        }
+        catch (OperationCanceledException) { }
+        catch (SemojumApiException ex)
+        {
+            var notice = ex.Code == "CREDIT4001" ? FileNotices.NoCredits()
+                : new NoticeDialog(retry ? "실패한 쪽을 다시 변환하지 못했습니다." : "이어서 처리하지 못했습니다.", $"{ex.Message} ({ex.Code})", ["닫기"], error: true);
+            notice.Owner = this; notice.ShowDialog();
+            if (ex.Code == "CREDIT4001" && notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+        }
+    }
+
+    // After a dropped connection: read the job status again and fetch only the pages this window never received.
+    private async Task ReattachAsync(OpenDocument context)
+    {
+        if (resourcesReleased || session != context.Model || context.Model.JobId is null) return;
+        var status = await jobs.StatusAsync(context.Model.JobId, context.JobLifetime.Token);
+        var missing = status.Pages.Keys.Where(p => !context.Model.Blocks.Any(b => b.Page == p && b.ServerId is not null)).ToHashSet();
+        _ = MonitorJobAsync(context, status, null, replacePages: missing);
+    }
+
+    private async void CreditResume_Click(object sender, RoutedEventArgs e) => await RestartJobAsync(session, retry: false);
 
     // Shown once per fresh conversion; reopening a saved job does not repeat it. Counts the ■ markers still in the text.
     private async Task ShowUnreadableNoticeAsync(DocumentSession model)

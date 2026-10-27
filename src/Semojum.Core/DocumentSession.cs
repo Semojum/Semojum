@@ -90,6 +90,8 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<int, ServerBlockRecord[]> ServerPages { get; } = [];
     /// <summary>Server quality report per page. Replaced on every page read; kept in .smj for offline review.</summary>
     public Dictionary<int, QualityIssue[]> QualityReports { get; } = [];
+    /// <summary>Page average OCR confidence measured by the AI (BE B-10). Null when the AI sent none; never estimated locally.</summary>
+    public Dictionary<int, double?> OcrConfidence { get; } = [];
     /// <summary>Last "kept locally only" notice shown for this document, so repeated saves do not repeat the same dialog. Not persisted.</summary>
     public string? LastSyncNotice { get; set; }
     public string WindowTitle => $"{(IsDirty ? "● " : "")}{Title} — 세모점";

@@ -398,7 +398,7 @@ internal static class WindowsSmoke
             finally { math.Close(); }
             var about = new AboutDialog("1.0.0", async () => { await engineConnection.InvokeAsync("ping"); return engineConnection.EngineVersion!; }) { Owner = window };
             about.Show(); await RenderAsync(about, Path.Combine(directory, "28-about.png"));
-            Check(about.EngineVersion.Text == "3.4.35", "QA4 about dialog shows running engine version, not a hardcoded build label"); about.Close();
+            Check(about.EngineVersion.Text == engineConnection.EngineVersion && about.EngineVersion.Text == "3.4.41", "QA4 about dialog shows the running bundled engine version 3.4.41, not a hardcoded build label"); about.Close();
         }
         var layoutDialog = new LayoutDialog(new()) { Owner = window };
         layoutDialog.Show(); await RenderAsync(layoutDialog, Path.Combine(directory, "29-page-settings.png"));

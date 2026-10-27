@@ -44,7 +44,8 @@ public sealed partial class JobClient
             var memos = pageBlocks.SelectMany(b => b.Memos.Select(m => new SaveMemo(m.ServerId, m.Panel, BlockId(b), m.LineIndex,
                 m.LineText, m.Body, Timestamp(m.CreatedAt), m.Author, m.Resolved,
                 m.Resolved && m.ResolvedAt.HasValue ? Timestamp(m.ResolvedAt.Value) : null,
-                (m.Replies ?? []).Select(r => new SaveReply(r.Author, r.Body, Timestamp(r.CreatedAt))).ToArray()))).ToArray();
+                (m.Replies ?? []).Select(r => new SaveReply(r.Author, r.Body, Timestamp(r.CreatedAt))).ToArray(),
+                m.ServerId is null ? m.LocalId : null))).ToArray();
             pages.Add(new(pageNo, text, braille, memos));
         }
         notes.AddRange(ServerContract.LocalOnlyLayout(manifest.Layout, manifest.FooterRanges));
@@ -61,6 +62,18 @@ public sealed partial class JobClient
                 braille?.Contains(t.Id!) ?? previous.FirstOrDefault(p => p.Id == t.Id)?.HasBraille ?? false)).ToArray();
             foreach (var block in model.Blocks.Where(b => b.Page == page.PageNo && b.ServerId is null))
                 if (page.Text?.Any(t => t.Id == block.ClientId) == true) block.ServerId = block.ClientId;
+        }
+        // BE B-05: new memos get their server id from pageResults[].memoIds; memos re-keyed by a copy job come back as previousMemoId.
+        foreach (var page in result.PageResults ?? [])
+        {
+            if (page.Status != "SAVED" || page.MemoIds is not { Length: > 0 }) continue;
+            foreach (var block in model.Blocks.Where(b => b.Page == page.PageNo))
+                for (var i = 0; i < block.Memos.Count; i++)
+                {
+                    var memo = block.Memos[i];
+                    var mapping = page.MemoIds.FirstOrDefault(m => memo.ServerId is null ? m.ClientMemoId == memo.LocalId : m.PreviousMemoId == memo.ServerId);
+                    if (mapping is not null && memo.ServerId != mapping.MemoId) block.Memos[i] = memo with { ServerId = mapping.MemoId };
+                }
         }
         if (result.Plan.TotalPages is { } total)
             foreach (var number in model.ServerPages.Keys.Where(n => n > total).ToArray()) model.ServerPages.Remove(number);
@@ -109,7 +122,7 @@ public sealed partial class JobClient
         SavePageResult[]? details = null;
         if (data.TryGetProperty("pageResults", out var pageResults) && pageResults.ValueKind != JsonValueKind.Null)
         {
-            details = pageResults.EnumerateArray().Select(p => new SavePageResult(Number(p, "pageNo"), Required(p, "status"), Text(p, "errorCode"))).ToArray();
+            details = pageResults.EnumerateArray().Select(p => new SavePageResult(Number(p, "pageNo"), Required(p, "status"), Text(p, "errorCode"), ReadMemoIds(p))).ToArray();
             if (details.Length != expected.Count || details.Select(p => p.PageNo).Distinct().Count() != expected.Count
                 || details.Any(p => !expected.Contains(p.PageNo) || p.Status is not ("SAVED" or "FAILED") || (p.Status == "FAILED") != failed.Contains(p.PageNo)))
                 throw new InvalidDataException("서버의 쪽별 저장 결과가 일치하지 않습니다. 로컬 파일은 보존됩니다.");
@@ -123,6 +136,10 @@ public sealed partial class JobClient
         return new(saved, failed, Text(data, "savedAt"), plan, savedJobId, copiedFrom, account.LoginId, details);
     }
 
+    private static MemoIdMapping[]? ReadMemoIds(JsonElement page) => page.TryGetProperty("memoIds", out var list) && list.ValueKind == JsonValueKind.Array
+        ? list.EnumerateArray().Select(m => new MemoIdMapping(Text(m, "clientMemoId"),
+            m.TryGetProperty("previousMemoId", out var previous) && previous.ValueKind == JsonValueKind.Number ? previous.GetInt64() : null,
+            m.GetProperty("memoId").GetInt64())).ToArray() : null;
     private static string Timestamp(DateTimeOffset value) => value.ToOffset(TimeSpan.FromHours(9)).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture);
     private static DateTimeOffset? ReadTimestamp(string? value)
     {

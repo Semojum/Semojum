@@ -8,7 +8,7 @@
 
 ## 실행
 
-Windows와 .NET 10 SDK가 필요합니다. 개발 중에는 `semojum-braille` v3.4.35이 설치된 Python 경로를 지정합니다.
+Windows와 .NET 10 SDK가 필요합니다. 개발 중에는 `semojum-braille` v3.4.41이 설치된 Python 경로를 지정합니다.
 
 ```powershell
 $env:SEMOJUM_ENGINE_PYTHON = 'C:\path\to\venv\Scripts\python.exe'
@@ -56,6 +56,6 @@ dotnet run --project tests/Semojum.Core.Tests -c Release
 ./artifacts/Semojum-win-x64/Semojum.Mockup.exe --smoke-test ./artifacts/smoke
 ```
 
-`SEMOJUM_ENGINE_PYTHON`이 있으면 실제 v3.4.35 테스트를 추가 실행하고, 없으면 그 검사는 SKIP으로 표시합니다. `--smoke-test`는 네트워크와 분리된 고정 샘플로 WPF 창·편집 버퍼·저장을 검사합니다. Windows CI는 실제 엔진 검사와 UI 검사를 별도로 실행합니다. 물리 키보드 동시 입력, 한국어 IME, 보조기기와 여러 DPI는 별도 장비 검증이 필요합니다.
+`SEMOJUM_ENGINE_PYTHON`이 있으면 실제 v3.4.41 테스트를 추가 실행하고, 없으면 그 검사는 SKIP으로 표시합니다. `--smoke-test`는 네트워크와 분리된 고정 샘플로 WPF 창·편집 버퍼·저장을 검사합니다. Windows CI는 실제 엔진 검사와 UI 검사를 별도로 실행합니다. 물리 키보드 동시 입력, 한국어 IME, 보조기기와 여러 DPI는 별도 장비 검증이 필요합니다.
 
 [엔진 계약과 문서 차이](docs/engine-contract.md) · [.smj 규격](docs/smj-format.md) · [외부 라이브러리 고지](THIRD-PARTY-NOTICES.md)

@@ -251,9 +251,9 @@ internal static class WindowsQa4Checks
         check(Modal(keepMerge, () => keepMerge.ActionButtons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))) == true && keepMerge.Decision == ManualEditDecision.Keep,
             "Merge confirmation retains the existing keep-manual-braille option");
         var partialNotice = FileNotices.PartialConversion(128, 125, [12, 47, 98]);
-        check(!partialNotice.ActionButtons[0].IsEnabled && partialNotice.ActionButtons[1].IsDefault &&
+        check(partialNotice.ActionButtons[0].IsEnabled && partialNotice.ActionButtons[0].IsDefault &&
             Modal(partialNotice, () => partialNotice.ActionButtons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))) == true && partialNotice.Choice == 1,
-            "Partial conversion cannot request unsupported resume and keeps completed pages through its default action");
+            "Partial conversion offers the server retry (BE 2026-10-27) and still keeps completed pages when opened as is");
         var offlineRetry = FileNotices.Offline("fixture");
         check(Modal(offlineRetry, () => offlineRetry.ActionButtons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))) == true && offlineRetry.Choice == 0,
             "Offline retry returns the retry action to the command handler");

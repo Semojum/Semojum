@@ -1,4 +1,4 @@
-SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.35 Python executable
+SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.41 Python executable
 PASS Navigation validates absolute, relative, missing and overflow page numbers
 PASS Navigation uses CRLF-safe UTF-16 line offsets and rejects stale memo anchors
 PASS Export validates ranges and retains exact BRF page bytes including blanks
@@ -71,10 +71,12 @@ PASS Save rejects contradictory counts, unknown pages and inconsistent per-page 
 PASS Memo author, replies, resolution and KST timestamps survive API and SMJ round trip
 PASS Text jobs truncate trailing pages while PDF and unknown jobs never request truncation
 PASS SMJ v3 migrates stable IDs and legacy memos without changing authors
+PASS Save sends clientMemoId for new memos and applies memoIds and previousMemoId mappings from pageResults
+PASS Retry and resume parse re-queued pages and reject malformed page lists
 PASS QA4 rules preserve full text and search-only flags, and encode query/filter/page
 PASS QA4 applied rules use actual engine fields and select only overlapping current cells
 PASS QA4 inserting a footer continues to the next start without overlap or loss
 PASS QA4 initial visual choice retains every alternative and protects saved manual results
 PASS QA4 user forms create, update, copy and delete without changing the built-in form
 PASS QA4 cancellation distinguishes accepted, finished and already-completed server responses
-78/78 passed
+80/80 passed

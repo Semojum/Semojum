@@ -36,7 +36,7 @@ public sealed record JobCancellation(bool Accepted, string Status, int InFlightP
 public sealed record SaveElement(string? Id, string[] Contents, int? SelectedIdx);
 public sealed record SaveReply(string? Author, string Body, string CreatedAt);
 public sealed record SaveMemo(long? MemoId, string Panel, string ElementId, int LineIndex, string LineText, string Body, string CreatedAt,
-    string? Author = null, bool Resolved = false, string? ResolvedAt = null, SaveReply[]? Replies = null);
+    string? Author = null, bool Resolved = false, string? ResolvedAt = null, SaveReply[]? Replies = null, string? ClientMemoId = null);
 /// <summary>One page of the save request. A null panel means "leave unchanged"; an empty array deletes every block of that panel (BE PageContentSaver).</summary>
 public sealed record SavePage(int PageNo, SaveElement[]? Text, SaveElement[]? Braille, SaveMemo[]? Memos);
 /// <summary>What one explicit save will send, and what stays local because the current contract cannot carry it.</summary>
@@ -44,7 +44,11 @@ public sealed record JobSavePlan(SavePage[] Pages, string[] LocalOnly, int Local
 {
     public int ExpectedPages => Pages.Length;
 }
-public sealed record SavePageResult(int PageNo, string Status, string? ErrorCode);
+public sealed record SavePageResult(int PageNo, string Status, string? ErrorCode, MemoIdMapping[]? MemoIds = null);
+/// <summary>BE B-05 (2026-10-27): the server id issued for a memo sent with clientMemoId, or re-keyed from another job (previousMemoId).</summary>
+public sealed record MemoIdMapping(string? ClientMemoId, long? PreviousMemoId, long MemoId);
+/// <summary>BE 2026-10-27: pages queued again by POST retry (AI-failed pages) or POST resume (credit-exhausted pages).</summary>
+public sealed record JobRestart(string JobId, string Status, int TotalPages, int[] Pages);
 public sealed record JobSaveResult(int SavedPages, int[] FailedPages, string? SavedAt, JobSavePlan Plan,
     string? JobId = null, string? CopiedFromJobId = null, string? OwnerLoginId = null, SavePageResult[]? PageResults = null)
 {
@@ -57,7 +61,7 @@ public sealed record JobSaveResult(int SavedPages, int[] FailedPages, string? Sa
 public sealed record UploadFile(string FileName, byte[] Bytes);
 public sealed record RemotePage(int Number, string Status, EditorBlock[] Blocks, string? OriginalType,
     Uri? OriginalUrl, string[]? OriginalLines, int Width, int Height,
-    ServerBlockRecord[]? ServerBlocks = null, QualityIssue[]? Quality = null);
+    ServerBlockRecord[]? ServerBlocks = null, QualityIssue[]? Quality = null, double? OcrConfidenceAverage = null);
 
 /// <summary>V3.1 job boundary. Saving does not create a job or invoke AI.</summary>
 public sealed partial class JobClient(SemojumApiClient api)
@@ -122,6 +126,18 @@ public sealed partial class JobClient(SemojumApiClient api)
         return new(result.GetProperty("canceled").GetBoolean(), Required(result, "status"), Number(result, "inFlightPages"));
     }
 
+    /// <summary>BE 2026-10-27: re-queues pages blocked by AI errors or timeouts; canceled and credit-exhausted pages are never included.</summary>
+    public Task<JobRestart> RetryAsync(string jobId, CancellationToken ct = default) => RestartAsync(jobId, "retry", "retriedPages", ct);
+    /// <summary>BE 2026-10-27 (기획 10-1): re-queues pages blocked by CREDIT_EXHAUSTED once credits are available.</summary>
+    public Task<JobRestart> ResumeAsync(string jobId, CancellationToken ct = default) => RestartAsync(jobId, "resume", "resumedPages", ct);
+    private async Task<JobRestart> RestartAsync(string jobId, string action, string field, CancellationToken ct)
+    {
+        var result = await api.SendAuthenticatedAsync(HttpMethod.Post, JobPath(jobId, action), cancellationToken: ct);
+        var pages = result.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(p => p.GetInt32()).ToArray() : [];
+        if (pages.Any(p => p < 1) || pages.Distinct().Count() != pages.Length) throw new InvalidDataException("서버가 돌려준 쪽 번호가 올바르지 않습니다.");
+        return new(Text(result, "jobId") ?? jobId, Text(result, "status") ?? "UNKNOWN", Number(result, "totalPages"), pages);
+    }
+
     public async Task ReadSettingsAsync(DocumentSession model, CancellationToken ct = default, DocumentSession? uploadSettings = null)
     {
         var data = await api.SendAuthenticatedAsync(HttpMethod.Get, JobPath(model.JobId!, "options"), cancellationToken: ct);
@@ -153,7 +169,7 @@ public sealed partial class JobClient(SemojumApiClient api)
         var blocks = new List<EditorBlock>();
         var status = Text(data, "status") ?? "COMPLETED";
         var width = 0; var height = 0;
-        var records = new List<ServerBlockRecord>(); var quality = new List<QualityIssue>();
+        var records = new List<ServerBlockRecord>(); var quality = new List<QualityIssue>(); double? confidenceAverage = null;
         if (data.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.Object)
         {
             var braille = Array(result, "braille_text_list").ToDictionary(x => Required(x, "id"));
@@ -161,7 +177,8 @@ public sealed partial class JobClient(SemojumApiClient api)
             if (result.TryGetProperty("image_resolution", out var size)) { width = Number(size, "width"); height = Number(size, "height"); }
             if (result.TryGetProperty("quality_report", out var report) && report.ValueKind == JsonValueKind.Object)
             {
-                // Only fields the server already serializes (type/element_id/message). OCR confidence is not exposed and is never invented here.
+                // type/element_id/message as serialized by the server. ocr_confidence_avg is measured by the AI (BE B-10, 2026-10-27); null means no value, not low.
+                confidenceAverage = Confidence(report, "ocr_confidence_avg");
                 foreach (var (name, severity) in new[] { ("critical_errors", "error"), ("review_flags", "review") })
                     foreach (var issue in Array(report, name))
                         quality.Add(new(severity, Text(issue, "type") ?? "unknown", Text(issue, "element_id"), Text(issue, "message") ?? ""));
@@ -183,7 +200,7 @@ public sealed partial class JobClient(SemojumApiClient api)
                         item.TryGetProperty("selected_idx", out var index) && index.ValueKind == JsonValueKind.Number && index.TryGetInt32(out var i) ? i : null,
                         type == "table" ? source : null,
                         ReadDrafts(item, braille.GetValueOrDefault(id)), ReadRules(item, braille.GetValueOrDefault(id)), source,
-                        Text(item, "visual_subtype"), Bool(item, "is_blocked")),
+                        Text(item, "visual_subtype"), Bool(item, "is_blocked"), Confidence(item, "ocr_confidence")),
                     // A restored server result may contain manual edits. Do not overwrite on open.
                     HasManualBraille = braille.ContainsKey(id)
                 };
@@ -203,14 +220,17 @@ public sealed partial class JobClient(SemojumApiClient api)
             if (Uri.TryCreate(Text(original, "url"), UriKind.Absolute, out var uri) && uri.Scheme == "https") url = uri;
             if (original.TryGetProperty("lines", out var value)) lines = value.Deserialize<string[]>();
         }
-        return new(page, status, blocks.ToArray(), originalType, url, lines, width, height, records.ToArray(), quality.ToArray());
+        return new(page, status, blocks.ToArray(), originalType, url, lines, width, height, records.ToArray(), quality.ToArray(), confidenceAverage);
     }
+    private static double? Confidence(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var d) && d is >= 0 and <= 1 ? Math.Round(d, 3) : null;
 
     /// <summary>Records what the server holds for a page so a later save can plan deletions and the braille panel safely.</summary>
     public static void Remember(DocumentSession model, RemotePage page)
     {
         model.ServerPages[page.Number] = page.ServerBlocks ?? [];
         model.QualityReports[page.Number] = page.Quality ?? [];
+        model.OcrConfidence[page.Number] = page.OcrConfidenceAverage;
         if (page.OriginalType is "text" or "txt") model.IsTextJob = true;
         else if (page.OriginalType is "pdf" or "image") model.IsTextJob = false;
     }
@@ -226,6 +246,7 @@ public sealed partial class JobClient(SemojumApiClient api)
             ["editScope"] = l.EditScope, ["advancedAi"] = l.AdvancedAi
         };
         if (ServerContract.PageNumberLine(l.PageNumbers) is { } line) body["pageNumberLine"] = line;
+        if (ServerContract.FooterPages(l.Footer) is { } footerPages) body["footerPages"] = footerPages;
         return body;
     }
     public static Dictionary<string, object> OptionsBody(BrailleOptions o)
@@ -241,6 +262,7 @@ public sealed partial class JobClient(SemojumApiClient api)
     }
     public static PageLayout ReadLayout(JsonElement l) => new(Number(l, "cellsPerLine", 32), Number(l, "linesPerPage", 26), Number(l, "braillePageStart", 1),
         Text(l, "pageNumberLine") switch { "every" => "모든 페이지", "none" => "출력 안 함", "even" => "짝수 페이지", _ => "홀수 페이지" },
+        Footer: Text(l, "footerPages") == "every" ? "모든 페이지" : "홀수 페이지",
         CoverPages: Number(l, "coverPages"), SourcePageStart: Number(l, "sourcePageStart", 1), ShowSourcePageNumber: Bool(l, "showSourcePageNumber", true),
         ShowBraillePageNumber: Bool(l, "showBraillePageNumber", true), ShowChangeLine: Bool(l, "showChangeLine", true), FooterAlign: Text(l, "footerAlign") ?? "center",
         EditScope: Text(l, "editScope") ?? "all", AdvancedAi: Bool(l, "advancedAi"));
