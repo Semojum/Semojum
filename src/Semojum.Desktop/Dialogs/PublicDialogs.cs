@@ -31,7 +31,7 @@ public sealed class PublicInquiryDialog : CompactDialog
         var type = Choices(["도입 문의", "오류 신고", "기타"], "기타"); var name = new TextBox { MaxLength = 50 }; var email = new TextBox { MaxLength = 100 };
         var message = new TextBox { MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Row(panel, "문의 유형", type); Row(panel, "이름 (선택)", name); Row(panel, "답변받을 이메일", email); panel.Children.Add(message);
-        panel.Children.Add(new TextBlock { Text = "이름·이메일·문의 내용이 운영자에게 전달됩니다. 문의 이메일: contact-semojum@gmail.com", TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) });
+        panel.Children.Add(new TextBlock { Text = "이름·이메일·문의 내용이 운영자에게 전달됩니다. 문의 이메일: contact@semo-jum.com", TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) });
         Action("문의 보내기", async () =>
         {
             if (!MailAddress.TryCreate(email.Text.Trim(), out var address) || address.Address != email.Text.Trim() || string.IsNullOrWhiteSpace(message.Text)) throw new ArgumentException("이메일 주소와 문의 내용을 확인해 주세요.");

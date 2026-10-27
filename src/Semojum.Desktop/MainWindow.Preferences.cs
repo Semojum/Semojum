@@ -23,8 +23,11 @@ public partial class MainWindow
         var background = value.HighContrast ? Brushes.Black : C(value.BackgroundColor);
         void Apply(TextEditor editor, bool braille)
         {
-            var family = new FontFamily { LineSpacing = value.LineSpacing };
-            family.FamilyMaps.Add(new FontFamilyMap { Unicode = "0000-10FFFF", Target = braille ? "Segoe UI Symbol" : value.FontFamily });
+            // Figma uses a 28 DIP baseline for both 14 DIP source and 22 DIP braille.
+            var natural = braille ? new FontFamily("Segoe UI Symbol") : value.FontFamily == "Noto Sans KR" ? (FontFamily)FindResource("InterfaceFont") : new FontFamily(value.FontFamily);
+            var spacing = value.LineSpacing / 1.3 * (braille ? 28d / 22 : 2);
+            var family = new FontFamily { LineSpacing = spacing, Baseline = natural.Baseline + (spacing - natural.LineSpacing) / 2 };
+            family.FamilyMaps.Add(new FontFamilyMap { Unicode = "0000-10FFFF", Target = natural.Source });
             editor.FontFamily = family; editor.FontSize = braille ? value.BrailleSize : value.TextSize;
             editor.FontWeight = value.Bold ? FontWeights.Bold : FontWeights.Normal;
             editor.Foreground = braille && !value.HighContrast ? C(value.BrailleColor) : foreground; editor.Background = background;
@@ -33,14 +36,26 @@ public partial class MainWindow
             editor.TextArea.Caret.CaretBrush = foreground;
             var view = editor.TextArea.TextView;
             view.CurrentLineBackground = value.HighContrast ? C("#202020") : C(value.CurrentLineColor);
+            view.CurrentLineBorder = null;
             view.NonPrintableCharacterBrush = value.HighContrast ? Brushes.Cyan : C(value.MarkerColor);
-            view.ColumnRulerPen = new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth);
+            view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
             editor.Options.ShowSpaces = editor.Options.ShowTabs = editor.Options.ShowEndOfLine = value.ShowFormattingMarks;
             editor.ShowLineNumbers = value.ShowLineNumbers;
             foreach (var margin in editor.TextArea.LeftMargins.OfType<LineNumberMargin>().ToArray())
             {
                 var index = editor.TextArea.LeftMargins.IndexOf(margin);
-                editor.TextArea.LeftMargins[index] = new ColoredLineNumbers { Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground), Margin = margin.Margin };
+                editor.TextArea.LeftMargins[index] = new ColoredLineNumbers { Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground), Margin = margin.Margin,
+                    NumberBrush = value.HighContrast ? Brushes.White : C(value.LineNumberColor), Compact = editor == PageEditor.Editor, MinWidth = editor == PageEditor.Editor ? 28 : 0 };
+            }
+            if (editor == PageEditor.Editor)
+            {
+                foreach (var memo in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { memo.GutterWidth = 12; memo.Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground); memo.InvalidateMeasure(); }
+                foreach (var separator in editor.TextArea.LeftMargins.OfType<System.Windows.Shapes.Line>().ToArray())
+                {
+                    editor.TextArea.LeftMargins.Remove(separator);
+                }
+                if (!editor.TextArea.LeftMargins.OfType<SourceTextInset>().Any()) editor.TextArea.LeftMargins.Add(new SourceTextInset(editor));
+                foreach (var inset in editor.TextArea.LeftMargins.OfType<SourceTextInset>()) { inset.LineBrush = value.HighContrast ? Brushes.White : C("#D6D6D6"); inset.InvalidateVisual(); }
             }
             editor.LineNumbersForeground = value.HighContrast ? Brushes.White : C(value.LineNumberColor);
             foreach (var colorizer in view.LineTransformers.OfType<TagColorizer>()) colorizer.TagBrush = value.HighContrast ? Brushes.Cyan : C(value.TagColor);
@@ -51,9 +66,11 @@ public partial class MainWindow
         Braille.NormalForeground = value.HighContrast ? Brushes.White : C(value.BrailleColor);
         if (detachedPane is not null) detachedPane.NormalForeground = Braille.NormalForeground;
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
-        Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.InvalidateFaces();
-        if (detachedPane is not null) { detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.InvalidateFaces(); }
+        Braille.GridView.FontSize = value.BrailleSize; Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.ShowLineNumbers = value.ShowLineNumbers; Braille.GridView.InvalidateFaces();
+        if (detachedPane is not null) { detachedPane.GridView.FontSize = value.BrailleSize; detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.ShowLineNumbers = value.ShowLineNumbers; detachedPane.GridView.InvalidateFaces(); }
         LineNumbersToggle.IsChecked = value.ShowLineNumbers;
+        FormattingToggle.IsChecked = value.ShowFormattingMarks;
+        ToolbarToggle.IsChecked = value.ShowToolbar;
         EditorToolbar.Visibility = value.ShowToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (!value.SpeakDots) dotSpeech.Stop();
     }

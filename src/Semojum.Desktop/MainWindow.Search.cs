@@ -25,8 +25,8 @@ public partial class MainWindow
         }
         var selected = SearchEditor(panel).SelectedText;
         if (selected.Length is > 0 and < 1000) searchQuery = selected;
-        new FindDialog(panel, searchQuery, replace, query => FindNextAsync(query, panel),
-            (query, replacement, all) => ReplaceMatchesAsync(query, replacement, panel, all)) { Owner = this }.ShowDialog();
+        new FindDialog(panel, searchQuery, replace, (query, target) => FindNextAsync(query, target),
+            (query, replacement, target, all) => ReplaceMatchesAsync(query, replacement, target, all)) { Owner = this }.ShowDialog();
     }
 
     internal async Task<string> FindNextAsync(string query, SearchPanel panel)
@@ -49,8 +49,19 @@ public partial class MainWindow
         editor = SearchEditor(panel);
         editor.Select(match.Offset, match.Length);
         editor.ScrollToLine(editor.Document.GetLineByOffset(match.Offset).LineNumber);
-        lastEditor = editor;
-        return session.Status = $"{match.Block.Page}쪽 · 블록 {match.Block.Id}에서 일치하는 내용을 선택했습니다.";
+        if (panel == SearchPanel.Text && PageEditor.Visibility == System.Windows.Visibility.Visible)
+        { PageEditor.FollowActive(match.Offset, match.Length); lastEditor = PageEditor.Editor; }
+        else
+        {
+            lastEditor = editor;
+            if (panel == SearchPanel.Braille)
+            {
+                lastGrid = (detachedPane ?? Braille).GridView;
+                lastGrid.SelectSearchResult(match.Block, match.Offset, match.Length);
+            }
+        }
+        var all = DocumentSearch.FindAll(session.Blocks, panel, query).ToList();
+        return session.Status = $"{all.FindIndex(m => m.Block == match.Block && m.Offset == match.Offset) + 1} / {all.Count} · {match.Block.Page}쪽";
     }
 
     internal async Task<string> ReplaceMatchesAsync(string query, string replacement, SearchPanel panel, bool all)

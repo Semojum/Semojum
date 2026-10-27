@@ -34,6 +34,21 @@ public sealed partial class BrailleGridView
         }
     }
     public bool HasSelection => Selection.Any(s => s.Length > 0) || Selection.Length > 1;
+    internal void SelectSearchResult(EditorBlock block, int offset, int length)
+    {
+        anchor = new(block, offset, '⠀'); caret = new(block, offset + length, '⠀', true);
+        ActiveBlock = block; CaretOffset = offset + length;
+        var face = Items.Cast<BrailleGridFace>().FirstOrDefault(f => f.Rows.SelectMany(r => r).Any(c => c?.Block == block && c.Offset >= offset));
+        if (face is not null) ScrollIntoView(face);
+        InvalidateFaces();
+    }
+    internal void SelectContext()
+    {
+        if (caret is null) return;
+        var blocks = selectedBlock ? Blocks.Where(b => b.Page == caret.Block.Page).ToArray() : [caret.Block];
+        Point(new(blocks[0], 0, '⠀'), false); Point(new(blocks[^1], blocks[^1].Braille.Length, '⠀', true), true);
+        selectedBlock = true;
+    }
     private bool IsCaret(GridCell cell) => cell.Block == ActiveBlock && cell.Offset == CaretOffset &&
         cell.Prefix == (caret?.Block == ActiveBlock && caret.Offset == CaretOffset ? caret.Prefix : "");
     private GridCell[] CurrentRow() => !CoordinatesCurrent || caret is null ? [] :
@@ -106,16 +121,19 @@ public sealed partial class BrailleGridView
         else if (offset > block.Braille.Length && index + 1 < page.Length) { block = page[index + 1]; offset = 0; }
         Point(new(block, BrailleMarkup.MovePastMarker(block.Braille, offset, direction), '⠀', true), extend);
     }
-    public string DescribeCaret()
+    public (int Face, int Line, int Cell)? CaretCoordinates
     {
-        var faces = Items.Cast<BrailleGridFace>().ToArray();
-        foreach (var f in faces)
-            for (var y = 0; y < f.Rows.Length; y++)
-                for (var x = 0; x < f.Rows[y].Length; x++)
-                    if (f.Rows[y][x] is { } c && IsCaret(c))
-                        return $"{f.Number}면 · {y + 1}줄 {x + 1}칸 · 총 {faces.Length}면";
-        return $"총 {faces.Length}면";
+        get
+        {
+            foreach (var f in Items.Cast<BrailleGridFace>())
+                for (var y = 0; y < f.Rows.Length; y++)
+                    for (var x = 0; x < f.Rows[y].Length; x++)
+                        if (f.Rows[y][x] is { } c && IsCaret(c)) return (f.Number, y + 1, x + 1);
+            return null;
+        }
     }
+    public string DescribeCaret() => CaretCoordinates is { } p
+        ? $"{p.Face}면 · {p.Line}줄 {p.Cell}칸 · 총 {Items.Count}면" : $"총 {Items.Count}면";
     public bool GoToFace(int number)
     {
         if (number < 1 || number > Items.Count) return false;
@@ -144,9 +162,7 @@ public sealed partial class BrailleGridView
             if (ctrl && e.Key == Key.A)
             {
                 e.Handled = true;
-                var blocks = selectedBlock ? Blocks.Where(b => b.Page == caret.Block.Page).ToArray() : [caret.Block];
-                Point(new(blocks[0], 0, '⠀'), false); Point(new(blocks[^1], blocks[^1].Braille.Length, '⠀', true), true);
-                selectedBlock = true; return;
+                SelectContext(); return;
             }
             selectedBlock = false;
             if (ctrl && e.Key is Key.C or Key.X) { e.Handled = true; Copy(e.Key == Key.X); return; }

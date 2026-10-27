@@ -47,7 +47,9 @@ public partial class MainWindow
         UpdatePanelLayout();
         editor.Select(Math.Clamp(destination.Offset, 0, editor.Document.TextLength), 0);
         editor.ScrollToLine(editor.TextArea.Caret.Line);
-        SetActiveEditor(editor);
+        if (destination.Panel == SearchPanel.Text && PageEditor.Visibility == System.Windows.Visibility.Visible)
+        { PageEditor.FollowActive(destination.Offset); SetActiveEditor(PageEditor.Editor); }
+        else SetActiveEditor(editor);
         return session.Status = $"원본 {destination.Block.Page}쪽 · 블록 {destination.Block.Id} · {editor.TextArea.Caret.Line}줄로 이동했습니다.";
     }
 }

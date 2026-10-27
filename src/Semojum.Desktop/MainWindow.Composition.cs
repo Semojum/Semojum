@@ -22,7 +22,7 @@ public partial class MainWindow
         {
             var snapshot = SmjFile.Snapshot(session).Manifest;
             if (output is not null) snapshot = snapshot with { Layout = output.Layout ?? new(), Options = snapshot.Options with { LineBreakUnit = output.LineBreakUnit } };
-            var range = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), null) { Owner = this };
+            var range = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), null, format: ".txt — 원문") { Owner = this };
             if (range.ShowDialog() != true) return;
             snapshot = DocumentExport.SelectOriginal(snapshot, range.Result);
             DocumentExport.RequireCompletedPages(snapshot);

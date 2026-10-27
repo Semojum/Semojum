@@ -1,92 +1,78 @@
 <Window x:Class="Semojum.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit" xmlns:svg="http://sharpvectors.codeplex.com/svgc/" xmlns:local="clr-namespace:Semojum.Desktop.Controls"
         Style="{StaticResource {x:Type Window}}" Title="{Binding WindowTitle}" Width="1440" Height="1000" MinWidth="1280" MinHeight="800" WindowStartupLocation="CenterScreen" Closing="Window_Closing" UseLayoutRounding="True">
   <DockPanel LastChildFill="True">
-    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
+    <Border DockPanel.Dock="Top" Height="32" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
       <DockPanel>
 
-        <Menu Height="32" FontSize="12" Padding="0">
-          <MenuItem Header="파일(_F)">
+        <Menu x:Name="ApplicationMenu" Height="32" FontSize="12" Padding="0" Margin="4,0,0,0">
+          <Menu.Resources><Style TargetType="MenuItem" BasedOn="{StaticResource DesktopMenuItem}"/></Menu.Resources>
+          <MenuItem Header="파일(_F)" Width="64">
             <MenuItem Header="새 문서" InputGestureText="Ctrl+N" Tag="new" Click="Action_Click"/>
-            <MenuItem Header="열기…" InputGestureText="Ctrl+O" Tag="open" Click="Action_Click"/>
-            <MenuItem x:Name="RecentFilesMenu" Header="최근 문서" SubmenuOpened="RecentFiles_Opened"><MenuItem Header="최근 작업 파일이 없습니다" IsEnabled="False"/></MenuItem>
-            <MenuItem Header="작업 폴더 선택…" Tag="workFolder" Click="Action_Click"/>
-            <MenuItem Header="마지막 작업 폴더 열기…" Tag="lastFolder" Click="Action_Click"/>
-            <MenuItem Header="문서 업로드·AI 변환…" Tag="upload" Click="Action_Click"/>
-            <MenuItem Header="서버 작업 열기…" Tag="serverOpen" Click="Action_Click"/>
-            <MenuItem Header="현재 작업 변환 중단" Tag="cancelJob" Click="Action_Click"/>
-            <MenuItem Header="쪽별 변환 상태…" Tag="pageStatus" Click="Action_Click"/>
-            <Separator/><MenuItem Header="저장" InputGestureText="Ctrl+S" Tag="save" Click="Action_Click"/>
-            <MenuItem Header="다른 이름으로 저장…" Tag="saveAs" Click="Action_Click"/>
-            <MenuItem Header="문서 최적화·출력 설정…" Tag="optimize" Click="Action_Click"/>
-            <MenuItem Header="점자 면 미리보기·인쇄…" Tag="composition" Click="Action_Click"/>
-            <MenuItem Header="문서 내보내기…" Tag="export" Click="Action_Click"/>
-            <Separator/><MenuItem Header="샘플 문서 다시 열기" Tag="sample" Click="Action_Click"/>
-            <MenuItem Header="문서 닫기" InputGestureText="Ctrl+W" Tag="closeDocument" Click="Action_Click"/>
-            <MenuItem Header="종료" Tag="close" Click="Action_Click"/>
+            <MenuItem Header="열기" InputGestureText="Ctrl+O" Tag="open" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem Header="저장" InputGestureText="Ctrl+S" Tag="save" Click="Action_Click"/>
+            <MenuItem Header="다른 이름으로 저장" Tag="saveAs" Click="Action_Click"/>
+            <MenuItem Header="범위 지정 저장" Tag="export" Click="Action_Click"/>
+            <MenuItem x:Name="RecentFilesMenu" Visibility="Collapsed" Header="최근 문서" SubmenuOpened="RecentFiles_Opened"/>
           </MenuItem>
-          <MenuItem Header="편집(_E)">
-            <MenuItem Header="되돌리기" InputGestureText="Ctrl+Z" Tag="undo" Click="Action_Click"/><MenuItem Header="다시 실행" InputGestureText="Ctrl+Y" Tag="redo" Click="Action_Click"/>
-            <Separator/><MenuItem Header="잘라내기" Tag="cut" Click="Action_Click"/><MenuItem Header="복사" Tag="copy" Click="Action_Click"/><MenuItem Header="붙여넣기" Tag="paste" Click="Action_Click"/>
-            <Separator/><MenuItem Header="찾아 바꾸기…" InputGestureText="Ctrl+F" Tag="find" Click="Action_Click"/>
-            <MenuItem Header="다음 찾기" InputGestureText="F3" Tag="findNext" Click="Action_Click"/>
-            <MenuItem Header="바꾸기…" InputGestureText="Ctrl+H" Tag="replace" Click="Action_Click"/>
-            <MenuItem Header="이동…" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
-            <MenuItem Header="새 블록 추가" Tag="addBlock" Click="Action_Click"/>
-            <MenuItem Header="현재 쪽 블록 선택…" Tag="selectBlocks" Click="Action_Click"/>
-            <MenuItem Header="여러 줄·블록 구간 선택…" Tag="selectRange" Click="Action_Click"/>
-            <MenuItem Header="블록 내용 비우기" Tag="clearBlock" Click="Action_Click"/>
-            <MenuItem Header="블록 삭제" Tag="deleteBlock" Click="Action_Click"/>
-            <MenuItem Header="현재 줄 지우기" Tag="clearLine" Click="Action_Click"/>
-            <MenuItem Header="점자 규정…" Tag="rules" Click="Action_Click"/>
-            <MenuItem Header="표 구조 편집…" Tag="table" Click="Action_Click"/>
-            <MenuItem Header="메모 목록…" Tag="memos" Click="Action_Click"/>
-            <MenuItem Header="현재 줄 메모…" Tag="memo" Click="Action_Click"/>
-            <MenuItem Header="대체 초안…" Tag="drafts" Click="Action_Click"/>
+          <MenuItem Header="편집(_E)" Width="64">
+            <MenuItem Header="되돌리기" InputGestureText="Ctrl+Z" Tag="undo" Click="Action_Click"/>
+            <MenuItem Header="다시 실행" InputGestureText="Ctrl+Y" Tag="redo" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem Header="잘라내기" InputGestureText="Ctrl+X" Tag="cut" Click="Action_Click"/>
+            <MenuItem Header="복사" InputGestureText="Ctrl+C" Tag="copy" Click="Action_Click"/>
+            <MenuItem Header="붙여넣기" InputGestureText="Ctrl+V" Tag="paste" Click="Action_Click"/>
+            <MenuItem Header="전체 선택" InputGestureText="Ctrl+A" Tag="selectAll" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem Header="찾기 · 바꾸기" InputGestureText="Ctrl+F" Tag="find" Click="Action_Click"/>
+            <MenuItem Header="이동" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
           </MenuItem>
-          <MenuItem Header="보기(_V)">
+          <MenuItem Header="보기(_V)" Width="64">
+            <MenuItem Header="글자 크기">
+              <MenuItem Header="크게" Tag="zoomIn" Click="Action_Click"/>
+              <MenuItem Header="작게" Tag="zoomOut" Click="Action_Click"/>
+              <MenuItem Header="기본 크기" Tag="zoomReset" Click="Action_Click"/>
+            </MenuItem>
+            <Separator/>
+            <MenuItem x:Name="FormattingToggle" Header="조판부호" IsCheckable="True" Tag="formatMarks" Click="Action_Click"/>
+            <MenuItem x:Name="OutlineToggle" Header="쪽 분리 윤곽선" IsCheckable="True" IsChecked="True" Tag="showOutlines" Click="Action_Click"/>
+            <MenuItem x:Name="LineNumbersToggle" Header="줄 번호" IsCheckable="True" IsChecked="True" Click="LineNumbersToggle_Click"/>
+            <Separator/>
+            <MenuItem x:Name="ToolbarToggle" Header="도구 모음" IsCheckable="True" IsChecked="True" Tag="showToolbar" Click="Action_Click"/>
+            <MenuItem x:Name="StatusToggle" Header="상태 표시줄" IsCheckable="True" IsChecked="True" Tag="showStatus" Click="Action_Click"/>
+            <MenuItem x:Name="LinePreviewToggle" Header="줄번역" IsCheckable="True" IsChecked="True" Click="LinePreviewToggle_Click"/>
+            <MenuItem x:Name="MemoToggle" Header="메모 표시" IsCheckable="True" IsChecked="True" Tag="showMemos" Click="Action_Click"/>
+            <MenuItem x:Name="ReviewToggle" Header="검토 표시" IsCheckable="True" IsChecked="True" Tag="showReviews" Click="Action_Click"/>
+            <Separator/>
             <MenuItem x:Name="OriginalToggle" Header="원본 패널" IsCheckable="True" IsChecked="True" Click="OriginalToggle_Click"/>
             <MenuItem x:Name="SourceToggle" Header="텍스트 패널" IsCheckable="True" IsChecked="True" Click="PanelToggle_Click"/>
             <MenuItem x:Name="BrailleToggle" Header="점자 패널" IsCheckable="True" IsChecked="True" Click="PanelToggle_Click"/>
-            <MenuItem x:Name="LineNumbersToggle" Header="줄 번호" IsCheckable="True" IsChecked="True" Click="LineNumbersToggle_Click"/>
-            <MenuItem Header="점자 창 분리 / 합치기" Tag="detach" Click="Action_Click"/>
-            <MenuItem Header="텍스트 창 분리 / 합치기" Tag="detachSource" Click="Action_Click"/>
-            <MenuItem Header="원본 창 분리 / 합치기" Tag="detachOriginal" Click="Action_Click"/>
-            <MenuItem x:Name="LinePreviewToggle" Header="줄번역" IsCheckable="True" IsChecked="True" Click="LinePreviewToggle_Click"/>
-            <MenuItem x:Name="MemoToggle" Header="메모 표시" IsCheckable="True" IsChecked="True" Tag="showMemos" Click="Action_Click"/>
-            <MenuItem x:Name="OutlineToggle" Header="쪽 분리 윤곽선" IsCheckable="True" IsChecked="True" Tag="showOutlines" Click="Action_Click"/>
-            <Separator/><MenuItem Header="글자 크게" Tag="zoomIn" Click="Action_Click"/><MenuItem Header="글자 작게" Tag="zoomOut" Click="Action_Click"/><MenuItem Header="글자 크기 초기화" Tag="zoomReset" Click="Action_Click"/>
+            <MenuItem Header="패널 모두 제자리로" Tag="restorePanels" Click="Action_Click"/>
           </MenuItem>
-          <MenuItem Header="삽입(_I)">
-            <MenuItem Header="특수 기호…" Tag="symbol" Click="Action_Click"/>
-            <MenuItem x:Name="AllTagsMenu" Header="점역 태그"/>
-            <MenuItem Header="꼬리말…" Tag="footer" Click="Action_Click"/><MenuItem Header="강조" Tag="tag:강조" Click="Action_Click"/><MenuItem Header="점역자 주" Tag="tag:주" Click="Action_Click"/>
-            <MenuItem Header="상자" Tag="tag:상자" Click="Action_Click"/>
-            <MenuItem Header="상자 끝" Tag="tag:상자끝" Click="Action_Click"/>
-            <MenuItem Header="쪽바꿈" InputGestureText="Ctrl+Enter" Tag="tag:쪽바꿈" Click="Action_Click"/>
-            <MenuItem Header="장바꿈" Tag="tag:장바꿈" Click="Action_Click"/>
-            <Separator/><MenuItem Header="수식 입력창…" Tag="math" Click="Action_Click"/>
+          <MenuItem x:Name="AllTagsMenu" Header="삽입(_I)" Width="64">
+            <MenuItem Header="꼬리말..." Tag="footerInsert" Click="Action_Click"/>
+            <MenuItem Header="꼬리말 관리..." Tag="footer" Click="Action_Click"/>
+            <MenuItem Header="수식 입력창" Tag="math" Click="Action_Click"/>
           </MenuItem>
-          <MenuItem Header="설정(_M)">
-            <MenuItem Header="편집용 점자문서 페이지설정…" Tag="layout" Click="Action_Click"/><MenuItem Header="6점키 설정…" Tag="sixdot" Click="Action_Click"/>
-            <MenuItem Header="기본 점역 옵션…" InputGestureText="Alt+G" Tag="defaults" Click="Action_Click"/>
-            <MenuItem Header="점역 양식…" Tag="forms" Click="Action_Click"/>
-            <MenuItem Header="작업 점역 옵션…" Tag="translationOptions" Click="Action_Click"/>
-            <MenuItem Header="문단 모양…" InputGestureText="Alt+S" Tag="appearance" Click="Action_Click"/>
-            <MenuItem Header="편집창 색상…" InputGestureText="Alt+C" Tag="colors" Click="Action_Click"/>
-            <MenuItem Header="상용구…" Tag="snippets" Click="Action_Click"/>
-            <MenuItem Header="문서 전체 재점역" Tag="translateAll" Click="Action_Click"/>
-            <MenuItem x:Name="AutoUpdateToggle" Header="실행 시 업데이트 자동 확인" IsCheckable="True" IsChecked="True" Tag="autoUpdate" Click="Action_Click"/>
+          <MenuItem Header="설정(_M)" Width="64">
+            <MenuItem Header="편집용 점자문서 페이지설정" InputGestureText="Alt+Y" Tag="layout" Click="Action_Click"/>
+            <MenuItem Header="기본 점역 옵션 설정" InputGestureText="Alt+G" Tag="defaults" Click="Action_Click"/>
+            <MenuItem Header="점역 양식" Tag="forms" Click="Action_Click"/>
+            <MenuItem Header="6점키 설정" InputGestureText="Alt+K" Tag="sixdot" Click="Action_Click"/>
+            <MenuItem Header="시각 자료 설명 유형" Tag="visualDescriptions" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem x:Name="AutoUpdateToggle" Header="업데이트 자동 확인" IsCheckable="True" IsChecked="True" Tag="autoUpdate" Click="Action_Click"/>
+            <MenuItem x:Name="SixDotToggle" Visibility="Collapsed" Header="6점 입력" IsCheckable="True" Checked="SixDotToggle_Changed" Unchecked="SixDotToggle_Changed"/>
           </MenuItem>
-          <MenuItem Header="정보(_A)">
-            <MenuItem Header="로그인…" Tag="login" Click="Action_Click"/>
-            <MenuItem Header="로그아웃" Tag="logout" Click="Action_Click"/>
-            <MenuItem Header="마이페이지…" Tag="usage" Click="Action_Click"/>
-            <MenuItem Header="세모점 정보…" Tag="about" Click="Action_Click"/>
-            <MenuItem Header="게시판…" Tag="board" Click="Action_Click"/>
-            <MenuItem Header="알림…" Tag="notifications" Click="Action_Click"/>
-            <MenuItem Header="버전 정보…" Tag="version" Click="Action_Click"/>
-            <MenuItem Header="사용 안내" Tag="help" Click="Action_Click"/>
-            <MenuItem x:Name="TimeoutToggle" Header="점역 응답 지연 체험" IsCheckable="True" Click="TimeoutToggle_Click"/>
+          <MenuItem Header="정보(_A)" Width="64">
+            <MenuItem Header="도움말" InputGestureText="F1" Tag="help" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem Header="마이페이지 · 사용량" Tag="usage" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem Header="게시판" Tag="board" Click="Action_Click"/>
+            <MenuItem Header="문의하기" Tag="inquiry" Click="Action_Click"/>
+            <MenuItem Header="세모점 정보" Tag="about" Click="Action_Click"/>
+            <MenuItem x:Name="TimeoutToggle" Visibility="Collapsed" Header="점역 응답 지연 체험" IsCheckable="True" Click="TimeoutToggle_Click"/>
           </MenuItem>
         </Menu>
       </DockPanel>
@@ -94,11 +80,12 @@
     <Border x:Name="EditorToolbar" DockPanel.Dock="Top" Height="40" Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="8,0">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <Border BorderBrush="#B5B5B5" BorderThickness="1" Background="White" Margin="8,0,0,0" Padding="6,0">
-            <DockPanel><TextBlock Text="⌕" Margin="0,0,4,0"/><TextBox x:Name="RuleSearch" Width="210" Height="26" MinHeight="26" BorderThickness="0" MaxLength="100" ToolTip="점자 규정 검색 · Enter" AutomationProperties.Name="점자 규정 검색" KeyDown="RuleSearch_KeyDown"/></DockPanel>
+          <Border BorderBrush="#B5B5B5" BorderThickness="1" Background="White" Width="240" Height="32" Margin="8,0,4,0" Padding="7,0">
+            <DockPanel><ContentControl Content="{StaticResource Icon.rulebook}" Width="16" Margin="0,0,8,0"/><Grid><TextBox x:Name="RuleSearch" Height="30" MinHeight="30" Padding="0" FontSize="12" BorderThickness="0" MaxLength="100" ToolTip="점자 규정 검색 · Enter" AutomationProperties.Name="점자 규정 검색" KeyDown="RuleSearch_KeyDown"/>
+            <TextBlock Text="점역 규정 검색..." FontSize="12" Foreground="#767676" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=RuleSearch}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></DockPanel>
           </Border>
         </StackPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Visibility="Collapsed">
           <Button Content="‹" Tag="previous" Click="Action_Click" Style="{StaticResource FormatButton}" ToolTip="이전 블록"/>
           <ComboBox x:Name="BlockPicker" Width="150" Height="26" MinHeight="26" FontSize="12" Padding="4,0" ItemsSource="{Binding Blocks}" DisplayMemberPath="Label" SelectedItem="{Binding ActiveBlock, Mode=OneWay}" SelectionChanged="BlockPicker_SelectionChanged" AutomationProperties.Name="작업 블록 선택"/>
           <Button Content="›" Tag="next" Click="Action_Click" Style="{StaticResource FormatButton}" ToolTip="다음 블록"/>
@@ -118,6 +105,7 @@
           <Button Tag="find" ToolTip="찾기 (Ctrl+F)" AutomationProperties.Name="찾기 (Ctrl+F)" Click="Action_Click" Style="{StaticResource IconButton}"><ContentControl Content="{StaticResource Icon.find}" IsHitTestVisible="False"/></Button>
           <Button Tag="goto" ToolTip="이동 (Ctrl+G)" AutomationProperties.Name="이동 (Ctrl+G)" Click="Action_Click" Style="{StaticResource IconButton}"><ContentControl Content="{StaticResource Icon.goto}" IsHitTestVisible="False"/></Button>
           <Border Width="1" Height="20" Background="#B5B5B5" Margin="8,0"/>
+          <Button Tag="translate" ToolTip="현재 블록 다시 점역" AutomationProperties.Name="현재 블록 다시 점역" Click="Action_Click" Style="{StaticResource IconButton}"><ContentControl Content="{StaticResource Icon.recon}" IsHitTestVisible="False"/></Button>
           <Button Tag="export" ToolTip="문서 내보내기" AutomationProperties.Name="문서 내보내기" Click="Action_Click" Style="{StaticResource IconButton}"><ContentControl Content="{StaticResource Icon.export}" IsHitTestVisible="False"/></Button>
           <Border Width="1" Height="20" Background="#B5B5B5" Margin="8,0"/>
           <ComboBox x:Name="ZoomPicker" Width="92" Height="32" FontSize="12" SelectionChanged="ZoomPicker_SelectionChanged" AutomationProperties.Name="편집기 확대 비율"/>
@@ -126,44 +114,63 @@
     </Border>
     <Border DockPanel.Dock="Top" Height="32" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="8,0">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-        <Button Content="점역 옵션…" Tag="translationOptions" Click="Action_Click" Width="104" Height="24" MinHeight="24" Padding="4,0" FontSize="12"/>
-        <Button x:Name="FontSizeLabel" Content="14 px" Tag="zoomReset" Click="Action_Click" ToolTip="기본 글자 크기로 복원" Width="66" Height="24" MinHeight="24" Padding="4,0" Margin="4,0" FontSize="12"/>
-        <Border Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="7,0" Height="24"><TextBlock x:Name="OptionsLabel" FontSize="12" Foreground="{StaticResource Muted}"/></Border>
+        <ComboBox x:Name="TextStylePicker" Width="104" Height="24" MinHeight="24" FontSize="12" SelectedIndex="0" SelectionChanged="TextStylePicker_SelectionChanged" AutomationProperties.Name="텍스트 서식"><ComboBoxItem Content="본문"/><ComboBoxItem Content="강조"/><ComboBoxItem Content="굵은"/><ComboBoxItem Content="색강조"/><ComboBoxItem Content="취소선"/></ComboBox>
+        <ComboBox x:Name="FontSizeLabel" ToolTip="텍스트 글자 크기" Width="66" Height="24" MinHeight="24" Margin="4,0" FontSize="12" SelectionChanged="FontSizePicker_SelectionChanged"><ComboBoxItem Content="12"/><ComboBoxItem Content="14" IsSelected="True"/><ComboBoxItem Content="16"/><ComboBoxItem Content="18"/><ComboBoxItem Content="20"/><ComboBoxItem Content="24"/><ComboBoxItem Content="30"/><ComboBoxItem Content="32"/></ComboBox>
+        <Border Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="7,0" Height="24" Width="154"><TextBlock x:Name="OptionsLabel" FontSize="12" Foreground="{StaticResource Muted}"/></Border>
 <Border Width="1" Height="20" Background="#B5B5B5" Margin="8,0"/>
         <Button Tag="tag:쪽바꿈" ToolTip="쪽바꿈" AutomationProperties.Name="쪽바꿈" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.pagebreak}" IsHitTestVisible="False"/></Button>
         <Button Tag="footer" ToolTip="꼬리말" AutomationProperties.Name="꼬리말" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.footer}" IsHitTestVisible="False"/></Button>
         <Button Tag="tag:가운데정렬" ToolTip="가운데 정렬" AutomationProperties.Name="가운데 정렬" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.align}" IsHitTestVisible="False"/></Button>
         <Button Tag="tag:강조" ToolTip="강조" AutomationProperties.Name="강조" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.emph}" IsHitTestVisible="False"/></Button>
         <Button Tag="tag:밑줄빈칸" ToolTip="밑줄 빈칸" AutomationProperties.Name="밑줄 빈칸" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.blank}" IsHitTestVisible="False"/></Button>
+        <Button Tag="table" ToolTip="표 편집" AutomationProperties.Name="표 편집" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.table}" IsHitTestVisible="False"/></Button>
         <Button Tag="memo" ToolTip="현재 줄 메모" AutomationProperties.Name="현재 줄 메모" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.note}" IsHitTestVisible="False"/></Button>
         <Button Tag="math" ToolTip="수식" AutomationProperties.Name="수식" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.math}" IsHitTestVisible="False"/></Button>
+        <Border Width="1" Height="16" Background="#B5B5B5" Margin="4,0,8,0"/>
+        <ComboBox x:Name="IndentPicker" Width="74" Height="24" MinHeight="24" FontSize="12" SelectedIndex="2" SelectionChanged="IndentPicker_SelectionChanged" ToolTip="선택한 줄 들여쓰기"><ComboBoxItem Content="1칸"/><ComboBoxItem Content="2칸"/><ComboBoxItem Content="3칸"/><ComboBoxItem Content="4칸"/></ComboBox>
         <Border Width="1" Height="16" Background="#B5B5B5" Margin="8,0"/>
-        <CheckBox x:Name="SixDotToggle" Content="6점 입력" Margin="0,0,4,0" FontSize="12" Checked="SixDotToggle_Changed" Unchecked="SixDotToggle_Changed" ToolTip="설정한 여섯 키를 함께 누르고 놓으면 점자가 입력됩니다"/>
-        <Button Content="키 설정" Tag="sixdot" Click="Action_Click" Style="{StaticResource FormatButton}" Width="56" FontSize="12" ToolTip="6점키 설정 (Alt+K)"/>
-        <Border Width="1" Height="16" Background="#B5B5B5" Margin="8,0"/>
-<Button Tag="drafts" ToolTip="표 점역 초안" AutomationProperties.Name="표 점역 초안" Click="Action_Click" Style="{StaticResource FormatButton}"><svg:SvgViewbox x:Name="DraftIcon" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/draft.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button><Button Tag="lineNumbers" ToolTip="줄 번호 켜기 / 끄기" AutomationProperties.Name="줄 번호 켜기 / 끄기" Click="Action_Click" Style="{StaticResource FormatButton}"><svg:SvgViewbox x:Name="LinenoIcon" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/lineno.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
-        <Button Content="판면" Tag="layout" Click="Action_Click" Style="{StaticResource FormatButton}" Width="44" FontSize="12"/>
-        <Button Content="점역" Tag="translate" Click="Action_Click" Style="{StaticResource FormatButton}" Width="44" FontSize="12" ToolTip="현재 블록을 내장 엔진으로 점역"/>
+<Button Tag="drafts" ToolTip="표 점역 초안" AutomationProperties.Name="표 점역 초안" Click="Action_Click" Style="{StaticResource FormatButton}"><svg:SvgViewbox x:Name="DraftIcon" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/draft.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
+        <Border Width="1" Height="16" Background="#B5B5B5" Margin="4,0,8,0"/>
+        <Button Tag="formatMarks" ToolTip="편집 부호 표시" AutomationProperties.Name="편집 부호 표시" Click="Action_Click" Style="{StaticResource FormatButton}"><ContentControl Content="{StaticResource Icon.mark}" IsHitTestVisible="False"/></Button>
+        <Button Tag="lineNumbers" ToolTip="줄 번호 켜기 / 끄기" AutomationProperties.Name="줄 번호 켜기 / 끄기" Click="Action_Click" Style="{StaticResource FormatButton}"><svg:SvgViewbox x:Name="LinenoIcon" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/lineno.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
       </StackPanel>
     </Border>
-    <Border DockPanel.Dock="Bottom" Height="24" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="8,0">
+    <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="24" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">
       <DockPanel>
-        <TextBlock x:Name="AccountLabel" DockPanel.Dock="Right" Text="로그인 안 됨" FontSize="11" Foreground="{StaticResource Muted}" Margin="12,0,0,0"/>
-        <TextBlock x:Name="CaretStatus" DockPanel.Dock="Left" FontSize="11" Margin="0,0,12,0"/>
-        <TextBlock Text="{Binding Status}" FontSize="11" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}"/>
+        <TextBlock x:Name="AccountLabel" DockPanel.Dock="Right" Text="로그인 안 됨" FontSize="12" Foreground="{StaticResource Muted}" Margin="12,0,12,0"/>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" TextElement.FontSize="12">
+          <Border Width="88" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="8,0"><TextBlock x:Name="StatusInput"/></Border>
+          <Border Width="97" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="StatusPage" TextTrimming="CharacterEllipsis"/></Border>
+          <Border Width="51" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="CaretStatus"/></Border>
+          <Border Width="90" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="StatusCell"/></Border>
+          <Border Width="174" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="StatusOptions" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}"/></Border>
+        </StackPanel>
+        <Border/>
       </DockPanel>
     </Border>
-    <TabControl x:Name="DocumentTabs" DockPanel.Dock="Top" Height="32" BorderThickness="0" Padding="0" SelectionChanged="DocumentTabs_SelectionChanged"/>
-    <Border x:Name="ConversionBanner" DockPanel.Dock="Top" Padding="12,8" Background="#EAF4FF">
+    <TabControl x:Name="DocumentTabs" DockPanel.Dock="Top" Height="32" BorderThickness="0" Padding="0" SelectionChanged="DocumentTabs_SelectionChanged">
+      <TabControl.Style><Style TargetType="TabControl"><Style.Triggers><DataTrigger Binding="{Binding Items.Count, RelativeSource={RelativeSource Self}}" Value="1"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TabControl.Style>
+    </TabControl>
+    <Border x:Name="ConversionBanner" DockPanel.Dock="Top" Width="420" Height="160" HorizontalAlignment="Center" Background="White" BorderBrush="#B5B5B5" BorderThickness="1">
       <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding Progress}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-      <DockPanel>
-        <Button DockPanel.Dock="Right" Content="변환 중단" Tag="cancelJob" Click="Action_Click" Margin="12,0,0,0"/>
-        <StackPanel><TextBlock Text="{Binding Progress.Label}" Margin="0,0,0,5"/><ProgressBar Minimum="0" Maximum="{Binding Progress.Total, Mode=OneWay}" Value="{Binding Progress.Finished, Mode=OneWay}" Height="8" AutomationProperties.Name="문서 변환 진행률"/></StackPanel>
-      </DockPanel>
+      <Canvas>
+        <ProgressBar Canvas.Left="15" Canvas.Top="39" Width="388" Height="8" Minimum="0" Maximum="{Binding Progress.Total, Mode=OneWay}" Value="{Binding Progress.Finished, Mode=OneWay}" Style="{StaticResource FlatUsageBar}" AutomationProperties.Name="문서 변환 진행률"/>
+        <TextBlock Canvas.Left="15" Canvas.Top="55" Width="388" Text="{Binding Progress.CompactLabel}" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Progress.Label}"/>
+        <Button Canvas.Left="15" Canvas.Top="87" Content="취소" Tag="cancelJob" Click="Action_Click" Width="76" Height="24" MinHeight="24" Padding="0" FontSize="12" ToolTip="이미 처리한 쪽은 보존하고 남은 변환을 중단합니다."/>
+      </Canvas>
     </Border>
-    <Border DockPanel.Dock="Top" Padding="12,8" Background="#FFF4D6">
+    <Border x:Name="OperationErrorBanner" DockPanel.Dock="Top" Padding="12,8" Background="#FFF4D6">
+      <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding ErrorNotice}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+      <DockPanel><Button DockPanel.Dock="Right" Content="닫기" Click="ErrorNotice_Close" Margin="12,0,0,0"/><TextBlock Text="{Binding ErrorNotice}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Assertive"/></DockPanel>
+    </Border>
+    <Border x:Name="CreditBanner" DockPanel.Dock="Top" Height="32" Background="#FFF4CE" BorderBrush="#8A5200" BorderThickness="1">
       <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding CreditNotice}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
-      <StackPanel><TextBlock Text="{Binding CreditNotice}" TextWrapping="Wrap"/><TextBlock Text="처리된 쪽은 편집할 수 있습니다. 이어서 처리 기능은 서버 지원 준비 중입니다. 원본을 다시 올리면 별도 작업이 생성됩니다." TextWrapping="Wrap"/></StackPanel>
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Content="✕" Width="20" Height="20" MinWidth="20" MinHeight="20" Padding="0" Margin="9,0,3,0" Background="Transparent" BorderBrush="Transparent" Click="CreditNotice_Close" AutomationProperties.Name="크레딧 안내 닫기"/>
+        <Button DockPanel.Dock="Right" Content="이어서 처리" Width="99" Height="24" MinHeight="24" Padding="0" FontSize="12" Style="{StaticResource PrimaryButton}" IsEnabled="False" ToolTipService.ShowOnDisabled="True" ToolTip="처리된 쪽은 편집할 수 있습니다. 이어서 처리는 서버 지원 준비 중입니다."/>
+        <Canvas DockPanel.Dock="Left" Width="16" Height="16" Margin="11,0,4,0"><Rectangle Canvas.Left="7" Canvas.Top="1" Width="2" Height="9" Fill="#8A5200"/><Rectangle Canvas.Left="7" Canvas.Top="12" Width="2" Height="2" Fill="#8A5200"/></Canvas>
+        <TextBlock Text="{Binding CreditNotice}" FontSize="12" FontWeight="SemiBold" Foreground="#8A5200" TextTrimming="CharacterEllipsis" ToolTip="{Binding CreditNotice}"/>
+      </DockPanel>
     </Border>
     <Border x:Name="SelectionPane" DockPanel.Dock="Top" Visibility="Collapsed" Background="#FAFAFA" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,1" Padding="8">
       <StackPanel>
@@ -177,7 +184,7 @@
     <local:LineTranslation x:Name="LineStrip" DockPanel.Dock="Bottom"/>
     <Grid>
     <Grid x:Name="PanelGrid" Margin="0">
-      <Grid.ColumnDefinitions><ColumnDefinition x:Name="OriginalColumn" Width="380*" MinWidth="260"/><ColumnDefinition x:Name="OriginalSplitterColumn" Width="1"/><ColumnDefinition Width="484*" MinWidth="300"/><ColumnDefinition Width="1"/><ColumnDefinition Width="576*" MinWidth="300"/></Grid.ColumnDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition x:Name="OriginalColumn" Width="379*" MinWidth="260"/><ColumnDefinition x:Name="OriginalSplitterColumn" Width="1"/><ColumnDefinition Width="483*" MinWidth="300"/><ColumnDefinition Width="1"/><ColumnDefinition Width="576*" MinWidth="300"/></Grid.ColumnDefinitions>
       <Border x:Name="OriginalPanel" BorderBrush="{StaticResource Line}" BorderThickness="0" Background="White"><Grid>
         <Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Border x:Name="OriginalHeader" Style="{StaticResource PanelHeader}"><DockPanel>
@@ -187,10 +194,10 @@
             <Button Content="×" Tag="hideOriginal" Click="Action_Click" Style="{StaticResource PanelButton}" ToolTip="원본 패널 숨기기"/>
           </StackPanel>
           <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock Text="1" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
-          <TextBlock Text="원본 이미지" FontSize="12"/>
+          <TextBlock x:Name="OriginalPanelTitle" Text="원본" FontSize="12"/>
         </DockPanel></Border>
         <local:OriginalPreview x:Name="Original" Grid.Row="1"/>
-        <Border Grid.Row="1" x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel><Viewbox Stretch="Uniform"><Grid x:Name="OriginalImageGrid" MouseLeftButtonDown="OriginalImage_MouseDown"><Image x:Name="OriginalImage" Stretch="Fill"/><Canvas><Rectangle x:Name="OriginalSelection" Stroke="#4D85C8" Fill="#205287C1" StrokeThickness="3" Visibility="Collapsed"/></Canvas></Grid></Viewbox><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
+        <Border Grid.Row="1" x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel><Viewbox Stretch="Uniform"><Grid x:Name="OriginalImageGrid" MouseLeftButtonDown="OriginalImage_MouseDown"><Image x:Name="OriginalImage" Stretch="Fill"/><Canvas><Rectangle x:Name="OriginalSelection" Stroke="#D5AC00" Fill="#60FFF5A3" StrokeThickness="3" Visibility="Collapsed"/></Canvas></Grid></Viewbox><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
       </Grid></Border>
       <GridSplitter Grid.Column="1" ResizeBehavior="PreviousAndNext"/>
       <Border x:Name="SourcePanel" Grid.Column="2" BorderBrush="{StaticResource Line}" BorderThickness="0" Background="White">
@@ -201,8 +208,8 @@
               <Button Content="⧉" Tag="detachSource" Click="Action_Click" Style="{StaticResource PanelButton}" ToolTip="텍스트 창 분리 / 합치기"/>
               <Button Content="×" Tag="hideSource" Click="Action_Click" Style="{StaticResource PanelButton}" ToolTip="텍스트 패널 숨기기"/>
             </StackPanel>
-            <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock Text="2" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
-            <TextBlock Text="텍스트" FontSize="12"/>
+            <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock x:Name="SourcePanelNumber" Text="2" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
+            <TextBlock x:Name="SourcePanelTitle" Text="텍스트" FontSize="12"/>
           </DockPanel></Border>
           <local:ContinuousSourceEditor Grid.Row="1" x:Name="PageEditor" Visibility="Collapsed"/>
           <ae:TextEditor Grid.Row="1" x:Name="SourceEditor" FontFamily="Malgun Gothic" FontSize="14" ShowLineNumbers="True" WordWrap="True" Padding="8,4" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="원문 텍스트 편집기"/>
@@ -214,11 +221,16 @@
         <Border x:Name="DetachedPlaceholder" Visibility="Collapsed" Background="#F4F6F8"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="점자 창이 분리되어 있습니다" FontSize="17"/><TextBlock Text="독립 창에서도 같은 블록을 편집합니다." Foreground="{StaticResource Muted}" Margin="0,12,0,20"/><Button Content="이 창으로 합치기" Tag="detach" Click="Action_Click" Style="{StaticResource PrimaryButton}"/></StackPanel></Border>
       </Grid></Border>
     </Grid>
-    <Border x:Name="Welcome" Background="White" Visibility="Collapsed"><StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-      <TextBlock Text="작업 파일 없음" FontSize="24" HorizontalAlignment="Center" Margin="0,0,0,24"/>
-      <Button Content="파일 업로드" Tag="upload" Click="Action_Click" Style="{StaticResource PrimaryButton}"/>
-      <Button Content="새 문서" Tag="new" Click="Action_Click" Margin="0,8,0,0"/>
-    </StackPanel></Border>
+    <Border x:Name="Welcome" Background="White" Visibility="Collapsed">
+      <Border x:Name="WelcomeCard" Width="420" Height="260" BorderBrush="#B5B5B5" BorderThickness="1" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Canvas>
+          <Border Canvas.Left="15" Canvas.Top="15" Width="388" Height="180" Background="#FAFAFA" BorderBrush="#D6D6D6" BorderThickness="1">
+            <TextBlock Text="작업 파일 없음" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <Button Canvas.Left="149" Canvas.Top="211" Width="120" Height="24" MinHeight="24" Padding="0" FontSize="12" Content="파일 업로드" Tag="upload" Click="Action_Click" Style="{StaticResource PrimaryButton}"/>
+        </Canvas>
+      </Border>
+    </Border>
     </Grid>
   </DockPanel>
 </Window>

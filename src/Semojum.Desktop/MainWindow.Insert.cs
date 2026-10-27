@@ -8,15 +8,51 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private async Task EditMathAsync()
+    {
+        if (session.IsReadOnly || session.ActiveBlock is not { } active || engine is not LocalBrailleEngine local) return;
+        var existing = active.Metadata.Type == "formula";
+        var latex = existing ? active.Source.Replace("<!수식>", "").Replace("<!/수식>", "") : null;
+        var dialog = new MathDialog((value, ct) => local.TranslateElementAsync(value, new(Type: "formula"), session.Options, ct), latex) { Owner = this };
+        if (dialog.ShowDialog() != true || dialog.Translation is null) return;
+        if (existing && ChooseTranslation(active) != ManualEditDecision.Overwrite) return;
+        EditorBlock block = active;
+        EditStructure(() =>
+        {
+            if (!existing)
+            {
+                block = new EditorBlock { Id = session.Blocks.Max(b => b.Id) + 1, Page = active.Page, Heading = "수식", Metadata = new(Type: "formula") };
+                session.Blocks.Insert(session.Blocks.IndexOf(active) + 1, block);
+            }
+            block.Source = $"<!수식>{dialog.Latex}<!/수식>";
+            block.Braille = dialog.BrailleInput.Text;
+            block.Translation = dialog.Translation with { Cells = block.Braille, SourceText = block.Source,
+                RuleTrail = dialog.Edited ? null : dialog.Translation.RuleTrail, Breaks = dialog.Edited ? [] : dialog.Translation.Breaks };
+            block.HasManualBraille = dialog.Edited;
+        });
+        session.ActiveBlock = block; translatedRevisions[block] = block.SourceRevision;
+        await Task.CompletedTask;
+    }
     private async void ShowLineMemos(SearchPanel panel, int? requestedLine = null, bool showResolved = false)
     {
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
         var editor = SearchEditor(panel); var line = requestedLine ?? editor.TextArea.Caret.Line - 1;
         if (line < 0 || line >= editor.Document.LineCount) return;
         var text = editor.Document.GetText(editor.Document.GetLineByNumber(line + 1));
-        var dialog = new MemoThreadDialog(block, panel == SearchPanel.Text ? "TEXT" : "BRAILLE", line, text, EditStructure, session, showResolved) { Owner = this };
+        var code = panel == SearchPanel.Text ? "TEXT" : "BRAILLE";
+        if (!block.Memos.Any(m => m.Panel == code && m.LineIndex == line && (showResolved || !m.Resolved)))
+        {
+            var input = new MemoInputDialog(api.Account?.DisplayName) { Owner = this };
+            if (input.ShowDialog() == true)
+                EditStructure(() => block.Memos.Add(new(Guid.NewGuid().ToString("N"), null, code, line, text[..Math.Min(80, text.Length)], input.Value, DateTimeOffset.Now, Author: api.Account?.DisplayName)));
+            foreach (var margin in editor.TextArea.LeftMargins.OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
+            foreach (var margin in PageEditor.Editor.TextArea.LeftMargins.OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
+            return;
+        }
+        var dialog = new MemoThreadDialog(block, panel == SearchPanel.Text ? "TEXT" : "BRAILLE", line, text, EditStructure, session, showResolved, api.Account?.DisplayName) { Owner = this };
         dialog.ShowDialog();
         foreach (var margin in editor.TextArea.LeftMargins.OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
+        foreach (var margin in PageEditor.Editor.TextArea.LeftMargins.OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
         if (dialog.Destination is { } destination)
         {
             try { await NavigateToAsync(destination); ShowLineMemos(destination.Panel, showResolved: dialog.ShowResolved.IsChecked == true); }
@@ -27,6 +63,12 @@ public partial class MainWindow
     {
         var dialog = new MemoListDialog(session) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Destination is { } d) { await NavigateToAsync(d); ShowLineMemos(d.Panel, showResolved: dialog.IncludeResolved); }
+    }
+    private void ShowFooterInsert()
+    {
+        var dialog = new FooterInputDialog(lastPreviewPage) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.Result is { } range)
+            session.FooterRanges = FooterRange.Insert(session.FooterRanges, range);
     }
     private async Task EditTableAsync()
     {
@@ -48,10 +90,36 @@ public partial class MainWindow
     }
     private void PopulateTagMenu()
     {
-        foreach (var tag in BrailleTags.Menu)
+        var groups = new (string Name, string[] Tags)[]
         {
-            var item = new MenuItem { Header = tag.Name, Tag = "tag:" + tag.Name }; item.Click += Action_Click; AllTagsMenu.Items.Add(item);
+            ("정렬", ["왼쪽정렬", "가운데정렬", "오른쪽정렬"]),
+            ("점자 줄", ["상단줄", "중단줄", "하단줄", "상단굵은줄", "하단굵은줄", "표지시작", "표지세로", "표지끝"]),
+            ("표 테두리", ["표시작", "표중앙", "표끝", "표구분선"]),
+            ("한글 강조", ["강조", "굵은", "색강조", "취소선"]),
+            ("빈칸", ["밑줄빈칸", "네모빈칸"])
+        };
+        MenuItem Item(string name)
+        {
+            var item = new MenuItem { Header = name, Tag = "tag:" + name };
+            if (name == "쪽바꿈") item.InputGestureText = "Ctrl+Enter";
+            item.Click += Action_Click; return item;
         }
+        // Keep the documented insertion order; retain the additional supported tags.
+        var existing = AllTagsMenu.Items.Cast<object>().ToArray();
+        AllTagsMenu.Items.Clear();
+        AllTagsMenu.Items.Add(Item("쪽바꿈")); AllTagsMenu.Items.Add(Item("장바꿈")); AllTagsMenu.Items.Add(new Separator());
+        AllTagsMenu.Items.Add(Item("머리말"));
+        foreach (var entry in existing.OfType<MenuItem>().Where(m => m.Tag is "footerInsert" or "footer")) AllTagsMenu.Items.Add(entry);
+        AllTagsMenu.Items.Add(new Separator());
+        foreach (var group in groups)
+        {
+            var menu = new MenuItem { Header = group.Name };
+            foreach (var tag in group.Tags) menu.Items.Add(Item(tag));
+            AllTagsMenu.Items.Add(menu);
+        }
+        var note = Item("주"); note.Header = "점역자 주"; AllTagsMenu.Items.Add(note);
+        AllTagsMenu.Items.Add(new Separator());
+        foreach (var entry in existing.OfType<MenuItem>().Where(m => m.Tag is "math" or "symbol").OrderBy(m => m.Tag is "math" ? 0 : 1)) AllTagsMenu.Items.Add(entry);
     }
     private async Task ShowAlternativesAsync()
     {
@@ -81,7 +149,7 @@ public partial class MainWindow
             block.Braille = draft.Cells; block.Translation = block.Translation with { Cells = draft.Cells, Breaks = draft.Breaks, RenderMode = draft.RenderMode };
             block.HasManualBraille = false; block.State = "표 초안 · " + draft.Label;
         }
-        else session.Status = "이 블록에 전달된 대체 초안이 없습니다.";
+        else MessageBox.Show(this, "이 블록에는 대체 초안이 없습니다. 그림·표 등의 초안이 제공된 블록을 선택해 주세요.", "대체 초안");
         await Task.CompletedTask;
     }
     private async Task InsertSymbolAsync()
@@ -107,10 +175,12 @@ public partial class MainWindow
     }
     private void ShowRules()
     {
-        if (!EnsureAccount() || session.ActiveBlock is not { } block) return;
-        var evidence = block.Metadata.Rules ?? [];
-        new RuleDialog(api, evidence, SourceEditor.SelectedText.Length > 0 ? SourceEditor.SelectedText : block.Source,
-            Braille.Editor.SelectedText.Length > 0 ? Braille.Editor.SelectedText : block.Braille) { Owner = this }.ShowDialog();
+        if (session.ActiveBlock is not { } block) return;
+        var editor = SearchEditor(SearchPanel.Braille);
+        var rows = AppliedRules.Select(block, editor.SelectionStart, editor.SelectionLength);
+        var at = editor.Document.GetLocation(editor.SelectionStart);
+        new AppliedRulesDialog(api, rows, block.HasManualBraille || block.Translation?.SourceText is { } source && source != block.Source,
+            block.Source, editor.SelectionLength > 0 ? editor.SelectedText : block.Braille, $"{at.Line}줄 {at.Column}칸") { Owner = this }.ShowDialog();
     }
     private void RuleSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {

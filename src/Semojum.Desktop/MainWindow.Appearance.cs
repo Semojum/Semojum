@@ -12,11 +12,18 @@ public partial class MainWindow
     {
         lastGrid = null;
         if (editor is not null) lastEditor = editor;
-        var selected = new SolidColorBrush(Color.FromRgb(204, 228, 247));
+        var selected = new LinearGradientBrush(new GradientStopCollection
+        {
+            new(Color.FromRgb(0, 95, 184), 0), new(Color.FromRgb(0, 95, 184), 2d / 31),
+            new(Color.FromRgb(204, 228, 247), 2d / 31), new(Color.FromRgb(204, 228, 247), 1)
+        }, new Point(0, 0), new Point(0, 1));
         var neutral = (Brush)FindResource("PanelBlue");
         SourceHeader.Background = (editor == SourceEditor || editor == PageEditor.Editor) ? selected : neutral;
         OriginalHeader.Background = editor is null ? selected : neutral;
         Braille.Header.Background = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? selected : neutral;
+        SourcePanelTitle.FontWeight = editor == SourceEditor || editor == PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
+        OriginalPanelTitle.FontWeight = editor is null ? FontWeights.SemiBold : FontWeights.Normal;
+        Braille.PanelTitle.FontWeight = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
         if (detachedPane is not null) detachedPane.Header.Background = Braille.Header.Background;
         RefreshEditorStatus();
     }
@@ -27,10 +34,23 @@ public partial class MainWindow
         var editor = lastEditor ?? SourceEditor;
         var braille = editor != SourceEditor && editor != PageEditor.Editor;
         var input = braille ? (Braille.SixDotEnabled ? "점형" : "점자") : "텍스트";
-        var pages = session.Blocks.Select(b => b.Page).Concat(session.PageStatuses.Keys).Distinct().Count();
-        OptionsLabel.Text = $"한글 {(session.Options.KoreanGrade1 ? "정자" : "약자")} · 영문 {(session.Options.EnglishGrade1 ? "정자" : "약자")} · {session.Layout.Columns}×{session.Layout.Lines}";
-        CaretStatus.Text = $"입력 {input}   |   원본 {block.Page}쪽 ({pages}쪽)   |   줄 {editor.TextArea.Caret.Line}   |   칸 {editor.TextArea.Caret.Column}   |   {(session.IsDirty ? "저장할 변경 있음" : "저장됨")}";
-        if (lastGrid is not null) CaretStatus.Text = $"입력 {input}   |   {lastGrid.DescribeCaret()}   |   {(session.IsDirty ? "저장할 변경 있음" : "저장됨")}";
+        var pageNumbers = session.Blocks.Select(b => b.Page).Concat(session.PageStatuses.Keys).Concat(session.OriginalPages.Keys).Distinct().Order().ToArray();
+        var pages = pageNumbers.Length;
+        OptionsLabel.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
+        StatusOptions.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
+        StatusInput.Text = $"입력 {input}";
+        StatusPage.Text = pageNumbers.SequenceEqual(Enumerable.Range(1, pages)) ? $"쪽 {block.Page} / {pages}" : $"쪽 {block.Page}";
+        StatusPage.ToolTip = $"원본 {block.Page}쪽 (총 {pages}쪽)";
+        CaretStatus.Text = $"줄 {editor.TextArea.Caret.Line}";
+        StatusCell.Text = $"칸 {editor.TextArea.Caret.Column} / {session.Layout.Columns}";
+        if (lastGrid is not null)
+        {
+            var position = lastGrid.CaretCoordinates;
+            StatusPage.Text = position is { } p ? $"점자 {p.Face}면" : $"총 {lastGrid.Items.Count}면";
+            StatusPage.ToolTip = lastGrid.DescribeCaret();
+            CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"}";
+            StatusCell.Text = $"칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";
+        }
         OriginalPosition.Text = $"{block.Page}쪽 · 맞춤";
     }
 
@@ -40,11 +60,28 @@ public partial class MainWindow
         if (double.TryParse(text.TrimEnd('%'), out var percent)) SetFontSize(14 * percent / 100);
     }
 
+    private void FontSizePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourceEditor is not null && FontSizeLabel.SelectedItem is ComboBoxItem item && double.TryParse(item.Content?.ToString(), out var size)) SetFontSize(size);
+    }
+    private void TextStylePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourceEditor is null || TextStylePicker.SelectedIndex <= 0 || TextStylePicker.SelectedItem is not ComboBoxItem item) return;
+        InsertTag(item.Content.ToString()!); TextStylePicker.SelectedIndex = 0;
+    }
+    private void IndentPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded || !IndentPicker.IsKeyboardFocusWithin || session.IsReadOnly) return;
+        SelectionEdit("indent", IndentPicker.SelectedIndex + 1);
+    }
+
     private void LineNumbersToggle_Click(object sender, RoutedEventArgs e) => ApplyLineNumbers();
     private void ApplyLineNumbers()
     {
         SourceEditor.ShowLineNumbers = PageEditor.Editor.ShowLineNumbers = Braille.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
         if (detachedPane is not null) detachedPane.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
+        Braille.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; Braille.GridView.InvalidateFaces();
+        if (detachedPane is not null) { detachedPane.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; detachedPane.GridView.InvalidateFaces(); }
     }
 
     internal void HidePanel(string action)

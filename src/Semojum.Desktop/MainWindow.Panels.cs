@@ -31,6 +31,7 @@ public partial class MainWindow
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("optimize")), new KeyGesture(Key.P, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("optimize")), new KeyGesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("symbol")), new KeyGesture(Key.F4)));
+        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixDotMode")), new KeyGesture(Key.F6)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("findNext")), new KeyGesture(Key.F3)));
     }
 
@@ -71,9 +72,11 @@ public partial class MainWindow
         var panels = new[]
         {
             (Panel: (FrameworkElement)OriginalPanel, Visible: OriginalToggle.IsChecked && !detachedPanels.ContainsKey(OriginalPanel), Weight: 380d, Minimum: 260d),
-            (Panel: (FrameworkElement)SourcePanel, Visible: SourceToggle.IsChecked && !detachedPanels.ContainsKey(SourcePanel), Weight: 484d, Minimum: 300d),
+            (Panel: (FrameworkElement)SourcePanel, Visible: SourceToggle.IsChecked && !detachedPanels.ContainsKey(SourcePanel), Weight: OriginalToggle.IsChecked ? 484d : 864d, Minimum: 300d),
             (Panel: (FrameworkElement)BrailleContainer, Visible: BrailleToggle.IsChecked && detachedWindow is null, Weight: 576d, Minimum: 300d)
         };
+        SourcePanelNumber.Text = OriginalToggle.IsChecked ? "2" : "1";
+        Braille.PanelNumber.Text = OriginalToggle.IsChecked ? "3" : "2";
         var column = 0;
         foreach (var item in panels)
         {
@@ -84,9 +87,8 @@ public partial class MainWindow
             }
             if (column > 0)
             {
-                PanelGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });
-                var splitter = new GridSplitter { ResizeBehavior = GridResizeBehavior.PreviousAndNext, ShowsPreview = true };
-                Grid.SetColumn(splitter, column++); PanelGrid.Children.Add(splitter);
+                var splitter = new GridSplitter { Width = 1, HorizontalAlignment = HorizontalAlignment.Right, ResizeBehavior = GridResizeBehavior.CurrentAndNext, ShowsPreview = true };
+                Grid.SetColumn(splitter, column - 1); Panel.SetZIndex(splitter, 1); PanelGrid.Children.Add(splitter);
             }
             PanelGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(item.Weight, GridUnitType.Star), MinWidth = item.Minimum });
             Grid.SetColumn(item.Panel, column++); item.Panel.Visibility = Visibility.Visible;

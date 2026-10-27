@@ -88,16 +88,21 @@ public partial class MainWindow
         SetSession(model, null, false); OriginalToggle.IsChecked = false; UpdatePanelLayout();
         session.Status = "새 텍스트 작업 · AI·크레딧 사용 없음 · Ctrl+S로 저장";
     }
-    private async Task ConfigureTextJobAsync(DocumentSession model)
+    private async Task ConfigureTextJobAsync(DocumentSession model, DocumentSession? selectedSettings = null, string? formId = null)
     {
+        model.IsTextJob = true;
         if (!smoke)
         {
-            var defaults = await new SettingsClient(api).DefaultsAsync();
-            model.Options = defaults.Options;
-            model.Layout = model.Layout with { PageNumbers = defaults.PageNumberLine == "every" ? "모든 페이지" : "홀수 페이지" };
-            var created = await jobs.CreateTextAsync(System.IO.Path.GetFileNameWithoutExtension(model.Title), model, formId: defaults.FormId);
+            if (selectedSettings is null)
+            {
+                var defaults = await new SettingsClient(api).DefaultsAsync();
+                model.Options = defaults.Options; formId = defaults.FormId;
+                model.Layout = model.Layout with { PageNumbers = defaults.PageNumberLine == "every" ? "모든 페이지" : "홀수 페이지" };
+            }
+            else { model.Options = selectedSettings.Options; model.Layout = selectedSettings.Layout; }
+            var created = await jobs.CreateTextAsync(System.IO.Path.GetFileNameWithoutExtension(model.Title), model, formId: formId);
             model.JobId = created.JobId; model.OwnerLoginId = api.Account!.LoginId;
-            await jobs.ReadSettingsAsync(model);
+            await jobs.ReadSettingsAsync(model, uploadSettings: selectedSettings);
         }
     }
     private async Task RestoreActiveJobAsync()

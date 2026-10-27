@@ -10,6 +10,14 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    internal void SelectAllContext()
+    {
+        if (lastGrid is not null) { lastGrid.SelectContext(); return; }
+        if (lastEditor == PageEditor.Editor) { PageEditor.SelectContext(); return; }
+        var editor = lastEditor ?? SourceEditor;
+        if (selectedWholeBlock) SelectPageBlocks(ActiveSearchPanel);
+        else { editor.SelectAll(); selectedWholeBlock = true; }
+    }
     internal void SelectTextRange()
     {
         if (session.ActiveBlock is null) return;
@@ -20,7 +28,17 @@ public partial class MainWindow
     }
     private void InitializeContinuousEditor()
     {
-        PageEditor.CloseRequested += () => { PageEditor.Visibility = Visibility.Collapsed; SourceEditor.Visibility = Visibility.Visible; SourceEditor.Focus(); };
+        PageEditor.Editor.TextArea.LeftMargins.Add(new Controls.MemoMargin(() => session?.ActiveBlock, "TEXT", line =>
+        {
+            var resolved = PageEditor.ResolveLine(line);
+            if (resolved.Block is null) return;
+            session.ActiveBlock = resolved.Block;
+            ShowLineMemos(SearchPanel.Text, resolved.Line);
+        }) { ResolveLine = PageEditor.ResolveLine, ReviewRequested = async line =>
+        {
+            if (PageEditor.ResolveLine(line).Block is { } block) session.ActiveBlock = block;
+            await ExecuteAsync("pageStatus");
+        } });
         PageEditor.Replay = redo => ReplayHistory(redo);
         PageEditor.InsertPageBreak = () => InsertTag("쪽바꿈");
         InstallEditorMenu(PageEditor.Editor);
@@ -44,23 +62,23 @@ public partial class MainWindow
         {
             if (session?.ActiveBlock is { } block)
                 SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
-            RefreshEditorStatus();
+            RefreshSourcePosition();
         };
     }
     private void InstallEditorMenu(TextEditor editor)
     {
-        var menu = new ContextMenu(); editor.ContextMenu = menu;
+        var menu = CreateEditorContextMenu(); editor.ContextMenu = menu;
         menu.Opened += (_, _) => SetActiveEditor(editor);
-        foreach (var (label, action) in new[] { ("메모 추가·답글", "memo"), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules"), ("강조 넣기", "tag:강조"), ("쪽바꿈 넣기", "tag:쪽바꿈"), ("복사", "copy"), ("잘라내기", "cut"), ("붙여넣기", "paste") })
+    }
+    private ContextMenu CreateEditorContextMenu()
+    {
+        var menu = new ContextMenu { Style = (Style)FindResource("EditorContextMenu") };
+        foreach (var (label, action) in new[] { ("메모 추가", "memo"), ("", ""), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules"), ("", ""), ("강조 넣기", "tag:강조"), ("쪽바꿈 넣기", "tag:쪽바꿈") })
         {
+            if (label.Length == 0) { menu.Items.Add(new Separator { Style = (Style)menu.Style.Resources[typeof(Separator)], Height = 9, Margin = new(0) }); continue; }
             var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
         }
-        var insert = new MenuItem { Header = "삽입" };
-        foreach (var definition in BrailleTags.Menu)
-        {
-            var item = new MenuItem { Header = definition.Name }; item.Click += (_, _) => InsertTag(definition.Name); insert.Items.Add(item);
-        }
-        menu.Items.Add(insert);
+        return menu;
     }
     private SearchPanel selectionPanel;
     private bool selectedWholeBlock;
@@ -136,7 +154,11 @@ public partial class MainWindow
     private async Task MergeBlocksAsync(EditorBlock first, EditorBlock second, SearchPanel panel)
     {
         if (first.IsBrailleLocked || second.IsBrailleLocked) { session.Status = "점역 중이거나 잠긴 블록은 합칠 수 없습니다."; return; }
-        var decision = first.HasManualBraille || second.HasManualBraille ? ChooseTranslation(first.HasManualBraille ? first : second) : ManualEditDecision.Overwrite;
+        var decision = ManualEditDecision.Overwrite;
+        if (first.HasManualBraille || second.HasManualBraille)
+        {
+            var merge = new Dialogs.MergeBlocksDialog { Owner = this }; merge.ShowDialog(); decision = merge.Decision;
+        }
         if (decision == ManualEditDecision.Cancel) return;
         var caret = panel == SearchPanel.Text ? first.Source.Length : first.Braille.Length;
         EditStructure(() => BlockEditing.Merge(session, first, second, decision == ManualEditDecision.Keep));
@@ -184,7 +206,7 @@ public partial class MainWindow
         if (selectionPanel == SearchPanel.Text && edited is not null && autoTranslate) await TranslateAsync(edited, decision, false);
         return true;
     }
-    private void SelectionEdit(string action)
+    private void SelectionEdit(string action, int indent = 1)
     {
         if (action is "indent" or "unindent" && SelectedBlocks().Length == 0)
         {
@@ -205,7 +227,7 @@ public partial class MainWindow
                     var stop = text.IndexOf('\n', end); if (stop < 0) stop = text.Length;
                     var blank = panel == SearchPanel.Text ? ' ' : '⠀';
                     var value = string.Join("\n", text[start..stop].Split('\n').Select(line =>
-                        BrailleMarkup.Markers(line).Length > 0 ? line : action == "indent" ? blank + line : line.StartsWith(blank) ? line[1..] : line));
+                        BrailleMarkup.Markers(line).Length > 0 ? line : action == "indent" ? new string(blank, indent) + line : line.StartsWith(blank) ? line[1..] : line));
                     value = text[..start] + value + text[stop..];
                     if (panel == SearchPanel.Text) span.Block.Source = value; else span.Block.EditBraille(value);
                 }
@@ -230,7 +252,7 @@ public partial class MainWindow
             {
                 var text = selectionPanel == SearchPanel.Text ? b.Source : b.Braille;
                 var blank = selectionPanel == SearchPanel.Text ? ' ' : '⠀';
-                text = string.Join("\n", text.Split('\n').Select(line => action == "indent" ? blank + line : line.Length > 0 && line[0] == blank ? line[1..] : line));
+                text = string.Join("\n", text.Split('\n').Select(line => action == "indent" ? new string(blank, indent) + line : line.Length > 0 && line[0] == blank ? line[1..] : line));
                 if (selectionPanel == SearchPanel.Text) b.Source = text; else b.EditBraille(text);
             }
         });
