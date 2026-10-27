@@ -53,7 +53,8 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             {
                 table_source = metadata.TableSource, render_mode = metadata.RenderMode ?? "",
                 tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel,
-                korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2, math_page = metadata.MathPage
+                korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2, math_page = metadata.MathPage,
+                blank_lines = false
             }, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         else
@@ -66,7 +67,9 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 heading_level = metadata.HeadingLevel,
                 korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2,
                 split_choices = settings.ChoiceLayout == "onePerLine", math_page = metadata.MathPage,
-                render_mode = metadata.RenderMode ?? "", tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel
+                render_mode = metadata.RenderMode ?? "", tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel,
+                // Engine 3.4.38+ puts the element's surrounding blank lines into cells by default; the app lays pages out itself (build_brf), so keep bare element cells.
+                blank_lines = false
             }, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         if (!response.TryGetProperty("cells", out var cells) || cells.ValueKind != JsonValueKind.String)

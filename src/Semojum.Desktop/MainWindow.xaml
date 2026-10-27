@@ -167,7 +167,7 @@
       <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding CreditNotice}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
       <DockPanel>
         <Button DockPanel.Dock="Right" Content="✕" Width="20" Height="20" MinWidth="20" MinHeight="20" Padding="0" Margin="9,0,3,0" Background="Transparent" BorderBrush="Transparent" Click="CreditNotice_Close" AutomationProperties.Name="크레딧 안내 닫기"/>
-        <Button DockPanel.Dock="Right" Content="이어서 처리" Width="99" Height="24" MinHeight="24" Padding="0" FontSize="12" Style="{StaticResource PrimaryButton}" IsEnabled="False" ToolTipService.ShowOnDisabled="True" ToolTip="처리된 쪽은 편집할 수 있습니다. 이어서 처리는 서버 지원 준비 중입니다."/>
+        <Button DockPanel.Dock="Right" Content="이어서 처리" Width="99" Height="24" MinHeight="24" Padding="0" FontSize="12" Style="{StaticResource PrimaryButton}" Click="CreditResume_Click" ToolTip="크레딧을 충전한 뒤 멈춘 쪽만 다시 처리합니다. 처리된 쪽은 그대로 편집할 수 있습니다."/>
         <Canvas DockPanel.Dock="Left" Width="16" Height="16" Margin="11,0,4,0"><Rectangle Canvas.Left="7" Canvas.Top="1" Width="2" Height="9" Fill="#8A5200"/><Rectangle Canvas.Left="7" Canvas.Top="12" Width="2" Height="2" Fill="#8A5200"/></Canvas>
         <TextBlock Text="{Binding CreditNotice}" FontSize="12" FontWeight="SemiBold" Foreground="#8A5200" TextTrimming="CharacterEllipsis" ToolTip="{Binding CreditNotice}"/>
       </DockPanel>

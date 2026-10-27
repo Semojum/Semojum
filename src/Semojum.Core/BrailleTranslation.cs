@@ -20,7 +20,7 @@ public sealed record BlockMetadata(string Type = "text", int HeadingLevel = 0, b
     string? TableSource = null, string? RenderMode = null, string? TranslatorNote = null, int TableBoxLevel = 0,
     double[]? BoundingBox = null, int? SelectedIndex = null, string? TableDisplayText = null,
     AlternativeDraft[]? Alternatives = null, RuleEvidence[]? Rules = null, string? OriginalSource = null,
-    string? VisualSubtype = null, bool IsBlocked = false);
+    string? VisualSubtype = null, bool IsBlocked = false, double? OcrConfidence = null);
 public sealed record AlternativeDraft(string Label, string Text, string? TaggedText, string? LegacyBraille, string? Reason);
 public sealed record RuleEvidence(string RuleId, string Source, string Section, string Title, string Excerpt,
     int LineNo, int ColumnStart, int ColumnEnd, string? Tag = null);

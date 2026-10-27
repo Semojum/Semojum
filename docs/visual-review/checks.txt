@@ -73,7 +73,7 @@ PASS Figma 4844 unreadable spots count ■ markers outside blocked blocks and lo
 PASS Figma 4844 unreadable-character notice defaults to 해당 위치로 이동 at 122px
 PASS Merge confirmation Escape cancels without authorizing manual-braille replacement
 PASS Merge confirmation retains the existing keep-manual-braille option
-PASS Partial conversion cannot request unsupported resume and keeps completed pages through its default action
+PASS Partial conversion offers the server retry (BE 2026-10-27) and still keeps completed pages when opened as is
 PASS Offline retry returns the retry action to the command handler
 PASS Offline continue returns without requesting command replay
 PASS Save failure Escape preserves the unsaved document without triggering another save
@@ -154,6 +154,6 @@ PASS QA4 memo hover includes author, body and replies while hiding resolved item
 PASS QA4 memo title omits block and line coordinates
 PASS QA4 math editor offers 23 symbols and previews actual engine cells
 PASS QA4 math result can be corrected before applying
-PASS QA4 about dialog shows running engine version, not a hardcoded build label
+PASS QA4 about dialog shows the running bundled engine version 3.4.41, not a hardcoded build label
 PASS QA4 page settings fit the current work area with actions reachable
 PASS QA4 status shows option summary without obsolete save-state columns

@@ -15,6 +15,8 @@ internal static class SaveContractChecks
         yield return ("Memo author, replies, resolution and KST timestamps survive API and SMJ round trip", MemoRoundTrip);
         yield return ("Text jobs truncate trailing pages while PDF and unknown jobs never request truncation", TextPages);
         yield return ("SMJ v3 migrates stable IDs and legacy memos without changing authors", Legacy);
+        yield return ("Save sends clientMemoId for new memos and applies memoIds and previousMemoId mappings from pageResults", MemoIds);
+        yield return ("Retry and resume parse re-queued pages and reject malformed page lists", Restart);
     }
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => send(request); }
@@ -114,13 +116,14 @@ internal static class SaveContractChecks
     private static async Task MemoRoundTrip()
     {
         using var json = JsonDocument.Parse("""
-        {"status":"COMPLETED","original":{"type":"text"},"result":{"text_list":[{"id":"t1","contents":["검토"]}]},
+        {"status":"COMPLETED","original":{"type":"text"},"result":{"text_list":[{"id":"t1","contents":["검토"],"ocr_confidence":0.62345}],"quality_report":{"ocr_confidence_avg":0.8124,"critical_errors":[],"review_flags":[]}},
         "memos":[{"memoId":null,"panel":"TEXT","elementId":"t1","lineIndex":0,"lineText":"검토","body":"원 메모","createdAt":"2026-10-21T10:00:00",
         "author":"원 작성자","resolved":true,"resolvedAt":"2026-10-21T12:00:00","replies":[{"author":"다른 검수자","body":"답글","createdAt":"2026-10-21T02:00:00Z"}]}]}
         """);
         var page = JobClient.ReadPage(json.RootElement, 1, 1); var model = new DocumentSession { JobId = "original", OwnerLoginId = "me" };
         model.Add(page.Blocks[0]); JobClient.Remember(model, page);
         var memo = model.Blocks[0].Memos[0]; Equal(TimeSpan.FromHours(9), memo.CreatedAt.Offset); True(memo.Resolved);
+        Equal(0.623, page.Blocks[0].Metadata.OcrConfidence); Equal(0.812, page.OcrConfidenceAverage); Equal(0.812, model.OcrConfidence[1]);
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".smj");
         try
         {
@@ -129,8 +132,49 @@ internal static class SaveContractChecks
             Equal("원 작성자", saved.Author); Equal("다른 검수자", saved.Replies![0].Author);
             Equal("2026-10-21T11:00:00", saved.Replies[0].CreatedAt); Equal("2026-10-21T12:00:00", saved.ResolvedAt); True(saved.Resolved);
             Equal("답글", loaded.Blocks[0].Memos[0].Replies![0].Body); True(loaded.IsTextJob == true);
+            Equal(0.623, loaded.Blocks[0].Metadata.OcrConfidence); True(saved.ClientMemoId is not null); True(saved.MemoId is null);
         }
         finally { File.Delete(path); }
+    }
+    private static async Task MemoIds()
+    {
+        var model = Document(); model.Blocks[0].ServerId = model.Blocks[0].ClientId; model.Blocks[1].ServerId = model.Blocks[1].ClientId;
+        model.Blocks[0].Memos.Add(new("local-memo", null, "TEXT", 0, "같은 문장", "새 메모", DateTimeOffset.Now));
+        model.Blocks[1].Memos.Add(new("copied-memo", 5, "TEXT", 0, "같은 문장", "사본에서 온 메모", DateTimeOffset.Now));
+        var requests = new List<JsonElement>();
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("login")) return Tokens();
+            requests.Add(JsonDocument.Parse(await request.Content!.ReadAsStringAsync()).RootElement.Clone());
+            return Ok(new { jobId = "original", savedPages = 2, failedPages = Array.Empty<int>(), pageResults = new object[] {
+                new { pageNo = 1, status = "SAVED", errorCode = (string?)null, memoIds = new[] { new { clientMemoId = "local-memo", previousMemoId = (long?)null, memoId = 77L } } },
+                new { pageNo = 2, status = "SAVED", errorCode = (string?)null, memoIds = new[] { new { clientMemoId = (string?)null, previousMemoId = (long?)5L, memoId = 78L } } } } });
+        }));
+        var api = new SemojumApiClient(http); await api.LoginAsync("me", "pw"); var client = new JobClient(api);
+        var result = await client.SaveAsync(SmjFile.Snapshot(model)); True(result.Complete);
+        var sent = requests[0].GetProperty("pages");
+        Equal("local-memo", sent[0].GetProperty("memos")[0].GetProperty("clientMemoId").GetString()); True(sent[0].GetProperty("memos")[0].GetProperty("memoId").ValueKind == JsonValueKind.Null);
+        True(sent[1].GetProperty("memos")[0].GetProperty("clientMemoId").ValueKind == JsonValueKind.Null); Equal(5, sent[1].GetProperty("memos")[0].GetProperty("memoId").GetInt64());
+        JobClient.ApplySaved(model, result);
+        Equal(77L, model.Blocks[0].Memos[0].ServerId); Equal(78L, model.Blocks[1].Memos[0].ServerId); Equal("local-memo", model.Blocks[0].Memos[0].LocalId);
+        var next = JobClient.PlanSave(SmjFile.Snapshot(model).Manifest).Pages[0].Memos![0]; Equal(77L, next.MemoId); True(next.ClientMemoId is null);
+    }
+    private static async Task Restart()
+    {
+        var paths = new List<string>();
+        using var http = new HttpClient(new Handler(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("login")) return Task.FromResult(Tokens());
+            paths.Add(request.RequestUri.AbsolutePath);
+            return Task.FromResult(request.RequestUri.AbsolutePath.EndsWith("/retry")
+                ? Ok(new { jobId = "job-1", status = "IN_PROGRESS", totalPages = 3, retriedPages = new[] { 2, 3 } })
+                : request.RequestUri.AbsolutePath.EndsWith("/resume") ? Ok(new { jobId = "job-1", status = "IN_PROGRESS", totalPages = 3, resumedPages = paths.Count == 2 ? new[] { 1 } : new[] { 1, 1 } })
+                : Ok(new { }));
+        }));
+        var api = new SemojumApiClient(http); await api.LoginAsync("me", "pw"); var client = new JobClient(api);
+        var retry = await client.RetryAsync("job-1"); Equal("2,3", string.Join(",", retry.Pages)); Equal(3, retry.TotalPages); Equal("/api/jobs/job-1/retry", paths[0]);
+        var resume = await client.ResumeAsync("job-1"); Equal("1", string.Join(",", resume.Pages)); Equal("/api/jobs/job-1/resume", paths[1]);
+        try { await client.ResumeAsync("job-1"); throw new Exception("Expected InvalidDataException for a duplicated page list"); } catch (InvalidDataException) { }
     }
     private static Task TextPages()
     {

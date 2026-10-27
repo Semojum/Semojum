@@ -192,8 +192,13 @@ internal static class SyncChecks
         using var doc = JsonDocument.Parse("""{"pageNumberLine":"even"}""");
         Equal("짝수 페이지", JobClient.ReadLayout(doc.RootElement).PageNumbers);
         Equal(0, ServerContract.LocalOnlyLayout(new PageLayout(), []).Length);
+        // BE 2026-10-27: footerPages odd/every round-trips; other footer policies and the rest stay local.
+        Equal("every", JobClient.LayoutBody(new PageLayout(Footer: "모든 페이지"))["footerPages"]);
+        True(!JobClient.LayoutBody(new PageLayout(Footer: "짝수 페이지")).ContainsKey("footerPages"));
+        using var footerDoc = JsonDocument.Parse("""{"footerPages":"every"}"""); Equal("모든 페이지", JobClient.ReadLayout(footerDoc.RootElement).Footer);
         var notes = ServerContract.LocalOnlyLayout(new PageLayout(PageNumbers: "짝수 페이지", Footer: "모든 페이지", PadToEven: true, NumberRanges: PageNumberRange.Parse("1-3")), [new(2, null, "단원")]);
-        Equal(5, notes.Length); True(notes.All(n => n.Contains(".smj")));
+        Equal(4, notes.Length); True(notes.All(n => n.Contains(".smj")));
+        Equal(5, ServerContract.LocalOnlyLayout(new PageLayout(PageNumbers: "짝수 페이지", Footer: "짝수 페이지", PadToEven: true, NumberRanges: PageNumberRange.Parse("1-3")), [new(2, null, "단원")]).Length);
         // Forms are rejected before any request; a supported layout still reaches the server.
         var calls = 0;
         using var http = new HttpClient(new Handler(request =>

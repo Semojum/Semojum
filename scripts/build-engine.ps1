@@ -5,11 +5,11 @@ $build = Join-Path $root 'artifacts/engine-build'
 $source = Join-Path $build 'source'
 New-Item -ItemType Directory -Force $build | Out-Null
 if (-not (Test-Path "$source/.git")) {
-    git clone --depth 1 --branch v3.4.35 https://github.com/Semojum/braille.git $source
+    git clone --depth 1 --branch v3.4.41 https://github.com/Semojum/braille.git $source
     if ($LASTEXITCODE -ne 0) { throw 'Engine source download failed.' }
 }
 $revision = git -C $source rev-parse HEAD
-$expectedRevision = '74f76d15f3ac6f87c52d75a25882cc580508e51f'
+$expectedRevision = '429ee6bc8a4a01135ef427274c3dbde04b685bdc'
 if ($revision -ne $expectedRevision) {
     if (git -C $source status --porcelain) { throw 'Engine source contains local changes; refusing to replace them.' }
     git -C $source fetch --depth 1 origin $expectedRevision
@@ -36,4 +36,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Engine license collection failed.' }
 $ping = '{"op":"ping","id":1}' | & (Join-Path $Output 'semojum-engine.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Frozen engine failed to start.' }
 $response = $ping | ConvertFrom-Json
-if ($response.version -ne '3.4.35' -or $response.protocol -ne 1) { throw 'Frozen engine handshake mismatch.' }
+if ($response.version -ne '3.4.41' -or $response.protocol -ne 1) { throw 'Frozen engine handshake mismatch.' }

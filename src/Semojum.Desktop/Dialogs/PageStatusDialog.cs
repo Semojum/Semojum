@@ -8,7 +8,7 @@ namespace Semojum.Desktop.Dialogs;
 /// <summary>Per-page conversion state plus the server quality report (critical_errors / review_flags) with block links.</summary>
 public sealed class PageStatusDialog : Window
 {
-    private sealed record PageRow(int Number, string State, int Blocks, int Issues)
+    private sealed record PageRow(int Number, string State, int Blocks, int Issues, string Confidence)
     {
         public string Page => $"{Number}쪽";
         public string Label => State switch
@@ -35,10 +35,10 @@ public sealed class PageStatusDialog : Window
         Title = "쪽별 변환 상태"; Width = 760; Height = 600; MinWidth = 560; MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = new DockPanel { Margin = new Thickness(20) }; Content = root;
-        var note = new TextBlock { Text = "AI 재변환은 제공하지 않습니다. 실패하거나 처리할 수 없는 쪽과 서버가 보낸 검토 항목을 확인할 수 있습니다. OCR 신뢰도 수치는 서버가 제공하지 않아 표시하지 않습니다.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14) };
+        var note = new TextBlock { Text = "실패한 쪽은 변환 결과 안내창의 「실패한 쪽 다시 변환」으로 서버에 다시 요청할 수 있습니다(취소·크레딧 소진 쪽 제외). 서버가 보낸 검토 항목과 측정된 OCR 신뢰도(0~1, 0.7 미만은 낮음)를 확인할 수 있습니다. 값 없음은 AI가 신뢰도를 보내지 않은 경우입니다.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14) };
         DockPanel.SetDock(note, Dock.Top); root.Children.Add(note);
         var list = new ListView { Height = 190 }; var columns = new GridView(); list.View = columns;
-        foreach (var (label, path, width) in new[] { ("원본 쪽", "Page", 80d), ("상태", "Label", 120d), ("편집 내용", "Content", 140d), ("검토 항목", "Review", 100d) })
+        foreach (var (label, path, width) in new[] { ("원본 쪽", "Page", 80d), ("상태", "Label", 120d), ("편집 내용", "Content", 140d), ("검토 항목", "Review", 100d), ("OCR 신뢰도", "Confidence", 150d) })
             columns.Columns.Add(new GridViewColumn { Header = label, DisplayMemberBinding = new Binding(path), Width = width });
         DockPanel.SetDock(list, Dock.Top); root.Children.Add(list);
         var issueHeader = new TextBlock { Text = "선택한 쪽의 서버 검토 항목", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 6) };
@@ -64,7 +64,7 @@ public sealed class PageStatusDialog : Window
             var selected = (list.SelectedItem as PageRow)?.Number;
             var rows = document.PageStatuses.Keys.Concat(document.QualityReports.Keys).Distinct().OrderBy(p => p)
                 .Select(p => new PageRow(p, document.PageStatuses.GetValueOrDefault(p) ?? "UNKNOWN",
-                    document.Blocks.Count(b => b.Page == p && b.ServerId is not null), document.QualityReports.GetValueOrDefault(p)?.Length ?? 0)).ToArray();
+                    document.Blocks.Count(b => b.Page == p && b.ServerId is not null), document.QualityReports.GetValueOrDefault(p)?.Length ?? 0, Confidence(document, p))).ToArray();
             list.ItemsSource = rows; list.SelectedItem = rows.FirstOrDefault(r => r.Number == selected) ?? rows.FirstOrDefault();
             if (rows.Length == 0) note.Text = "서버 변환 상태가 없는 로컬 문서입니다.";
             RefreshIssues();
@@ -77,6 +77,15 @@ public sealed class PageStatusDialog : Window
         refresh.Click += (_, _) => Refresh(); close.Click += (_, _) => Close();
         footer.Children.Add(refresh); footer.Children.Add(go); footer.Children.Add(goIssue); footer.Children.Add(close);
         DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer); root.Children.Add(issues); Refresh();
+    }
+    // BE B-10: measured values only (text elements' ocr_confidence, page ocr_confidence_avg). "값 없음" is not the same as low.
+    private static string Confidence(DocumentSession document, int page)
+    {
+        var values = document.Blocks.Where(b => b.Page == page && b.Metadata.OcrConfidence is not null).Select(b => b.Metadata.OcrConfidence!.Value).ToArray();
+        var average = values.Length > 0 ? values.Average() : document.OcrConfidence.GetValueOrDefault(page);
+        if (average is null) return "값 없음";
+        var lowest = values.Length > 0 ? values.Min() : average.Value;
+        return $"{average:0.00}" + (lowest < 0.7 ? $" · 낮음 {lowest:0.00}" : "");
     }
     private static void AutomationPropertiesHelper(UIElement element, string name) => System.Windows.Automation.AutomationProperties.SetName(element, name);
 }
