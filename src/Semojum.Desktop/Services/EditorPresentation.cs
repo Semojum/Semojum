@@ -47,5 +47,47 @@ public sealed class DotSpeech : IDisposable
 public sealed class ColoredLineNumbers : LineNumberMargin
 {
     public Brush Background { get; set; } = Brushes.WhiteSmoke;
-    protected override void OnRender(DrawingContext dc) { dc.DrawRectangle(Background, null, new Rect(RenderSize)); base.OnRender(dc); }
+    public Brush NumberBrush { get; set; } = Brushes.Gray;
+    public bool Compact { get; set; }
+    protected override void OnRender(DrawingContext dc)
+    {
+        dc.DrawRectangle(Background, null, new Rect(RenderSize));
+        if (!Compact) { base.OnRender(dc); return; }
+        if (TextView?.VisualLinesValid != true) return;
+        foreach (var line in TextView.VisualLines)
+        {
+            var text = new FormattedText(line.FirstDocumentLine.LineNumber.ToString(), System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight, new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 12, NumberBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(text, new Point(RenderSize.Width / 2 + 2 - text.Width / 2, line.VisualTop - TextView.VerticalOffset + 14));
+        }
+    }
+}
+
+/// <summary>The 12 DIP space before source text belongs to the current-line highlight.</summary>
+public sealed class SourceTextInset : AbstractMargin
+{
+    private readonly TextEditor editor;
+    public Brush LineBrush { get; set; } = Brushes.LightGray;
+    public SourceTextInset(TextEditor editor)
+    {
+        this.editor = editor;
+        editor.TextArea.Caret.PositionChanged += (_, _) => InvalidateVisual();
+    }
+    protected override Size MeasureOverride(Size availableSize) => new(12, 0);
+    protected override void OnTextViewChanged(TextView oldTextView, TextView newTextView)
+    {
+        if (oldTextView is not null) oldTextView.VisualLinesChanged -= Changed;
+        base.OnTextViewChanged(oldTextView, newTextView);
+        if (newTextView is not null) newTextView.VisualLinesChanged += Changed;
+    }
+    private void Changed(object? sender, EventArgs e) => InvalidateVisual();
+    protected override void OnRender(DrawingContext dc)
+    {
+        if (TextView?.VisualLinesValid == true && editor.Options.HighlightCurrentLine)
+        {
+            var line = TextView.VisualLines.FirstOrDefault(l => editor.TextArea.Caret.Line >= l.FirstDocumentLine.LineNumber && editor.TextArea.Caret.Line <= l.LastDocumentLine.LineNumber);
+            if (line is not null) dc.DrawRectangle(TextView.CurrentLineBackground, null, new Rect(0, line.VisualTop - TextView.VerticalOffset, 12, line.Height));
+        }
+        dc.DrawLine(new Pen(LineBrush, 1), new Point(.5, 0), new Point(.5, ActualHeight));
+    }
 }

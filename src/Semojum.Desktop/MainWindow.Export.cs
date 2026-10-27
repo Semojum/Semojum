@@ -10,12 +10,13 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
-    private async Task ExportAsync()
+    private async Task ExportAsync(string? path = null, int format = 1, bool chooseRange = true)
     {
         if (fileBusy || session.Blocks.Count == 0) return;
         var dialog = new SaveFileDialog { Title = "문서 내보내기", FileName = Path.GetFileNameWithoutExtension(session.Title),
             Filter = "BRF 점자문서|*.brf|원문 텍스트|*.txt|점자 텍스트 (판면 포함)|*.txt", DefaultExt = ".brf" };
-        if (dialog.ShowDialog(this) != true) return;
+        if (path is null) { if (dialog.ShowDialog(this) != true) return; }
+        else { dialog.FileName = path; dialog.FilterIndex = format; }
         fileBusy = true;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(documentLifetime.Token);
         var ct = cancellation.Token;
@@ -43,8 +44,8 @@ public partial class MainWindow
                 fullBrf ??= await BuildAsync(snapshot);
                 return DocumentExport.BrfPages(fullBrf).Length;
             }
-            var ranges = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), plainText ? null : CountAsync) { Owner = this };
-            if (ranges.ShowDialog() != true) return;
+            var ranges = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), plainText ? null : CountAsync, format: dialog.FilterIndex == 1 ? ".brf" : plainText ? ".txt — 원문" : ".txt — 점자") { Owner = this };
+            if (chooseRange && ranges.ShowDialog() != true) return;
             var range = ranges.Result;
             var selected = DocumentExport.SelectOriginal(snapshot, range);
             DocumentExport.RequireCompletedPages(selected);

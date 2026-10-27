@@ -1,0 +1,153 @@
+PASS Three-panel layout has usable editor widths
+PASS Figma line translation strip spans all panels at 64px
+PASS Figma panel headers and toolbar controls retain compact geometry
+PASS Service plan braille grid renders editable block coordinates
+PASS Local Figma SVG loaded without scaling in its 16px slot: CutIcon
+PASS Local Figma SVG loaded without scaling in its 16px slot: DraftIcon
+PASS Local Figma SVG loaded without scaling in its 16px slot: LinenoIcon
+PASS Hiding original redistributes editor space
+PASS Panel visibility changes do not dirty the document
+PASS Relative original-page navigation synchronizes source and braille
+PASS Go to line moves caret without modifying document
+PASS Source tag insertion reaches model
+PASS Tag insertion has one-step undo
+PASS Detached window shares the same document
+PASS Detached edits update model and manual-correction state
+PASS Reattached panel retains detached edits
+PASS Remaining panel fills main window after source and original detach
+PASS Source detachment retains editor document and undo history
+PASS Detaching panels does not change document state
+PASS Detached source edits reach shared model
+PASS Detached source edit can be undone
+PASS Active block stays synchronized across independently detached panels
+PASS Closing detached windows restores usable panels without changing document state
+PASS Translation lock affects only braille editor
+PASS Active block updates source editor
+PASS Active block updates braille editor
+PASS Block navigation restores each panel caret
+PASS Layout, six-dot, math, and manual-correction dialogs render
+PASS Saved file preserves detached manual edits
+PASS View toolbar action hides the toolbar
+PASS View status action hides the status bar
+PASS View memo and review switches preserve editor text alignment
+PASS F6 still toggles actual six-dot input after menu alignment
+PASS View restore fixture detaches two real shared-document panels
+PASS View restore closes detached windows and restores all three panels
+PASS View commands leave source text, braille and document dirty state unchanged
+PASS Help additional tools retain executable access to actions removed from main menus
+PASS Help tree opens retained draft and rule guidance after navigation restyling
+PASS Visual parity keeps one full-height editable braille surface without a duplicate editor
+PASS Visual parity braille pointer geometry maps the 52px gutter and 16x28 cells to the original document offsets
+PASS Editor zoom resizes the visible braille grid and source text together
+PASS Source editor renders with bundled Inter and Noto Sans KR instead of silently substituting Windows fonts
+PASS QA4 asynchronous failures remain visible outside the options-only status bar
+PASS QA4 operation notice clears without changing document contents
+PASS IME boundary completes pending text on another control's click before focus changes
+PASS IME boundary keeps completed text in its original editor when focus moves
+PASS IME boundary completes pending text before native window deactivation
+PASS QA4 unified open preserves account options and ordered image selection
+PASS QA4 invalid file selection leaves previous valid selection intact
+PASS QA4 SMJ open retains the saved document settings
+PASS QA4 choosing TXT re-enables conversion options
+PASS QA4 local SMJ remains openable when server settings are unavailable
+PASS QA4 hidden English grade remains preserved when other defaults are edited
+PASS QA4 defaults loads stored settings and real form values through the API contract
+PASS Form picker accepts the keyboard-selected actual form on Enter
+PASS Form picker Escape cancels a changed choice without applying it to the caller
+PASS Text context menu preserves the 220x154 layout with thin separator rules
+PASS QA4 visual types retain all five supported type policies
+PASS QA4 rule search renders both searchable and translatable rules
+PASS QA4 rule accordion keeps one rule expanded
+PASS QA4 expanded rule retains full text, line breaks and indentation
+PASS QA4 my page has five vertical sections
+PASS QA4 usage uses returned page-unit balance
+PASS QA4 usage percentage populates the progress bar
+PASS Usage progress remains visibly filled after its asynchronous value loads
+PASS QA4 normal account never requests privileged institution billing endpoints
+PASS QA4 job statuses use user-facing labels
+PASS QA4 footer manager has start, alignment and content columns
+PASS Memo author avatar renders the downloaded Figma SVG resource
+PASS Merge confirmation Escape cancels without authorizing manual-braille replacement
+PASS Merge confirmation retains the existing keep-manual-braille option
+PASS Partial conversion cannot request unsupported resume and keeps completed pages through its default action
+PASS Offline retry returns the retry action to the command handler
+PASS Offline continue returns without requesting command replay
+PASS Save failure Escape preserves the unsaved document without triggering another save
+PASS Draft popover restores the selected draft and its braille preview
+PASS Draft selection previews a different draft without deleting alternatives or committing to the document before confirmation
+PASS Draft Enter returns the selected draft for caller confirmation without changing the document early
+PASS Draft Escape preserves the previous selection and every alternative
+PASS QA4 six-dot mapping exposes six individual editable keys
+PASS QA4 indentation tags create display-only space without changing source bytes
+PASS QA4 source search selects the visible continuous editor at the correct block offset
+PASS QA4 continuous memo line resolves to its owning block and local line
+PASS QA4 hover text follows memos in other visible source blocks
+PASS QA4 replace changes the matched source block and visible page together
+PASS TXT layout uses the Figma 60:40 editor ratio and two-panel numbering
+PASS Opening a work file retains the previous document tab
+PASS Reopening SMJ restores saved editor carets
+PASS Opening an already open path retains unsaved edits
+PASS Find next traverses blocks in the requested panel
+PASS Replace all protects locked braille and marks corrections in editable blocks
+PASS Replace all in a block is one undo operation
+PASS Replace rejects non-braille content without changing buffers
+PASS Single replace changes only the selected occurrence
+PASS Add-block menu adds a paired block
+PASS Page history undoes structural insertion
+PASS Page history redoes structural insertion
+PASS Cross-block replacement retains memo provenance
+PASS Shared page history restores text and blocks after range replacement
+PASS Shared page history redoes range replacement
+PASS Engine buffer update preserves the previous source undo step
+PASS Source redo survives engine updates without stale text offsets
+PASS Detached undo restores braille text and manual-edit state
+PASS Appearance changes are visible without editing the document
+PASS Invalid PDF is reported without terminating the editor
+PASS PDF preview recovers after invalid input and preserves page aspect ratio
+PASS PDF fallback preserves page contents instead of an empty placeholder
+PASS Conversion progress exposes disjoint page counts and cancellation
+PASS Production text input automatically translates with packaged engine
+PASS Production line translation reaches shared bottom strip
+PASS Detached braille retains latest line translation
+PASS Production translation and original source survive SMJ round trip
+PASS Source replacement retranslates with production engine
+PASS Production composed grid is available after translation
+PASS Grid uses exported BRF and protected generated page rows
+PASS Grid selection edits across blocks without generated rows entering text
+PASS One undo restores cross-block grid edit
+PASS Rapid grid input is retained while asynchronous layout refreshes
+PASS Grid status refreshes line and cell coordinates after asynchronous composition
+PASS Detached grid composes the same shared document
+PASS Grid page break preserves a structural marker
+PASS Grid selection is available before a render pass
+PASS Grid clipboard omits generated layout markers
+PASS Replacing grid body preserves selected layout markers
+PASS First Ctrl+A selects current source block in continuous editor
+PASS Second Ctrl+A selects original page in continuous editor
+PASS Continuous source caret reaches block-based memo and preview commands
+PASS Inline page editor writes through to original block
+PASS Inline page editor synchronizes structural undo
+PASS Korean committed syllables and spaces survive continuous editor refreshes
+PASS Moving focus preserves committed Korean text and spaces
+PASS Korean committed text undo removes the last input without dropping spaces
+PASS Korean committed text redo restores the last syllable
+PASS Continuous source honors read-only documents
+PASS Shutdown cancels pending translation and ignores late caret events
+PASS Resolved memos are hidden from the default thread
+PASS Reply stays in its memo thread with its author
+PASS Resolving hides a memo without deleting its body or replies
+PASS Resolve records its timestamp and preserves replies
+PASS Resolved memos can be retrieved explicitly
+PASS Reopening a resolved memo restores its default visibility
+PASS Reopening clears the resolution timestamp
+PASS Memo overview hides resolved items by default
+PASS Memo overview exposes resolved items on request
+PASS Figma insertion menu excludes automatic-only tags; page-number insertion remains in help tools
+PASS QA4 insertion tags have five named submenus
+PASS QA4 memo hover includes author, body and replies while hiding resolved items
+PASS QA4 memo title omits block and line coordinates
+PASS QA4 math editor offers 23 symbols and previews actual engine cells
+PASS QA4 math result can be corrected before applying
+PASS QA4 about dialog shows running engine version, not a hardcoded build label
+PASS QA4 page settings fit the current work area with actions reachable
+PASS QA4 status shows option summary without obsolete save-state columns

@@ -1,0 +1,80 @@
+SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.35 Python executable
+PASS Navigation validates absolute, relative, missing and overflow page numbers
+PASS Navigation uses CRLF-safe UTF-16 line offsets and rejects stale memo anchors
+PASS Export validates ranges and retains exact BRF page bytes including blanks
+PASS Original-page export retains numbering and rejects incomplete pages
+PASS Document search keeps literal offsets across blocks and wraps at the end
+PASS Braille replacement accepts cells and whitespace without allowing prose
+PASS Six-dot chord emits once after all releases
+PASS Six-dot focus reset and remapping
+PASS Manual edits stay intact with Keep and Cancel
+PASS Late translation cannot overwrite newer source
+PASS Late translation cannot overwrite manual braille
+PASS Out-of-order requests apply only the newest result
+PASS Keep decision invalidates a pending overwrite
+PASS Timeout locks braille; retry unlocks it
+PASS Engine errors keep existing braille
+PASS Document change version tracks save-relevant edits
+PASS Layout preserves blank lines and validates bounds
+PASS Save round trip retains Unicode, layout, and corrections
+PASS Foreign and malformed work files are rejected
+PASS Sidecar Unicode, concurrent requests, stderr drain and remote error
+PASS Sidecar timeout and cancellation restart before next request
+PASS Sidecar process exit and invalid response ID discard the process
+PASS API concurrent expiry refreshes once without Bearer on refresh
+PASS API revoked session clears credentials without replay
+PASS API errors retain lockout details and handle HTML 413
+PASS API network failure does not replay a save
+PASS V3.1 page maps IDs, multiline contents, metadata and memos
+PASS Job save freezes lines and reports partial failure without replay
+PASS Multipart uploads use repeated file parts and reject mixed documents
+PASS SMJ round trip preserves original, options, table metadata and manual edits
+PASS SMJ cancellation preserves prior file and foreign version is rejected
+PASS Recent files stay ordered, capped, deduplicated and separate from document contents
+PASS Work folder lists only SMJ files and explicit subdirectories
+PASS SMJ restores saved block and carets without treating navigation as editing
+PASS Braille folding respects syllables, empty lines and note indicators
+PASS Tags distinguish pairs, singletons and layout-only footer
+PASS Packaged engine grades, table drafts and BRF round trip
+PASS Editing grid preserves text and reversible wrapped cell coordinates
+PASS Long TXT chunks preserve all characters and Unicode boundaries
+PASS Portable update rejects traversal, duplicate paths and incomplete packages atomically
+PASS Slow translation locks braille at 400ms and unlocks when the current result arrives
+PASS Partial cross-block replacement preserves unselected text, original bounds and memo provenance
+PASS Footer ranges reject overlap and preserve open-ended and blank overrides in SMJ
+PASS SMJ v1 migrates missing layout fields and saves as the current version without losing content
+PASS Table grid round trips cells and rejects nested structural markers
+PASS Work file writer lease excludes a second writer and releases on close
+PASS Resolved memo state survives explicit SMJ save
+PASS SSE refreshes rejected access and parses multiline events without duplicated content
+PASS Appearance rejects invalid colors, nonfinite values and manual correction color
+PASS Empty text job sends settings without source or AI input
+PASS Default options PUT retains visual choices, form and page row
+PASS Board edit preserves attachment IDs and never submits invalid prose or six attachments
+PASS Account preferences isolate six-dot mappings and snippets by account
+PASS Block merge retains bounding box and memo anchors; removed blocks stop dirtying session
+PASS Version comparison is numeric and missing metadata is allowed
+PASS AI alternatives and rule evidence survive page parsing and SMJ persistence
+PASS Save plan keeps blocked blocks and memos, skips placeholders, empties deleted pages and pairs the first braille by stable id
+PASS Save accepts stable new block ids, rejects duplicate ids and confirms only accepted pages
+PASS Job status separates finished, succeeded, failed and remaining pages without double counting
+PASS Quality report survives page parsing, unknown types, unlinked ids and SMJ v3 round trip
+PASS Layout values the server cannot keep are omitted and reported instead of rewritten
+PASS Version metadata accepts absent downloads but rejects unsafe and malformed addresses
+PASS Uploaded local-only settings survive successful and failed jobs and SMJ reopen
+PASS Image multipart retains ordered filenames, MIME types and every input byte
+PASS Credit exhaustion is read without conflating blocked pages with successful pages
+PASS New repeated-text blocks keep distinct paired IDs through SMJ, repeated saves and undo
+PASS Partial save retry sends only failed frozen pages, omits truncation and records confirmed baseline
+PASS Foreign SMJ copy updates persisted identity without capturing concurrent edits
+PASS Save rejects contradictory counts, unknown pages and inconsistent per-page results
+PASS Memo author, replies, resolution and KST timestamps survive API and SMJ round trip
+PASS Text jobs truncate trailing pages while PDF and unknown jobs never request truncation
+PASS SMJ v3 migrates stable IDs and legacy memos without changing authors
+PASS QA4 rules preserve full text and search-only flags, and encode query/filter/page
+PASS QA4 applied rules use actual engine fields and select only overlapping current cells
+PASS QA4 inserting a footer continues to the next start without overlap or loss
+PASS QA4 initial visual choice retains every alternative and protects saved manual results
+PASS QA4 user forms create, update, copy and delete without changing the built-in form
+PASS QA4 cancellation distinguishes accepted, finished and already-completed server responses
+78/78 passed

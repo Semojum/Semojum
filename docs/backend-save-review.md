@@ -1,3 +1,5 @@
+> 2026-10-27: 이 문서는 이전 검토 기록입니다. 현재 구현·검증 및 남은 제약은 [QA 4차 결과](qa4-2026-10-27.md)를 우선 확인하세요.
+
 # 데스크톱 편집기 연동을 위한 백엔드 수정 목록
 
 2026-10-20 확인. [Semojum/BE `dev`, `5d8dda0a`](https://github.com/Semojum/BE/tree/5d8dda0a57f602a9ab7bc6f577d7bdb51bef8fc1)의 실제 코드와 [앱 `main`, `8e631611`](https://github.com/Semojum/Semojum/tree/8e63161155b40c7e93de183886899b06fcec5faa)을 대조했다. 확인 시점의 원격 BE `dev`와 검토용 체크아웃의 커밋이 같음을 확인했다.

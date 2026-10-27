@@ -10,10 +10,12 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private void CreditNotice_Close(object sender, RoutedEventArgs e) => session.CreditNotice = "";
     private async Task TranslateImportedTextAsync(OpenDocument context)
     {
         if (smoke) return;
         var model = context.Model; var ct = context.JobLifetime.Token;
+        model.ErrorNotice = "";
         var local = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
         try
         {
@@ -30,7 +32,7 @@ public partial class MainWindow
             model.Status = "TXT 점역 완료 · 오류 블록은 상태를 확인해 주세요 · Ctrl+S로 저장";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { model.Status = "TXT 점역 실패 · 원문은 유지됩니다: " + ex.Message; }
+        catch (Exception ex) { model.ErrorNotice = model.Status = "TXT 점역 실패 · 원문은 유지됩니다: " + ex.Message; }
     }
     private void RefreshAccount() => AccountLabel.Text = api.Account is { } account ? account.LoginId : "로그인 안 됨";
     private bool EnsureAccount()
@@ -51,36 +53,26 @@ public partial class MainWindow
     private async Task UploadAsync()
     {
         if (fileBusy || !EnsureAccount()) return;
-        var dialog = new OpenFileDialog { Title = "AI 변환할 문서 선택", Multiselect = true, Filter = "문서와 이미지|*.pdf;*.hwp;*.hwpx;*.txt;*.jpg;*.jpeg;*.png" };
-        if (dialog.ShowDialog(this) != true) return;
-        if (dialog.FileNames.Sum(p => new FileInfo(p).Length) > JobClient.MaximumUploadBytes)
-            throw new InvalidDataException("업로드 전체 크기는 100 MB까지입니다.");
-        if (dialog.FileNames.Length == 1 && Path.GetExtension(dialog.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase)) { await OpenAsync(dialog.FileName); return; }
-        var orderedFiles = dialog.FileNames;
+        var client = new SettingsClient(api);
+        BrailleForm[] forms = []; var defaults = new AccountDefaults(session.Options, null, "odd"); var available = true;
+        using var settingsTimeout = CancellationTokenSource.CreateLinkedTokenSource(documentLifetime.Token);
+        settingsTimeout.CancelAfter(TimeSpan.FromSeconds(8));
+        try { forms = await client.FormsAsync(settingsTimeout.Token); defaults = await client.DefaultsAsync(settingsTimeout.Token); }
+        catch (Exception ex) when (ex is HttpRequestException or SemojumApiException || ex is OperationCanceledException && !documentLifetime.IsCancellationRequested) { available = false; }
+        var dialog = new OpenDocumentDialog(forms, defaults, available) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        var orderedFiles = dialog.Paths;
+        var settings = dialog.Settings;
+        if (orderedFiles.Length == 1 && Path.GetExtension(orderedFiles[0]).ToLowerInvariant() is ".smj" or ".txt")
+        { await OpenAsync(orderedFiles[0], settings, dialog.FormId); return; }
         if (orderedFiles.Length > 1) { var order = new ImageOrderDialog(orderedFiles) { Owner = this }; if (order.ShowDialog() != true) return; orderedFiles = order.Paths; }
-        var defaults = await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/braille-options", cancellationToken: documentLifetime.Token);
-        var settings = new DocumentSession { Options = JobClient.ReadOptions(defaults) };
-        if (defaults.TryGetProperty("pageNumberLine", out var pageLine))
-            settings.Layout = settings.Layout with { PageNumbers = pageLine.GetString() switch { "none" => "출력 안 함", "every" => "모든 페이지", _ => "홀수 페이지" } };
-        var form = new FormDialog(new(api), settings.Layout, settings.Options, defaults.TryGetProperty("formId", out var f) ? f.GetString() : null) { Owner = this };
-        if (form.ShowDialog() != true) return;
-        if (form.Selected is { } selected) { settings.Options = selected.Options; settings.Layout = selected.Layout; }
-        var options = new TranslationOptionsDialog(autoTranslate, settings.Options) { Owner = this };
-        if (options.ShowDialog() != true) return;
-        settings.Options = options.Result;
-        var layout = new LayoutDialog(settings.Layout) { Owner = this };
-        if (layout.ShowDialog() != true) return;
-        settings.Layout = layout.Result;
-        var localOnly = ServerContract.LocalOnlyLayout(settings.Layout, null);
-        var localNote = localOnly.Length == 0 ? "" : "\n\n서버에 저장되지 않아 .smj에만 보존되는 설정:\n" + string.Join("\n", localOnly);
-        if (MessageBox.Show(this, $"{dialog.FileNames.Length}개 파일을 서버에 업로드해 AI 변환합니다. 성공한 쪽에 크레딧이 사용됩니다.{localNote}\n\n진행하시겠습니까?", "AI 변환", MessageBoxButton.OKCancel, MessageBoxImage.Information) != MessageBoxResult.OK) return;
         fileBusy = true;
         try
         {
             var files = new List<UploadFile>();
             foreach (var path in orderedFiles) files.Add(new(Path.GetFileName(path), await File.ReadAllBytesAsync(path)));
             session.Status = "파일 업로드 중…";
-            var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, form.Selected?.FormId);
+            var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, dialog.FormId);
             await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(orderedFiles[0]) + ".smj", files, uploadSettings: settings);
         }
         finally { fileBusy = false; }
@@ -94,19 +86,21 @@ public partial class MainWindow
         try
         {
             var model = new DocumentSession { JobId = id, OwnerLoginId = api.Account!.LoginId, Title = title, JobStatus = "PENDING" };
+            if (originals is not null) model.IsTextJob = originals.All(f => Path.GetExtension(f.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase));
             await jobs.ReadSettingsAsync(model, documentLifetime.Token, uploadSettings);
             var status = await jobs.StatusAsync(id, documentLifetime.Token);
             if (originals is not null) foreach (var file in originals) model.OriginalFiles[file.FileName] = file.Bytes;
             model.Add(new EditorBlock { Id = 1, Page = 1, Heading = "변환 대기 중", State = "대기", IsBrailleLocked = true, Metadata = new(IsBlocked: true) });
             SetSession(model, null, originals?.Any(f => !Path.GetExtension(f.FileName).Equals(".txt", StringComparison.OrdinalIgnoreCase)) ?? false);
             openDocument!.OriginalKindKnown = originals is not null;
-            _ = MonitorJobAsync(openDocument!, status, restorePage);
+            _ = MonitorJobAsync(openDocument!, status, restorePage, applyInitialChoices: uploadSettings is not null);
         }
         finally { fileBusy = false; }
     }
-    private async Task MonitorJobAsync(OpenDocument context, JobStatus status, int? restorePage)
+    private async Task MonitorJobAsync(OpenDocument context, JobStatus status, int? restorePage, bool applyInitialChoices = false)
     {
         var model = context.Model; var ct = context.JobLifetime.Token;
+        model.ErrorNotice = "";
         var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
         var started = System.Diagnostics.Stopwatch.StartNew(); var initialFinished = status.FinishedPages;
         void RememberRevision(EditorBlock b, int revision)
@@ -136,6 +130,7 @@ public partial class MainWindow
                 {
                     if (loadedPages.Contains(page.Key)) continue;
                     var result = await jobs.PageAsync(model.JobId!, page.Key, nextId, ct);
+                    if (applyInitialChoices) foreach (var block in result.Blocks) VisualDraftSelection.ApplyInitial(block, model.Options);
                     JobClient.Remember(model, result);
                     await CacheOriginalAsync(model, result, ct);
                     if (!context.OriginalKindKnown && result.OriginalType is not null)
@@ -168,11 +163,48 @@ public partial class MainWindow
             var issues = model.QualityReports.Values.Sum(q => q.Length);
             model.Status = $"{status.Label} · 성공 {status.SucceededPages}쪽 · 확인할 쪽 {status.FailedPages}개"
                 + (issues > 0 ? $" · 서버 검토 항목 {issues}건(쪽별 변환 상태에서 확인)" : "") + " · Ctrl+S로 저장하세요.";
+            if (model.CancellationRequested)
+            {
+                model.CancellationRequested = false;
+                model.ErrorNotice = $"변환 중단 처리가 끝났습니다. 완료 {status.SucceededPages}쪽 · 확인 필요 {status.FailedPages}쪽. 처리된 쪽은 계속 편집할 수 있습니다.";
+            }
             if (session == model) ShowActiveBlock();
+            model.Progress = null;
+            await ShowJobOutcomeAsync(model, status);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { model.Status = "작업 수신을 완료하지 못했습니다. 문서를 닫고 서버 작업에서 다시 열어 주세요: " + ex.Message; }
+        catch (Exception ex)
+        {
+            model.ErrorNotice = model.Status = "작업 수신을 완료하지 못했습니다. 문서를 닫고 서버 작업에서 다시 열어 주세요: " + ex.Message;
+            if (ex is HttpRequestException && session == model && !resourcesReleased)
+            {
+                var disconnected = FileNotices.Disconnected(model.Blocks.Where(b => !b.Metadata.IsBlocked).Select(b => b.Page).Distinct().Count());
+                disconnected.Owner = this; disconnected.ShowDialog();
+            }
+        }
         finally { model.Progress = null; }
+    }
+
+    private async Task ShowJobOutcomeAsync(DocumentSession model, JobStatus status)
+    {
+        if (resourcesReleased || session != model || status.OverallStatus is "CANCELLED" or "CANCELED") return;
+        NoticeDialog? notice = status.CreditExhausted ? FileNotices.NoCredits() :
+            status.FailedPages > 0 && status.SucceededPages > 0 ? FileNotices.PartialConversion(status.TotalPages, status.SucceededPages, status.Pages.Where(p => JobStatus.IsFailedPage(p.Value)).Select(p => p.Key).Order().ToArray()) :
+            status.OverallStatus == "FAILED" ? FileNotices.ConversionFailed() : null;
+        if (notice is null) return;
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (resourcesReleased || session != model) return;
+        notice.Owner = this; notice.ShowDialog();
+        if (status.CreditExhausted)
+        {
+            if (notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+        }
+        else if (status.SucceededPages == 0)
+        {
+            if (notice.Choice == 0) await UploadAsync();
+            else if (notice.Choice == 1 && EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();
+            else if (notice.Choice == 2) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+        }
     }
 
     private static async Task CacheOriginalAsync(DocumentSession model, RemotePage page, CancellationToken ct)
@@ -202,6 +234,6 @@ public partial class MainWindow
             model.OriginalFiles[name] = data;
             model.OriginalPages[page.Number] = new(page.OriginalType ?? "image", name, Width: page.Width, Height: page.Height);
         }
-        catch (HttpRequestException) { model.Status = $"{page.Number}쪽 원본을 받지 못했습니다. 작업을 다시 열어 URL을 갱신할 수 있습니다."; }
+        catch (HttpRequestException) { model.ErrorNotice = model.Status = $"{page.Number}쪽 원본을 받지 못했습니다. 작업을 다시 열어 URL을 갱신할 수 있습니다."; }
     }
 }

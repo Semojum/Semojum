@@ -195,7 +195,7 @@ var tests = new (string Name, Func<Task> Run)[]
     })
 };
 var failures = 0;
-var allTests = tests.Concat(IntegrationChecks.Tests()).Concat(RemainingChecks.Tests()).Concat(SyncChecks.Tests()).Concat(AcceptanceChecks.Tests()).ToArray();
+var allTests = tests.Concat(IntegrationChecks.Tests()).Concat(RemainingChecks.Tests()).Concat(SyncChecks.Tests()).Concat(AcceptanceChecks.Tests()).Concat(SaveContractChecks.Tests()).Concat(Qa4Checks.Tests()).ToArray();
 foreach (var (name, run) in allTests)
 {
     try { await run(); Console.WriteLine("PASS " + name); }

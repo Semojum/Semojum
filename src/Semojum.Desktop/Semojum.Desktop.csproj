@@ -12,6 +12,10 @@
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
     <Resource Include="Assets/Figma/*.svg" />
+    <Content Include="Assets/Fonts/*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../licenses/Inter-LICENSE.txt" Link="licenses/Inter-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../licenses/NotoSansKR-LICENSE.txt" Link="licenses/NotoSansKR-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../licenses/RobotoMono-LICENSE.txt" Link="licenses/RobotoMono-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="PDFtoImage" Version="5.4.0" />
     <PackageReference Include="WpfMath" Version="2.1.0" />
   </ItemGroup>

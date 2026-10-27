@@ -66,13 +66,24 @@ public partial class MainWindow : Window
         else { sidecar = EngineRuntime.Create(); engine = new LocalBrailleEngine(sidecar, () => session.Options); }
         translator = new(engine);
         InitializeComponent();
+        WindowFrame.Apply(this, editor: true);
+        NativeIme.Attach(SourceEditor);
+        Loaded += (_, _) => WindowBounds.Fit(this);
         PopulateTagMenu();
+        void StyleSeparators(ItemsControl menu)
+        {
+            foreach (var item in menu.Items)
+                if (item is Separator separator) separator.Style = (Style)FindResource("DesktopMenuSeparator");
+                else if (item is MenuItem child) StyleSeparators(child);
+        }
+        StyleSeparators(ApplicationMenu);
         InitializeContinuousEditor();
         SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)));
         Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
         InstallEditorMenu(SourceEditor); InstallEditorMenu(Braille.Editor);
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
+        SourceEditor.TextArea.TextView.ElementGenerators.Add(new IndentTagGenerator());
         SourceEditor.Options.HighlightCurrentLine = true;
         SourceEditor.TextArea.TextView.CurrentLineBackground = new SolidColorBrush(Color.FromRgb(255, 245, 163));
         SourceEditor.TextArea.TextView.CurrentLineBorder = null;
@@ -96,7 +107,7 @@ public partial class MainWindow : Window
         SetSession(smoke ? DocumentSession.Sample() : BlankDocument(), null, smoke);
         RestorePreferences(); ApplyAppearance(new());
         if (!smoke && !testWithoutAccount) Loaded += async (_, _) => await StartAccountAsync();
-        TimeoutToggle.Visibility = smoke ? Visibility.Visible : Visibility.Collapsed;
+        TimeoutToggle.Visibility = Visibility.Collapsed;
         BindCommonKeys(this);
         UpdatePanelLayout(); RefreshEditorStatus();
         Closed += (_, _) => _ = ReleaseResourcesAsync();
@@ -135,13 +146,15 @@ public partial class MainWindow : Window
             }
             if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
             session.PropertyChanged += SessionChanged;
-            PageEditor.Attach(session); PageEditor.Visibility = Visibility.Collapsed; SourceEditor.Visibility = Visibility.Visible;
+            PageEditor.Attach(session); PageEditor.Visibility = Visibility.Visible; SourceEditor.Visibility = Visibility.Collapsed;
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
             OriginalEmpty.Visibility = showOriginal ? Visibility.Collapsed : Visibility.Visible;
             ShowActiveBlock();
         }
         finally { switching = false; }
     }
+
+    private void ErrorNotice_Close(object sender, RoutedEventArgs e) => session.ErrorNotice = "";
 
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -169,6 +182,7 @@ public partial class MainWindow : Window
             SourceEditor.IsReadOnly = session.IsReadOnly || block.Metadata.IsBlocked;
             SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
             SourceEditor.ScrollToLine(SourceEditor.TextArea.Caret.Line);
+            PageEditor.FollowActive();
             Original.SelectBlock(block.Id, block.Page);
             ShowOriginal(block.Page);
             RefreshSourcePosition();
@@ -179,8 +193,11 @@ public partial class MainWindow : Window
 
     private void RefreshSourcePosition()
     {
-        if (session?.ActiveBlock is { } block)
-            SourcePosition.Text = $"줄 {SourceEditor.TextArea.Caret.Line} / {SourceEditor.Document.LineCount}";
+        if (session?.ActiveBlock is not null)
+        {
+            var editor = PageEditor.Visibility == Visibility.Visible ? PageEditor.Editor : SourceEditor;
+            SourcePosition.Text = $"줄 {editor.TextArea.Caret.Line} / {editor.Document.LineCount}";
+        }
         RefreshEditorStatus();
     }
 
@@ -223,8 +240,8 @@ public partial class MainWindow : Window
         };
         if (interactive && result is (TranslationOutcome.TimedOut or TranslationOutcome.Failed))
         {
-            var retry = MessageBox.Show(this, "점역 엔진의 응답을 받지 못했습니다. 원문은 계속 편집하고 저장할 수 있습니다.\n\n지금 다시 시도하시겠습니까?", "점역 실패", MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (retry == MessageBoxResult.Yes)
+            var retry = FileNotices.EngineUnavailable(); retry.Owner = this; retry.ShowDialog();
+            if (retry.Choice == 0)
             {
                 if (engine is MockTranslationEngine mock) mock.SimulateTimeout = false;
                 TimeoutToggle.IsChecked = false;
@@ -238,9 +255,10 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { Tag: string action }) await ExecuteAsync(action);
     }
 
-    private async Task ExecuteAsync(string action)
+    internal async Task ExecuteAsync(string action)
     {
         if (resourcesReleased) return;
+        CompleteSourceInput();
         try
         {
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }
@@ -264,10 +282,21 @@ public partial class MainWindow : Window
             switch (action)
             {
                 case "autoUpdate": preferences = preferences with { AutoCheckUpdates = AutoUpdateToggle.IsChecked }; await PersistPreferencesAsync(); break;
+                case "showToolbar": ApplyAppearance(appearance with { ShowToolbar = ToolbarToggle.IsChecked }); break;
+                case "showStatus": StatusBar.Visibility = StatusToggle.IsChecked ? Visibility.Visible : Visibility.Collapsed; break;
+                case "sixDotMode": SixDotToggle.IsChecked = !SixDotToggle.IsChecked; break;
+                case "restorePanels":
+                    foreach (var detached in detachedPanels.Values.ToArray()) detached.Close();
+                    detachedWindow?.Close(); OriginalToggle.IsChecked = SourceToggle.IsChecked = BrailleToggle.IsChecked = true;
+                    UpdatePanelLayout(); break;
+                case "showReviews":
+                    foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
+                        foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowReviews = ReviewToggle.IsChecked; margin.InvalidateVisual(); }
+                    break;
                 case "selectRange": SelectTextRange(); break;
                 case "showMemos":
-                    foreach (var editor in new[] { SourceEditor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
-                        foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.Visibility = MemoToggle.IsChecked ? Visibility.Visible : Visibility.Collapsed;
+                    foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
+                        foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowMemos = MemoToggle.IsChecked; margin.InvalidateVisual(); }
                     break;
                 case "showOutlines":
                     Braille.GridView.ShowOutlines = OutlineToggle.IsChecked; Braille.GridView.InvalidateFaces();
@@ -295,7 +324,13 @@ public partial class MainWindow : Window
                 case "upload": await UploadAsync(); break;
                 case "cancelJob":
                     var cancelling = session;
-                    if (cancelling.JobId is { } jobId) { await jobs.CancelAsync(jobId); cancelling.Status = "변환 중단을 요청했습니다. 처리 중인 쪽이 마무리되면 반영됩니다."; }
+                    if (cancelling.JobId is { } jobId)
+                    {
+                        var cancellation = await jobs.CancelAsync(jobId);
+                        var finished = cancellation.IsTerminal || cancelling.JobStatus is "COMPLETED" or "FAILED" or "CANCELLED" or "CANCELED";
+                        cancelling.CancellationRequested = cancellation.Accepted && !finished;
+                        cancelling.ErrorNotice = cancelling.Status = cancellation.Notice(finished);
+                    }
                     break;
                 case "pageStatus":
                     var pageStatus = new PageStatusDialog(session) { Owner = this };
@@ -309,6 +344,7 @@ public partial class MainWindow : Window
                 case "cut": if (!CopySelectedBlocks(true)) (lastEditor ?? SourceEditor).Cut(); break;
                 case "copy": if (!CopySelectedBlocks(false)) (lastEditor ?? SourceEditor).Copy(); break;
                 case "paste": if (!await PasteSelectedBlocksAsync()) (lastEditor ?? SourceEditor).Paste(); break;
+                case "selectAll": SelectAllContext(); break;
                 case "find": await ShowSearchAsync(false); break;
                 case "replace": await ShowSearchAsync(true); break;
                 case "findNext":
@@ -326,6 +362,7 @@ public partial class MainWindow : Window
                 case "notifications": if (EnsureAccount()) new NotificationsDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
                 case "hideOriginal": case "hideSource": case "hideBraille": HidePanel(action); break;
                 case "lineNumbers": LineNumbersToggle.IsChecked = !LineNumbersToggle.IsChecked; ApplyLineNumbers(); break;
+                case "formatMarks": ApplyAppearance(appearance with { ShowFormattingMarks = !appearance.ShowFormattingMarks }); break;
                 case "previous": MoveBlock(-1); break;
                 case "next": MoveBlock(1); break;
                 case "detach": ToggleDetached(); break;
@@ -352,10 +389,7 @@ public partial class MainWindow : Window
                 case "appearance": await EditAppearanceAsync(false); break;
                 case "colors": await EditAppearanceAsync(true); break;
                 case "snippets": await EditSnippetsAsync(); break;
-                case "math":
-                    var math = new MathDialog { Owner = this };
-                    if (math.ShowDialog() == true) InsertText($"<!수식>{math.Latex}<!/수식>");
-                    break;
+                case "math": await EditMathAsync(); break;
                 case "layout":
                     var layout = new LayoutDialog(session.Layout) { Owner = this };
                     if (layout.ShowDialog() == true)
@@ -382,12 +416,40 @@ public partial class MainWindow : Window
                     var options = new TranslationOptionsDialog(autoTranslate, session.Options) { Owner = this };
                     if (options.ShowDialog() == true) { autoTranslate = options.AutoTranslate; session.Options = options.Result; }
                     break;
-                case "help": new HelpWindow(ActiveSearchPanel == SearchPanel.Text ? "텍스트 고치기" : "점자 직접 고치기") { Owner = this }.Show(); break;
-                case "usage":
-                    if (EnsureAccount()) { var usage = new UsageDialog(api) { Owner = this }; if (usage.ShowDialog() == true && usage.JobId is { } id) await LoadJobAsync(id, Path.GetFileNameWithoutExtension(usage.FileName ?? "서버 작업") + ".smj"); }
+                case "visualDescriptions":
+                    if (EnsureAccount())
+                    {
+                        var settings = new SettingsClient(api); var defaults = await settings.DefaultsAsync(documentLifetime.Token);
+                        var visual = new VisualDescriptionDialog(new(defaults.Options.VisualDescriptions ?? VisualDescriptions.Defaults())) { Owner = this };
+                        if (visual.ShowDialog() == true) await settings.SaveDefaultsAsync(defaults with { Options = defaults.Options with { VisualDescriptions = visual.Result } }, documentLifetime.Token);
+                    }
                     break;
-                case "about": MessageBox.Show(this, $"세모점 {CurrentVersion.ToString(3)}\n운영 기관: 등록 전\n문의: contact-semojum@gmail.com", "세모점 정보"); break;
+                case "help": new HelpWindow(ActiveSearchPanel == SearchPanel.Text ? "텍스트 고치기" : "점자 직접 고치기", ExecuteAsync) { Owner = this }.Show(); break;
+                case "usage":
+                    if (EnsureAccount())
+                    {
+                        var usage = new UsageDialog(api, WorkInformation()) { Owner = this };
+                        if (usage.ShowDialog() == true)
+                        {
+                            if (usage.LogoutRequested) await LogoutAccountAsync();
+                            else if (usage.JobId is { } id) await LoadJobAsync(id, Path.GetFileNameWithoutExtension(usage.FileName ?? "서버 작업") + ".smj");
+                        }
+                    }
+                    break;
+                case "about":
+                    new AboutDialog(CurrentVersion.ToString(3), async () =>
+                    {
+                        if (sidecar is null) return "화면 검사 전용";
+                        await sidecar.InvokeAsync("ping"); return sidecar.EngineVersion ?? "확인 불가";
+                    }) { Owner = this }.ShowDialog(); break;
+                case "inquiry": new PublicInquiryDialog(api) { Owner = this }.ShowDialog(); break;
+                case "footerInsert": ShowFooterInsert(); break;
             }
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            var offline = FileNotices.Offline(ex.Message); offline.Owner = this; offline.ShowDialog();
+            if (offline.Choice == 0 && !resourcesReleased) await ExecuteAsync(action);
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -409,15 +471,27 @@ public partial class MainWindow : Window
         target.Select(start + open.Length, selected.Length); target.Focus();
     }
     private void InsertText(string value) { if (session.IsReadOnly || SourceEditor.IsReadOnly) return; var target = PageEditor.Visibility == Visibility.Visible ? PageEditor.Editor : SourceEditor; target.SelectedText = value; target.Focus(); }
+    private bool settingFontSize;
     private void SetFontSize(double size)
     {
+        if (settingFontSize) return;
+        settingFontSize = true;
+        try
+        {
         SourceEditor.FontSize = Math.Clamp(size, 10, 32);
         PageEditor.Editor.FontSize = SourceEditor.FontSize;
         Braille.Editor.FontSize = SourceEditor.FontSize * 22 / 14;
         if (detachedPane is not null) detachedPane.Editor.FontSize = Braille.Editor.FontSize;
-        FontSizeLabel.Content = SourceEditor.FontSize.ToString("0") + " px";
+        Braille.GridView.FontSize = Braille.Editor.FontSize; Braille.GridView.InvalidateFaces();
+        if (detachedPane is not null) { detachedPane.GridView.FontSize = Braille.Editor.FontSize; detachedPane.GridView.InvalidateFaces(); }
+        var label = SourceEditor.FontSize.ToString("0.#");
+        var choice = FontSizeLabel.Items.Cast<ComboBoxItem>().FirstOrDefault(item => item.Content?.ToString() == label);
+        if (choice is null) { choice = new ComboBoxItem { Content = label }; FontSizeLabel.Items.Add(choice); }
+        FontSizeLabel.SelectedItem = choice;
         var percent = (SourceEditor.FontSize / 14 * 100).ToString("0") + "%";
         if (ZoomPicker.Text != percent) ZoomPicker.Text = percent;
+        }
+        finally { settingFontSize = false; }
     }
 
     internal void ToggleDetached()
@@ -430,13 +504,14 @@ public partial class MainWindow : Window
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
         detachedPane.HideRequested += (_, _) => detachedWindow?.Close();
         detachedPane.PreviewCloseRequested += (_, _) => SetLinePreviewVisible(false);
-        detachedPane.SetLinePreviewVisible(LinePreviewToggle.IsChecked);
+        detachedPane.SetLinePreviewVisible(false); detachedPane.Header.Visibility = Visibility.Collapsed;
         detachedPane.SetLinePreview(currentPreviewLine, currentPreviewCells);
         detachedPane.DetachRequested += (_, _) => detachedWindow?.Close();
         BrailleToggle.IsChecked = true;
         CopyBrailleSettings(); ApplyAppearance(appearance);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => { if (detachedPane is not null) SpeakCaret(detachedPane.Editor); };
-        detachedWindow = new Window { Title = $"점자 — {session.Title}", Owner = this, Width = 680, Height = 760, MinWidth = 420, MinHeight = 420, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        detachedWindow = new Window { Title = $"점자 — {session.Title} - 세모점", Owner = this, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        WindowFrame.Apply(detachedWindow, editor: true);
         detachedWindow.Closed += (_, _) =>
         {
             if (detachedPane is not null) wideCarets.Remove(detachedPane.Editor);
@@ -446,7 +521,7 @@ public partial class MainWindow : Window
         };
         DetachedPlaceholder.Visibility = Visibility.Visible; Braille.Visibility = Visibility.Collapsed;
         BindCommonKeys(detachedWindow); UpdatePanelLayout();
-        detachedWindow.Show(); detachedPane.Editor.Focus();
+        detachedWindow.Show(); detachedPane.GridView.Focus();
     }
     private void CopyBrailleSettings()
     {
@@ -476,10 +551,18 @@ public partial class MainWindow : Window
     {
         if (fileBusy) return false;
         var path = filePath;
-        if (saveAs || session.IsReadOnly || path is null)
+        if (saveAs)
         {
-            var dialog = new SaveFileDialog { Title = "세모점 작업 저장", Filter = "세모점 작업 파일|*.smj", DefaultExt = ".smj", FileName = session.Title, AddExtension = true };
+            var dialog = new SaveAsDialog(session.Title, filePath) { Owner = this };
+            if (dialog.ShowDialog() != true) return false;
+            if (dialog.Format > 0) { await ExportAsync(dialog.FileName, dialog.Format, false); return false; }
+            path = dialog.FileName;
+        }
+        else if (session.IsReadOnly || path is null)
+        {
+            var dialog = new SaveFileDialog { Title = saveAs ? "다른 이름으로 저장" : "세모점 작업 저장", Filter = saveAs ? "세모점 작업 파일|*.smj|BRF 점자문서|*.brf|원문 텍스트|*.txt" : "세모점 작업 파일|*.smj", DefaultExt = ".smj", FileName = session.Title, AddExtension = true };
             if (dialog.ShowDialog(this) != true) return false;
+            if (saveAs && dialog.FilterIndex > 1) { await ExportAsync(dialog.FileName, dialog.FilterIndex - 1, false); return false; }
             path = dialog.FileName;
         }
         WorkFileLease? candidate = null;
@@ -505,12 +588,22 @@ public partial class MainWindow : Window
                 try
                 {
                     var result = await jobs.SaveAsync(snapshot);
-                    // Only pages the server confirmed become the new server baseline; the snapshot, not the live document, is the source.
-                    JobClient.ApplySaved(owner, result);
-                    localOnly = result.Plan.LocalOnly;
-                    if (!result.Complete)
-                        throw new InvalidOperationException($"서버 저장 실패 쪽: {string.Join(", ", result.FailedPages)}. 전송한 {result.Plan.ExpectedPages}쪽 중 {result.SavedPages}쪽만 저장되었습니다."
-                            + (result.Plan.Pages.Length == 0 ? " 전송할 서버 블록이 없었습니다." : ""));
+                    while (true)
+                    {
+                        JobClient.ApplySaved(owner, result);
+                        // Persist the returned copy ID and confirmed baseline in the same explicit save.
+                        // Never write edits made in the live document while the network request was running.
+                        snapshot = JobClient.ApplySaved(snapshot, result);
+                        await SmjFile.SaveAsync(path, snapshot);
+                        localOnly = result.Plan.LocalOnly;
+                        if (result.Complete) break;
+                        var failures = result.PageResults is { } details
+                            ? string.Join(", ", details.Where(p => p.Status == "FAILED").Select(p => $"{p.PageNo}쪽 ({p.ErrorCode ?? "오류"})"))
+                            : string.Join(", ", result.FailedPages);
+                        if (MessageBox.Show(this, $"서버 저장 실패: {failures}\n{result.Plan.ExpectedPages}쪽 중 {result.SavedPages}쪽은 저장되었습니다.\n실패한 쪽만 다시 저장하시겠습니까?", "부분 저장", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                            throw new InvalidOperationException("실패한 쪽은 서버에 저장되지 않았습니다: " + failures);
+                        result = await jobs.RetryFailedAsync(snapshot, result);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -534,29 +627,30 @@ public partial class MainWindow : Window
             }
             return !owner.IsDirty;
         }
-        catch (Exception ex) { ShowError(ex); return false; }
+        catch (Exception ex)
+        {
+            var failed = FileNotices.SaveFailed(ex.Message); failed.Owner = this; failed.ShowDialog();
+            if (failed.Choice < 0) return false;
+            candidate?.Dispose(); candidate = null; fileBusy = false;
+            return await SaveAsync(failed.Choice == 0);
+        }
         finally { candidate?.Dispose(); fileBusy = false; }
     }
     private async Task<bool> ConfirmDiscardAsync()
     {
         if (fileBusy) return false;
         if (!session.IsDirty) return true;
-        return MessageBox.Show(this, "변경 내용을 저장하시겠습니까?", "저장하지 않은 내용", MessageBoxButton.YesNoCancel, MessageBoxImage.Question) switch
+        return NoticeDialog.Choose(this, "변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 440) switch
         {
-            MessageBoxResult.Yes => await SaveAsync(false),
-            MessageBoxResult.No => true,
+            0 => await SaveAsync(false),
+            1 => true,
             _ => false
         };
     }
-    internal async Task OpenAsync(string? requestedPath = null)
+    internal async Task OpenAsync(string? requestedPath = null, DocumentSession? textSettings = null, string? formId = null)
     {
         if (fileBusy) return;
-        if (requestedPath is null)
-        {
-            var dialog = new OpenFileDialog { Title = "작업 파일 또는 텍스트 열기", Filter = "지원 파일|*.smj;*.mock.smi;*.txt|세모점 작업|*.smj|UTF-8 텍스트|*.txt|이전 목업 파일|*.mock.smi", InitialDirectory = preferences.WorkFolder ?? "" };
-            if (dialog.ShowDialog(this) != true) return;
-            requestedPath = dialog.FileName;
-        }
+        if (requestedPath is null) { await UploadAsync(); return; }
         if (filePath is not null && LocalWorkspace.SamePath(filePath, requestedPath))
         { Activate(); SourceEditor.Focus(); return; }
         var existing = openDocuments.FirstOrDefault(d => d.Path is not null && LocalWorkspace.SamePath(d.Path, requestedPath));
@@ -574,7 +668,7 @@ public partial class MainWindow : Window
                 var index = 0;
                 foreach (var chunk in TextImport.Split(text)) model.Add(new EditorBlock { Id = ++index, Page = 1, Heading = $"불러온 텍스트 {index}", Source = chunk, State = "점역 전" });
                 model.OriginalFiles[Path.GetFileName(requestedPath)] = await File.ReadAllBytesAsync(requestedPath);
-                await ConfigureTextJobAsync(model);
+                await ConfigureTextJobAsync(model, textSettings, formId);
                 model.IsDirty = true; SetSession(model, null, false);
                 OriginalToggle.IsChecked = false; UpdatePanelLayout();
                 _ = TranslateImportedTextAsync(openDocument!);
@@ -587,9 +681,13 @@ public partial class MainWindow : Window
                 try
                 {
                     model = await SmjFile.LoadAsync(requestedPath); model.IsReadOnly = lease is null;
+                    if (model.IsReadOnly)
+                    {
+                        var readOnly = FileNotices.ReadOnlyDocument(); readOnly.Owner = this; readOnly.ShowDialog();
+                        if (readOnly.Choice != 0) return;
+                    }
                     SetSession(model, requestedPath, false); openDocument!.Lease = lease; lease = null;
                     await RememberFileAsync(requestedPath);
-                    if (model.IsReadOnly) MessageBox.Show(this, "다른 창에서 편집 중이거나 쓰기 권한이 없어 읽기 전용으로 열었습니다. 다른 이름으로 저장하면 편집할 수 있습니다.", "읽기 전용");
                 }
                 finally { lease?.Dispose(); }
             }
@@ -600,11 +698,17 @@ public partial class MainWindow : Window
     private async void Window_Closing(object? sender, CancelEventArgs e)
     {
         if (allowClose) return;
+        CompleteSourceInput();
         e.Cancel = true;
         if (closing) return;
         closing = true;
         try { if (await ConfirmAllDocumentsAsync()) { await ReleaseResourcesAsync(); allowClose = true; _ = Dispatcher.BeginInvoke(new Action(Close)); } }
         finally { closing = false; }
     }
-    private void ShowError(Exception ex) => MessageBox.Show(this, ex.Message, "작업을 완료하지 못했습니다", MessageBoxButton.OK, MessageBoxImage.Warning);
+    private void ShowError(Exception ex) => NoticeDialog.Choose(this, "작업을 완료하지 못했습니다.", ex.Message, ["확인"], error: true);
+    private void CompleteSourceInput()
+    {
+        NativeIme.Complete(PageEditor.Editor);
+        NativeIme.Complete(SourceEditor);
+    }
 }

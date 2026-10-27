@@ -15,6 +15,8 @@ public abstract class EditorDialog : Window
     {
         Title = title; Width = width; SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        MaxHeight = SystemParameters.WorkArea.Height;
+        Loaded += (_, _) => Services.WindowBounds.Fit(this);
         PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.F1) { new HelpWindow(Title) { Owner = this }.Show(); e.Handled = true; } };
         var root = new DockPanel(); Content = root;
         var header = new Border { Background = Brushes.White, Padding = new Thickness(24, 18, 24, 18), BorderBrush = new SolidColorBrush(Color.FromRgb(207, 213, 220)), BorderThickness = new Thickness(0, 0, 0, 1), Child = new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.SemiBold } };
@@ -24,7 +26,7 @@ public abstract class EditorDialog : Window
         ok.Click += (_, _) => { try { if (Apply()) DialogResult = true; } catch (ArgumentException ex) { Error.Text = ex.Message; } };
         var cancel = new Button { Content = "취소", MinWidth = 92, IsCancel = true, Margin = new Thickness(10, 0, 0, 0) };
         footer.Children.Add(ok); footer.Children.Add(cancel); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
-        root.Children.Add(Fields);
+        root.Children.Add(new ScrollViewer { Content = Fields, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
     }
     protected void Row(string label, FrameworkElement field)
     {
@@ -36,13 +38,13 @@ public abstract class EditorDialog : Window
     protected abstract bool Apply();
 }
 
-public sealed class LayoutDialog : EditorDialog
+public sealed class LayoutDialog : CompactDialog
 {
     private readonly TextBox columns, lines, start, sourceStart, cover, numberRanges;
     private readonly ComboBox numbers, align, footerPages;
     private readonly CheckBox sourceNumber, brailleNumber, changeLine;
     public PageLayout Result { get; private set; }
-    public LayoutDialog(PageLayout layout) : base("편집용 점자문서 페이지설정")
+    public LayoutDialog(PageLayout layout) : base("편집용 점자문서 페이지설정", 480, 280)
     {
         Result = layout;
         lines = new() { Text = layout.Lines.ToString() }; columns = new() { Text = layout.Columns.ToString() }; start = new() { Text = layout.StartPage.ToString() };
@@ -54,14 +56,21 @@ public sealed class LayoutDialog : EditorDialog
         brailleNumber = new() { Content = "점자 면 번호", IsChecked = layout.ShowBraillePageNumber };
         changeLine = new() { Content = "묵자 쪽 전환선 표시", IsChecked = layout.ShowChangeLine };
         numberRanges = new() { Text = PageNumberRange.Format(layout.NumberRanges) };
-        Row("페이지당 줄 수", lines); Row("줄당 칸 수", columns); Row("점자 시작 면", start); Row("원본 시작 쪽", sourceStart);
-        Row("표지 원본 쪽 수", cover); Row("페이지행 출력", numbers); Row("꼬리말 정렬", align);
-        Row("꼬리말 출력", footerPages); Row("번호 범위 (선택)", numberRanges);
-        Fields.Children.Add(sourceNumber); Fields.Children.Add(brailleNumber); Fields.Children.Add(changeLine);
-        Note("모눈과 BRF에 동일하게 적용합니다. 번호 범위: 1-5, 8, 10- (비우면 전체). 홀수·짝수 설정과 범위를 함께 적용합니다. 번호가 없는 면도 꼬리말을 출력할 수 있습니다."); Fields.Children.Add(Error);
+        var fields = new StackPanel { Margin = new(16, 16, 16, 0) }; Body(fields);
+        void Setting(string label, Control field, double width)
+        {
+            var row = new DockPanel { Height = 32, Margin = new(0, 0, 0, 3) };
+            row.Children.Add(new TextBlock { Text = label, Width = 164, FontSize = 14 });
+            field.Height = field.MinHeight = 24; field.Width = width; field.FontSize = 12; field.Padding = new(7, 0, 7, 0); field.VerticalAlignment = VerticalAlignment.Top;
+            field.HorizontalAlignment = HorizontalAlignment.Left; row.Children.Add(field);
+            fields.Children.Add(new Border { BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = row });
+        }
+        Setting("페이지당 줄 수", lines, 80); Setting("줄당 칸 수", columns, 80); Setting("점자 페이지 시작 번호", start, 80);
+        Setting("점자 페이지 번호 출력", numbers, 240); Setting("꼬리말 출력", footerPages, 240);
+        Action("확인", () => { if (Apply()) DialogResult = true; }, true); Action("취소", () => DialogResult = false);
     }
     private static ComboBox Choices(string selected) => new() { ItemsSource = new[] { "홀수 페이지", "짝수 페이지", "모든 페이지", "출력 안 함" }, SelectedItem = selected };
-    protected override bool Apply()
+    private bool Apply()
     {
         if (!int.TryParse(columns.Text, out var c) || !int.TryParse(lines.Text, out var l) || !int.TryParse(start.Text, out var s)
             || !int.TryParse(sourceStart.Text, out var original) || !int.TryParse(cover.Text, out var covers)) throw new ArgumentException("숫자로 입력해 주세요.");
@@ -72,24 +81,48 @@ public sealed class LayoutDialog : EditorDialog
     }
 }
 
-public sealed class SixDotDialog : EditorDialog
+public sealed class SixDotDialog : CompactDialog
 {
-    private readonly TextBox keys;
-    private readonly CheckBox space, enter;
+    internal TextBox[] KeyFields { get; }
     public string Keys { get; private set; }
-    public bool Space => space.IsChecked == true;
-    public bool Enter => enter.IsChecked == true;
-    public SixDotDialog(string current, bool allowSpace, bool allowEnter) : base("6점키 설정")
+    public bool Space { get; }
+    public bool Enter { get; }
+    public SixDotDialog(string current, bool allowSpace, bool allowEnter) : base("6점키 설정", 480, 200)
     {
-        Keys = current; keys = new() { Text = current, CharacterCasing = CharacterCasing.Upper };
-        Row("1 · 2 · 3 · 4 · 5 · 6점", keys);
-        space = new() { Content = "Space로 빈칸", IsChecked = allowSpace }; enter = new() { Content = "Enter로 줄바꿈", IsChecked = allowEnter };
-        Fields.Children.Add(space); Fields.Children.Add(enter);
-        Note("기본 키: F D S J K L\n함께 누른 키를 모두 놓으면 점자 한 칸이 입력됩니다. 실제 키보드의 동시 입력 지원 여부에 따라 동작이 달라질 수 있습니다."); Fields.Children.Add(Error);
+        Keys = current; Space = allowSpace; Enter = allowEnter;
+        var chars = string.Concat(current.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
+        KeyFields = Enumerable.Range(0, 6).Select(i => new TextBox { Text = i < chars.Length ? chars[i].ToString() : "", CharacterCasing = CharacterCasing.Upper, MaxLength = 1, Width = 34, Height = 24, Padding = new(0), Margin = new(0, 0, 6, 0), HorizontalContentAlignment = HorizontalAlignment.Center }).ToArray();
+        var body = new StackPanel { Margin = new(16, 16, 16, 0) }; Body(body);
+        var mode = new Controls.SegmentedChoice("1단", "2단", "3단", "사용자") { SelectedIndex = chars == "FDSJKL" ? 1 : 3 };
+        mode.SetAvailable(0, false, "1단 키 배치는 아직 정의되지 않았습니다. 사용자 지정으로 키를 설정할 수 있습니다.");
+        mode.SetAvailable(2, false, "3단 키 배치는 아직 정의되지 않았습니다. 사용자 지정으로 키를 설정할 수 있습니다.");
+        void Field(string label, FrameworkElement value)
+        {
+            var row = new DockPanel { Height = 40 };
+            row.Children.Add(new TextBlock { Text = label, FontSize = 14, Width = 134, Height = 20, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 4, 0, 0) });
+            value.VerticalAlignment = VerticalAlignment.Top; row.Children.Add(value); body.Children.Add(row);
+        }
+        Field("입력 방식", mode);
+        var keys = new StackPanel { Orientation = Orientation.Horizontal };
+        var settingPreset = false;
+        foreach (var (field, i) in KeyFields.Select((field, i) => (field, i)))
+        {
+            System.Windows.Automation.AutomationProperties.SetName(field, $"{i + 1}점 키"); keys.Children.Add(field);
+            field.TextChanged += (_, _) => { if (!settingPreset) mode.SelectedIndex = 3; };
+        }
+        mode.SelectionChanged += (_, _) =>
+        {
+            if (mode.SelectedIndex != 1) return;
+            settingPreset = true;
+            try { for (var i = 0; i < 6; i++) KeyFields[i].Text = "FDSJKL"[i].ToString(); }
+            finally { settingPreset = false; }
+        };
+        Field("키 지정", keys);
+        Action("확인", () => { if (Apply()) DialogResult = true; }, true); Action("취소", () => DialogResult = false);
     }
-    protected override bool Apply()
+    private bool Apply()
     {
-        var value = string.Concat(keys.Text.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
+        var value = string.Concat(KeyFields.Select(k => k.Text.Trim())).ToUpperInvariant();
         if (value.Length != 6 || value.Any(c => !char.IsAsciiLetter(c)) || value.Distinct().Count() != 6) throw new ArgumentException("서로 다른 영문 키 6개를 입력해 주세요.");
         Keys = string.Join(" ", value.ToCharArray()); return true;
     }
@@ -147,49 +180,26 @@ public sealed class TranslationOptionsDialog : CompactDialog
     }
 }
 
-public sealed class MathDialog : EditorDialog
-{
-    private readonly TextBox input;
-    private readonly FormulaControl preview;
-    public string Latex => input.Text;
-    public MathDialog() : base("수식 편집기", 820)
-    {
-        var symbols = new WrapPanel();
-        foreach (var (label, value) in new[] { ("분수", @"\frac{a}{b}"), ("√", @"\sqrt{x}"), ("x²", @"x^{2}"), ("Σ", @"\sum_{i=1}^{n} i"), ("π", @"\pi"), ("≤", @"\leq") })
-        {
-            var button = new Button { Content = label, Margin = new Thickness(0, 0, 6, 8) };
-            button.Click += (_, _) => { input!.SelectedText = value; input.Focus(); };
-            symbols.Children.Add(button);
-        }
-        Fields.Children.Add(symbols);
-        preview = new() { Formula = @"\frac{a+b}{2}=\sqrt{c}", FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-        Fields.Children.Add(new Border { Background = Brushes.White, BorderBrush = (Brush)FindResource("Line"), BorderThickness = new Thickness(1), Height = 140, Child = preview, Padding = new Thickness(20) });
-        input = new() { Text = @"\frac{a+b}{2}=\sqrt{c}", FontFamily = new FontFamily("Consolas"), AcceptsReturn = true, Height = 80, Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap };
-        input.TextChanged += (_, _) => { preview.Formula = input.Text; };
-        Fields.Children.Add(input);
-        Note("LaTeX 미리보기입니다. 넣으면 원문에 수식 태그가 삽입됩니다. 점역 결과를 확인해 주세요.");
-    }
-    protected override bool Apply() => !string.IsNullOrWhiteSpace(input.Text);
-}
-
-public sealed class FindDialog : Window
+public sealed class FindDialog : CompactDialog
 {
     public FindDialog(SearchPanel target, string initialQuery, bool showReplacement,
-        Func<string, Task<string>> findNext, Func<string, string, bool, Task<string>> replaceMatches)
+        Func<string, SearchPanel, Task<string>> findNext, Func<string, string, SearchPanel, bool, Task<string>> replaceMatches) : base("찾아 바꾸기", 440, 260)
     {
-        Title = target == SearchPanel.Text ? "문서 텍스트 찾기·바꾸기" : "문서 점자 찾기·바꾸기";
-        Width = 540; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        var panel = new StackPanel { Margin = new Thickness(24) }; Content = panel;
-        var query = new TextBox { Text = initialQuery, Margin = new Thickness(0, 6, 0, 14) };
-        var replacement = new TextBox { Margin = new Thickness(0, 6, 0, 14) };
-        var result = new TextBlock { Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap };
-        panel.Children.Add(new TextBlock { Text = "범위: 문서의 모든 " + (target == SearchPanel.Text ? "텍스트" : "점자") + " 블록 · 대소문자 구분 없이 찾기", TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "찾을 내용", Margin = new Thickness(0, 14, 0, 0) }); panel.Children.Add(query);
-        panel.Children.Add(new TextBlock { Text = "바꿀 내용" }); panel.Children.Add(replacement);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var panel = new StackPanel { Margin = new Thickness(16, 12, 16, 0) }; Body(panel);
+        var query = new TextBox { Text = initialQuery };
+        var replacement = new TextBox();
+        var result = new TextBlock { Margin = new Thickness(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted") };
+        var targetPicker = CompactDialog.Choices(["텍스트", "점자"], target == SearchPanel.Text ? "텍스트" : "점자");
+        SearchPanel Target() => targetPicker.SelectedIndex == 1 ? SearchPanel.Braille : SearchPanel.Text;
+        void Field(string label, Control control)
+        {
+            var row = new DockPanel { Height = 40 };
+            row.Children.Add(new TextBlock { Text = label, Width = 120, Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 4, 0, 0) });
+            control.Height = 32; control.VerticalAlignment = VerticalAlignment.Top; row.Children.Add(control); panel.Children.Add(row);
+        }
+        Field("찾을 내용", query); Field("바꿀 내용", replacement); Field("대상", targetPicker);
         var busy = false;
-        async Task RunAsync(Func<Task<string>> action)
+        async Task SearchAsync(Func<Task<string>> action)
         {
             if (busy) return;
             busy = true; panel.IsEnabled = false;
@@ -199,18 +209,17 @@ public sealed class FindDialog : Window
         }
         foreach (var (label, action) in new (string, Func<Task<string>>)[]
         {
-            ("다음 찾기", () => findNext(query.Text)),
-            ("바꾸기", () => replaceMatches(query.Text, replacement.Text, false)),
-            ("모두 바꾸기", () => replaceMatches(query.Text, replacement.Text, true))
+            ("다음 찾기", () => findNext(query.Text, Target())),
+            ("바꾸기", () => replaceMatches(query.Text, replacement.Text, Target(), false)),
+            ("모두 바꾸기", () => replaceMatches(query.Text, replacement.Text, Target(), true))
         })
         {
-            var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 0) };
-            button.Click += async (_, _) => await RunAsync(action); actions.Children.Add(button);
+            Action(label, async () => await SearchAsync(action), label == "다음 찾기").Width = label == "다음 찾기" ? 87 : label == "모두 바꾸기" ? 99 : 76;
         }
-        panel.Children.Add(actions); panel.Children.Add(result);
+        Action("닫기", Close); panel.Children.Add(result);
         PreviewKeyDown += async (_, e) =>
         {
-            if (e.Key == System.Windows.Input.Key.F3) { e.Handled = true; await RunAsync(() => findNext(query.Text)); }
+            if (e.Key == System.Windows.Input.Key.F3) { e.Handled = true; await SearchAsync(() => findNext(query.Text, Target())); }
             else if (e.Key == System.Windows.Input.Key.Escape && !busy) Close();
         };
         Closing += (_, e) => { if (busy) e.Cancel = true; };
@@ -222,21 +231,9 @@ public sealed class FindDialog : Window
     }
 }
 
-public sealed class ManualEditDialog : Window
+public sealed class ManualEditDialog : NoticeDialog
 {
-    public ManualEditDecision Decision { get; private set; } = ManualEditDecision.Cancel;
-    public ManualEditDialog()
-    {
-        Title = "직접 수정한 점자"; Width = 580; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        var panel = new StackPanel { Margin = new Thickness(26) }; Content = panel;
-        panel.Children.Add(new TextBlock { Text = "직접 고친 점자를 지우고 다시 점역하시겠습니까?", FontSize = 17, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(new TextBlock { Text = "유지하면 직접 고친 점자가 남습니다. 덮어쓰면 현재 원문으로 다시 점역합니다.", Margin = new Thickness(0, 14, 0, 24), TextWrapping = TextWrapping.Wrap });
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; panel.Children.Add(buttons);
-        foreach (var (label, decision) in new[] { ("유지", ManualEditDecision.Keep), ("덮어쓰기", ManualEditDecision.Overwrite), ("취소", ManualEditDecision.Cancel) })
-        {
-            var b = new Button { Content = label, MinWidth = 100, Margin = new Thickness(8, 0, 0, 0) };
-            b.Click += (_, _) => { Decision = decision; DialogResult = decision != ManualEditDecision.Cancel; };
-            buttons.Children.Add(b);
-        }
-    }
+    public ManualEditDecision Decision => Choice switch { 0 => ManualEditDecision.Keep, 1 => ManualEditDecision.Overwrite, _ => ManualEditDecision.Cancel };
+    public ManualEditDialog() : base("직접 고친 점자를 지우고 다시 점역하시겠습니까?",
+        "유지하면 이 블록은 다시 점역되지 않습니다.", ["유지", "덮어쓰기", "취소"], width: 520, height: 190) { }
 }

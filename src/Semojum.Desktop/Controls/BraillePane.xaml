@@ -6,18 +6,17 @@
         <Button x:Name="DetachButton" Content="⧉" ToolTip="점자 창 분리 / 합치기" Click="Detach_Click" Style="{StaticResource PanelButton}"/>
         <Button Content="×" ToolTip="점자 패널 숨기기" Click="Hide_Click" Style="{StaticResource PanelButton}"/>
       </StackPanel>
-      <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock Text="3" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
-      <TextBlock Text="점자" FontSize="12"/>
+      <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock x:Name="PanelNumber" Text="3" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
+      <TextBlock x:Name="PanelTitle" Text="점자" FontSize="12"/>
     </DockPanel></Border>
-    <local:LineTranslation x:Name="PreviewStrip" DockPanel.Dock="Bottom" Visibility="Collapsed"/>
+    <local:LineTranslation x:Name="PreviewStrip" DockPanel.Dock="Bottom" Height="90" Visibility="Collapsed"/>
     <TextBlock x:Name="StateLabel" Visibility="Collapsed"/>
     <Grid>
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition x:Name="GridHeight" Height="2*"/><RowDefinition Height="3"/><RowDefinition Height="*" MinHeight="90"/></Grid.RowDefinitions>
-      <DockPanel Margin="8,4"><CheckBox x:Name="GridToggle" Content="모눈 보기" IsChecked="True" Click="GridToggle_Click"/>
+      <Grid.RowDefinitions><RowDefinition Height="0"/><RowDefinition x:Name="GridHeight" Height="*"/><RowDefinition Height="0"/><RowDefinition Height="0"/></Grid.RowDefinitions>
+      <DockPanel Margin="8,4" Visibility="Collapsed"><CheckBox x:Name="GridToggle" Content="모눈 보기" IsChecked="True" Click="GridToggle_Click"/>
         <TextBlock Text="  드래그·Shift 선택 · 6점 입력 · Ctrl+Z" FontSize="11" Foreground="Gray" ToolTip="BRF와 동일한 판면입니다. 본문을 직접 편집합니다. 회색 조판 영역은 자동 생성됩니다."/></DockPanel>
       <local:BrailleGridView x:Name="GridView" Grid.Row="1"/>
-      <GridSplitter Grid.Row="2" Height="3" HorizontalAlignment="Stretch" ResizeDirection="Rows" Background="#D6D6D6"/>
-      <ae:TextEditor x:Name="Editor" Grid.Row="3" FontFamily="Segoe UI Symbol" FontSize="22" Padding="8,4" ShowLineNumbers="True" WordWrap="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="점자 편집기"/>
+      <ae:TextEditor x:Name="Editor" Grid.Row="3" Visibility="Collapsed" FontFamily="Segoe UI Symbol" FontSize="22" Padding="8,4" ShowLineNumbers="True" WordWrap="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="점자 편집 모델"/>
     </Grid>
   </DockPanel>
 </UserControl>

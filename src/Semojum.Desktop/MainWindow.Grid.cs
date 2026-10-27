@@ -2,6 +2,7 @@ using Semojum.Core;
 using Semojum.Core.Integration;
 using Semojum.Desktop.Controls;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace Semojum.Desktop;
 
@@ -13,6 +14,10 @@ public partial class MainWindow
     private Task<ComposedBraille>? composing;
     private void ConnectGrid(BraillePane pane)
     {
+        foreach (var (command, redo) in new[] { (ApplicationCommands.Undo, false), (ApplicationCommands.Redo, true) })
+            pane.GridView.CommandBindings.Add(new CommandBinding(command,
+                (_, e) => { ReplayHistory(redo); e.Handled = true; },
+                (_, e) => { e.CanExecute = CanReplayHistory(redo); e.Handled = true; }));
         pane.GridRefreshed += () => { if (lastGrid == pane.GridView) RefreshEditorStatus(); };
         var menu = new ContextMenu(); pane.GridView.ContextMenu = menu;
         menu.Opened += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); };

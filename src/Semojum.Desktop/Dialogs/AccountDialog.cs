@@ -43,6 +43,13 @@ public sealed class AccountDialog : Window
             catch (OperationCanceledException) { }
             catch (SemojumApiException ex)
             {
+                if (ex.Code is "AUTH4001" or "AUTH4006")
+                {
+                    var rejected = FileNotices.LoginRejected(ex); rejected.Owner = this; rejected.ShowDialog();
+                    if (rejected.Choice == 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+                    password.Focus(); password.SelectAll();
+                    return;
+                }
                 error.Text = ex.Message;
                 if (ex.Details is { ValueKind: System.Text.Json.JsonValueKind.Object } d)
                 {

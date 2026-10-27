@@ -4,7 +4,7 @@ using Semojum.Core;
 
 namespace Semojum.Desktop.Dialogs;
 
-public sealed class ExportRangeDialog : EditorDialog
+public sealed class ExportRangeDialog : CompactDialog
 {
     private readonly ComboBox scope = new();
     private readonly TextBox start = new(), end = new();
@@ -13,18 +13,28 @@ public sealed class ExportRangeDialog : EditorDialog
     private readonly Func<Task<int>>? brailleCount;
     private int? pageCount;
     private bool loading;
+    private TextBlock Error => Status;
     public ExportRange Result { get; private set; } = new();
 
-    public ExportRangeDialog(int[] originalNumbers, Func<Task<int>>? brailleCount, bool brailleOnly = false) : base("내보낼 범위", 580)
+    public ExportRangeDialog(int[] originalNumbers, Func<Task<int>>? brailleCount, bool brailleOnly = false, string format = ".brf") : base("범위 지정 저장", 520, 240)
     {
         this.originalNumbers = originalNumbers; this.brailleCount = brailleCount;
         scope.Items.Add("전체 문서"); scope.Items.Add(new ComboBoxItem { Content = "원본 쪽 범위", IsEnabled = !brailleOnly });
         if (brailleCount is not null) scope.Items.Add("점자 면 범위");
-        Row("범위 기준", scope); Row("시작 번호", start); Row("끝 번호", end); Fields.Children.Add(bounds);
-        Note(brailleCount is null
+        var fields = new StackPanel { Margin = new(16, 12, 16, 0) }; Body(fields);
+        void Field(string label, FrameworkElement value)
+        {
+            var row = new DockPanel { Height = 32, Margin = new(0, 0, 0, 8) }; row.Children.Add(new TextBlock { Text = label, Width = 120, Foreground = (System.Windows.Media.Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Center });
+            value.Height = 32; value.MinHeight = 32; value.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(value); fields.Children.Add(row);
+            System.Windows.Automation.AutomationProperties.SetName(value, label);
+        }
+        Field("기준", scope); Field("시작 페이지 번호", start); Field("끝 페이지 번호", end);
+        Field("형식", new TextBox { Text = format, IsReadOnly = true, ToolTip = "파일 저장 창에서 선택한 형식입니다." });
+        scope.ToolTip = brailleCount is null
             ? "원문 TXT는 원본 쪽 기준으로 저장합니다."
-            : "점자 면은 표지를 포함해 조판 결과의 첫 면부터 1, 2, 3…으로 셉니다. 인쇄된 쪽번호와 다를 수 있습니다. 선택한 면의 쪽번호·꼬리말은 유지합니다.\n원본 쪽을 고르면 그 쪽만 별도 조판하며 점자 번호는 현재 판면의 시작 번호를 사용합니다.");
-        Fields.Children.Add(Error);
+            : "점자 면은 표지를 포함해 조판 결과의 첫 면부터 1, 2, 3…으로 셉니다. 인쇄된 쪽번호와 다를 수 있습니다. 선택한 면의 쪽번호·꼬리말은 유지합니다.\n원본 쪽을 고르면 그 쪽만 별도 조판하며 점자 번호는 현재 판면의 시작 번호를 사용합니다.";
+        start.ToolTip = end.ToolTip = bounds;
+        Action("저장", () => { if (Apply()) DialogResult = true; }, true); Action("취소", Close);
         scope.SelectionChanged += async (_, _) => await UpdateBoundsAsync();
         scope.SelectedIndex = 0;
     }
@@ -51,7 +61,7 @@ public sealed class ExportRangeDialog : EditorDialog
         }
     }
 
-    protected override bool Apply()
+    private bool Apply()
     {
         if (loading) { Error.Text = "점자 면 수를 계산한 뒤 저장할 수 있습니다."; return false; }
         var selected = (ExportScope)scope.SelectedIndex;
@@ -66,6 +76,11 @@ public sealed class ExportRangeDialog : EditorDialog
                 selected == ExportScope.OriginalPages ? originalNumbers.LastOrDefault() : pageCount!.Value);
             Result = range; return true;
         }
-        catch (ArgumentException ex) { Error.Text = ex.Message; return false; }
+        catch (ArgumentException ex)
+        {
+            var notice = FileNotices.InvalidRange(from, to, ex.Message); notice.Owner = this; notice.ShowDialog();
+            if (notice.Choice != 0) Close(); else { start.Focus(); start.SelectAll(); }
+            return false;
+        }
     }
 }

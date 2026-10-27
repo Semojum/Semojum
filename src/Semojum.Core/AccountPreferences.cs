@@ -5,10 +5,10 @@ using System.Text.Json;
 namespace Semojum.Core;
 
 public sealed record EditorAppearance(string TextColor = "#1F1F1F", string BackgroundColor = "#FFFFFF", string CurrentLineColor = "#FFF5A3",
-    string SelectionColor = "#CCE4F7", string FontFamily = "Malgun Gothic", double TextSize = 14, double BrailleSize = 22,
+    string SelectionColor = "#CCE4F7", string FontFamily = "Noto Sans KR", double TextSize = 14, double BrailleSize = 22,
     double LineSpacing = 1.3, double CursorWidth = 2, bool HighContrast = false, bool SpeakDots = false, int SpeechRate = 0,
     string SelectionTextColor = "#1F1F1F", string BrailleColor = "#1F1F1F", string MarkerColor = "#808080",
-    string LineNumberColor = "#666666", string LineNumberBackground = "#F3F3F3", string TagColor = "#2D609E",
+    string LineNumberColor = "#5F646D", string LineNumberBackground = "#FAFAFA", string TagColor = "#005FB8",
     string OutlineColor = "#F25D5D", double OutlineWidth = 1, bool Bold = false, bool ShowLineNumbers = true,
     bool ShowFormattingMarks = false, int RecentCount = 10, bool ShowToolbar = true);
 public sealed record OutputPreferences(PageLayout? Layout = null, string LineBreakUnit = "syllable", bool Duplex = true);
