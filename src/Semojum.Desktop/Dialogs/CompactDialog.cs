@@ -68,6 +68,17 @@ public class CompactDialog : Window
     }
     protected void OnLoad(Func<Task> action) => Loaded += async (_, _) => await RunAsync(action);
     protected void Body(UIElement element) => Root.Children.Add(element);
+    /// <summary>The default ListBox template pads its border by 1px; Figma lists start flush with their margins.</summary>
+    internal static void StripListPadding(ListBox list)
+    {
+        var template = new ControlTemplate(typeof(ListBox));
+        var scroll = new FrameworkElementFactory(typeof(ScrollViewer));
+        scroll.SetValue(ScrollViewer.FocusableProperty, false);
+        scroll.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
+        scroll.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+        scroll.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter)));
+        template.VisualTree = scroll; list.Template = template;
+    }
     internal static ComboBox Choices(IEnumerable<string> choices, string? selected = null) => new()
     { ItemsSource = choices, SelectedItem = selected, MinHeight = 24, Height = 24, FontSize = 12, Padding = new(6, 0, 6, 0) };
     internal static void Row(Panel panel, string label, UIElement value, double labelWidth = 164)

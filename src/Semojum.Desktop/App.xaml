@@ -61,9 +61,9 @@
       </Style></Setter.Value></Setter>
     </Style>
     <Style x:Key="FormChoice" TargetType="ListBoxItem">
-      <Setter Property="Height" Value="24"/><Setter Property="Padding" Value="15,0"/>
+      <Setter Property="Height" Value="24"/><Setter Property="Padding" Value="16,0"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
-        <Border x:Name="ChoiceSurface" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Center"/></Border>
+        <Border x:Name="ChoiceSurface" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Top" Margin="0,2,0,0"/></Border>
         <ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="ChoiceSurface" Property="Background" Value="#CCE4F7"/></Trigger></ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
@@ -75,7 +75,8 @@
     <Style x:Key="EditorContextMenu" TargetType="ContextMenu">
       <Setter Property="Width" Value="220"/><Setter Property="Height" Value="154"/><Setter Property="FontSize" Value="12"/><Setter Property="UseLayoutRounding" Value="False"/><Setter Property="SnapsToDevicePixels" Value="True"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
-        <Border Background="White" BorderBrush="#B5B5B5" BorderThickness="1" Padding="0,6,0,8"><StackPanel IsItemsHost="True"/></Border>
+        <!-- Figma 1:1073: 24px items from y=6, rules 6px below an item and 10px above the next -->
+        <Border Background="White" BorderBrush="#B5B5B5" BorderThickness="1" Padding="0,5,0,9"><StackPanel IsItemsHost="True"/></Border>
       </ControlTemplate></Setter.Value></Setter>
       <Style.Resources>
         <Style TargetType="MenuItem"><Setter Property="Height" Value="24"/>
@@ -86,7 +87,7 @@
           </ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style TargetType="Separator"><Setter Property="Height" Value="9"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator">
-          <Border Background="#D6D6D6" Height="1" VerticalAlignment="Center" Margin="7,0"/>
+          <Border Background="#D6D6D6" Height="1" VerticalAlignment="Top" Margin="7,6,7,0"/>
         </ControlTemplate></Setter.Value></Setter></Style>
       </Style.Resources>
     </Style>
@@ -193,21 +194,28 @@
     <Style x:Key="HelpTabs" TargetType="TabControl">
       <Setter Property="Background" Value="#FAFAFA"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">
-        <Border Background="{TemplateBinding Background}" BorderBrush="#D6D6D6" BorderThickness="0,0,1,0"><DockPanel>
-          <TabPanel DockPanel.Dock="Top" Height="32" Margin="4,0" IsItemsHost="True"/>
-          <ContentPresenter ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
-        </DockPanel></Border>
+        <Grid Background="{TemplateBinding Background}">
+          <Border Width="1" HorizontalAlignment="Right" Background="#D6D6D6"/>
+          <DockPanel>
+            <TabPanel DockPanel.Dock="Top" Height="32" Margin="12,0,0,0" IsItemsHost="True"/>
+            <ContentPresenter ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
+          </DockPanel>
+        </Grid>
       </ControlTemplate></Setter.Value></Setter>
       <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="TabItem">
-        <Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="8,0"/><Setter Property="Height" Value="32"/><Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem"><Border Padding="{TemplateBinding Padding}" Background="Transparent"><ContentPresenter ContentSource="Header" VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter>
+        <Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="0,11,0,0"/><Setter Property="Height" Value="32"/><Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
+          <!-- Figma 1:2140 draws the three modes as one semibold line: 내용 | 색인 | 검색 -->
+          <StackPanel Orientation="Horizontal" Background="Transparent"><Border Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Top"/></Border><TextBlock x:Name="TabSeparator" Text=" | " Margin="0,11,0,0" VerticalAlignment="Top" Visibility="Collapsed"/></StackPanel>
+          <ControlTemplate.Triggers><Trigger Property="Tag" Value="separator"><Setter TargetName="TabSeparator" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
         <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="FontWeight" Value="SemiBold"/></Trigger></Style.Triggers>
       </Style></Setter.Value></Setter>
     </Style>
     <Style x:Key="HelpTreeItem" TargetType="TreeViewItem">
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TreeViewItem">
-        <StackPanel><Border x:Name="TopicSurface" Height="24" Padding="12,0,0,0" Background="Transparent"><ContentPresenter x:Name="PART_Header" ContentSource="Header" VerticalAlignment="Center"/></Border>
-          <ItemsPresenter x:Name="TopicChildren" Margin="12,0,0,0" Visibility="Collapsed"/>
+        <StackPanel><Border x:Name="TopicSurface" Height="24" Padding="12,0,0,0" Background="Transparent"><ContentPresenter x:Name="PART_Header" ContentSource="Header" VerticalAlignment="Top" Margin="0,1,0,0"/></Border>
+          <ItemsPresenter x:Name="TopicChildren" Margin="10,0,0,0" Visibility="Collapsed"/>
         </StackPanel>
         <ControlTemplate.Triggers>
           <Trigger Property="IsExpanded" Value="True"><Setter TargetName="TopicChildren" Property="Visibility" Value="Visible"/></Trigger>

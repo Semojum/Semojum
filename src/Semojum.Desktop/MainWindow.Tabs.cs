@@ -17,6 +17,7 @@ public partial class MainWindow
         public CancellationTokenSource JobLifetime { get; } = new();
         public bool ShowOriginal;
         public bool OriginalKindKnown;
+        public string[]? UploadPaths;
         public Dictionary<EditorBlock, int> Translated = [];
         public TabItem Tab { get; } = new();
         public PropertyChangedEventHandler? LabelListener;

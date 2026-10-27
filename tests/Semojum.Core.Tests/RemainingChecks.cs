@@ -139,7 +139,7 @@ internal static class RemainingChecks
     private static Task Leases()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".smj");
-        using (var first = WorkFileLease.TryAcquire(path)) { Check(first is not null); using var second = WorkFileLease.TryAcquire(path); Check(second is null); }
+        using (var first = WorkFileLease.TryAcquire(path)) { Check(first is not null); using var second = WorkFileLease.TryAcquire(path, out var denied); Check(second is null && !denied); }
         using var third = WorkFileLease.TryAcquire(path); Check(third is not null); return Task.CompletedTask;
     }
     private static async Task ResolvedMemos()

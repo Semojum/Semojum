@@ -52,8 +52,9 @@ internal static class WindowFrame
         var title = new TextBlock { FontSize = 12, FontWeight = editor ? FontWeights.Normal : FontWeights.SemiBold,
             Margin = new(editor ? 0 : 12, 0, 8, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         title.SetBinding(TextBlock.TextProperty, new Binding(nameof(Window.Title)) { Source = window }); heading.Children.Add(title);
+        // Figma editor frames (1:112, 1:8, 1:2123, 1:1894) rule the title with #D6D6D6; compact dialogs (1:1220, 1:1142 …) use #B5B5B5.
         root.Children.Add(new Border { Background = new SolidColorBrush(editor ? Color.FromRgb(243, 243, 243) : Color.FromRgb(251, 251, 251)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(0, 0, 0, 1), Child = heading });
+            BorderBrush = new SolidColorBrush(editor ? Color.FromRgb(214, 214, 214) : Color.FromRgb(181, 181, 181)), BorderThickness = new(0, 0, 0, 1), Child = heading });
         var presenter = new ContentPresenter { Content = content }; Grid.SetRow(presenter, 1); root.Children.Add(presenter);
         if (!editor)
         {

@@ -26,7 +26,7 @@ public sealed class MemoThreadDialog : CompactDialog
         DockPanel.SetDock(replyHost, Dock.Bottom); body.Children.Add(replyHost);
         System.Windows.Automation.AutomationProperties.SetName(input, "메모 회신");
         input.ToolTip = "Enter: 회신 추가 · Shift+Enter: 줄 바꿈";
-        var list = MemoItems; body.Children.Add(list);
+        var list = MemoItems; ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled); body.Children.Add(list);
         list.ItemTemplate = new DataTemplate { VisualTree = new FrameworkElementFactory(typeof(MemoConversationView)) };
         var container = new Style(typeof(ListBoxItem));
         container.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));

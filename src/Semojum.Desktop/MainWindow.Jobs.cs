@@ -50,7 +50,7 @@ public partial class MainWindow
         await LoadJobAsync(dialog.Value.Trim(), "서버 작업.smj");
     }
 
-    private async Task UploadAsync()
+    private async Task UploadAsync(string[]? previousPaths = null)
     {
         if (fileBusy || !EnsureAccount()) return;
         var client = new SettingsClient(api);
@@ -60,6 +60,8 @@ public partial class MainWindow
         try { forms = await client.FormsAsync(settingsTimeout.Token); defaults = await client.DefaultsAsync(settingsTimeout.Token); }
         catch (Exception ex) when (ex is HttpRequestException or SemojumApiException || ex is OperationCanceledException && !documentLifetime.IsCancellationRequested) { available = false; }
         var dialog = new OpenDocumentDialog(forms, defaults, available) { Owner = this };
+        // Figma 1:2276 retries with the same files; the dialog starts from them while they still exist.
+        if (previousPaths is { Length: > 0 } && previousPaths.All(File.Exists)) { try { dialog.SetPaths(previousPaths); } catch (ArgumentException) { } }
         if (dialog.ShowDialog() != true) return;
         var orderedFiles = dialog.Paths;
         var settings = dialog.Settings;
@@ -74,6 +76,7 @@ public partial class MainWindow
             session.Status = "파일 업로드 중…";
             var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, dialog.FormId);
             await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(orderedFiles[0]) + ".smj", files, uploadSettings: settings);
+            if (openDocument?.Model.JobId == job.JobId) openDocument.UploadPaths = orderedFiles;
         }
         finally { fileBusy = false; }
     }
@@ -171,6 +174,7 @@ public partial class MainWindow
             if (session == model) ShowActiveBlock();
             model.Progress = null;
             await ShowJobOutcomeAsync(model, status);
+            if (applyInitialChoices) await ShowUnreadableNoticeAsync(model);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -201,10 +205,22 @@ public partial class MainWindow
         }
         else if (status.SucceededPages == 0)
         {
-            if (notice.Choice == 0) await UploadAsync();
+            if (notice.Choice == 0) await UploadAsync(openDocument?.UploadPaths);
             else if (notice.Choice == 1 && EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();
             else if (notice.Choice == 2) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
+    }
+
+    // Shown once per fresh conversion; reopening a saved job does not repeat it. Counts the ■ markers still in the text.
+    private async Task ShowUnreadableNoticeAsync(DocumentSession model)
+    {
+        var count = UnreadableText.Count(model);
+        if (count == 0 || resourcesReleased || session != model) return;
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (resourcesReleased || session != model) return;
+        var notice = FileNotices.UnreadableCharacters(count); notice.Owner = this; notice.ShowDialog();
+        if (notice.Choice == 0 && UnreadableText.First(model) is { } first) await NavigateToAsync(new(first.Block, SearchPanel.Text, first.Offset));
+        session.Status = $"원본을 읽지 못한 자리 {count}군데 · ■ 를 찾아 직접 입력하세요 (Ctrl+F로 ■ 검색)";
     }
 
     private static async Task CacheOriginalAsync(DocumentSession model, RemotePage page, CancellationToken ct)

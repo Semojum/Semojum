@@ -9,7 +9,10 @@ public partial class App : Application
     {
         base.OnStartup(e);
         if (!e.Args.Contains("--smoke-test") && await AppUpdates.ActivateAsync(Semojum.Desktop.MainWindow.CurrentVersion, e.Args)) { Shutdown(0); return; }
-        var window = new MainWindow(e.Args.Contains("--smoke-test"));
+        var smoke = e.Args.Contains("--smoke-test");
+        // Smoke captures are compared 1:1 with Figma's 1x PNGs, so lay windows out at 96 DPI regardless of the display scale.
+        if (smoke && Environment.GetEnvironmentVariable("SEMOJUM_SMOKE_DPI") != "native") SetThreadDpiAwarenessContext(new IntPtr(-1));
+        var window = new MainWindow(smoke);
         MainWindow = window;
         if (e.Args.Length == 2 && e.Args[0] == "--smoke-test")
         {
@@ -26,4 +29,5 @@ public partial class App : Application
         }
         window.Show();
     }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 }

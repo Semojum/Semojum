@@ -41,6 +41,7 @@ internal static class WindowsQa4Checks
             SourceGlyphFonts = GlyphFonts(owner.PageEditor.Editor.TextArea.TextView).Distinct().ToArray(),
             BrailleViewport = Children(owner.Braille.GridView).OfType<ScrollViewer>().Select(s => new { s.ViewportWidth, s.ExtentWidth, s.ComputedHorizontalScrollBarVisibility }),
             InterfaceFont = owner.FontFamily.Source,
+            Dpi = VisualTreeHelper.GetDpi(owner).PixelsPerInchX,
             FontResources = Fonts.GetFontFamilies(Controls.BundledFonts.DirectoryUri).Select(f => f.Source)
         }, new JsonSerializerOptions { WriteIndented = true }));
         var renderedFonts = GlyphFonts(owner.PageEditor.Editor.TextArea.TextView).ToArray();
@@ -123,10 +124,12 @@ internal static class WindowsQa4Checks
             check(handler.Paths.Contains("/api/users/braille-options") && handler.Paths.Contains("/api/users/braille-forms"), "QA4 defaults loads stored settings and real form values through the API contract"));
         await Capture(new FormNameDialog(), "32-form-name.png");
         await Capture(new FormEditDialog(settings, forms, forms[1], forms[1].Layout, forms[1].Options, forms[0].FormId), "33-form-edit.png");
-        await Capture(new FormDialog(settings, new(), new()), "34-forms.png");
+        await Capture(new FormDialog(settings, new(), new(), "builtin:TEXTBOOK"), "34-forms.png");
         var formChoices = new[] { "초등 교과서", "중·고 교과서", "자습서", "시험지", "일반 도서", "사용자 양식" }
             .Select((name, index) => forms[0] with { FormId = "fixture:" + index, Name = name }).ToArray();
-        await Capture(new FormPickerDialog(formChoices, formChoices[1]), "57-form-picker.png");
+        var picker = new FormPickerDialog(formChoices, formChoices[1]);
+        await Capture(picker, "57-form-picker.png", () => check(picker.ChoicesList.Items.Count == 6 && Children(picker).OfType<ScrollViewer>().All(s => s.ComputedVerticalScrollBarVisibility == Visibility.Collapsed),
+            "Figma 3966 form picker lists six forms in 24px rows without a scrollbar"));
         var chosenForm = new FormPickerDialog(formChoices, formChoices[1]);
         check(Modal(chosenForm, () => { chosenForm.ChoicesList.SelectedIndex = 3; Key(chosenForm.ChoicesList, chosenForm, System.Windows.Input.Key.Enter); }) == true && chosenForm.Selected == formChoices[3],
             "Form picker accepts the keyboard-selected actual form on Enter");
@@ -202,7 +205,7 @@ internal static class WindowsQa4Checks
         check(UsageDialog.StatusLabel("COMPLETED", false) == "완료" && UsageDialog.StatusLabel("COMPLETED", true) == "일부 쪽 실패" && UsageDialog.StatusLabel("FAILED", true) == "변환 실패", "QA4 job statuses use user-facing labels");
         var footer = new FooterDialog(owner.Session);
         await Capture(footer, "38-footers.png", () => check(Children(footer).OfType<DataGrid>().Single().Columns.Count == 3, "QA4 footer manager has start, alignment and content columns"));
-        var footerFixture = new DocumentSession { FooterRanges = [new(1, 12, "Ⅰ 01 사회·문화 현상", "center"), new(13, 28, "Ⅰ 02 사회·문화 현상의 탐구", "center"), new(29, 44, "Ⅱ 01 개인과 사회 구조", "center"), new(45, null, "Ⅱ 02 일탈 행동", "right")] };
+        var footerFixture = new DocumentSession { FooterRanges = [new(1, 12, "Ⅰ 01 사회·문화 현상", "center"), new(13, 28, "Ⅰ 02 사회·문화 현상의 탐구", "center"), new(29, 44, "Ⅱ 01 개인과 사회 구조", "center"), new(45, 60, "Ⅱ 02 일탈 행동", "right")] };
         await Capture(new FooterDialog(footerFixture), "44-footers-populated.png");
         await Capture(new FooterInputDialog(), "45-footer-input.png");
         var memoInput = new MemoInputDialog("김점역"); memoInput.Input.Text = "원문이 「작다」인데 그래프를 보면";
@@ -218,7 +221,13 @@ internal static class WindowsQa4Checks
         await Capture(FileNotices.UnsupportedFormat(), "60-unsupported-file.png");
         await Capture(FileNotices.OversizedFile(), "61-oversized-file.png");
         await Capture(FileNotices.EngineUnavailable(), "62-engine-timeout.png");
-        await Capture(FileNotices.ReadOnlyDocument(), "63-readonly-file.png");
+        await Capture(FileNotices.ReadOnlyDocument(), "63-readonly-file.png", () =>
+        {
+            var denied = FileNotices.ReadOnlyDocument(accessDenied: true);
+            check(denied.MessageText == "이 문서에 쓰기 권한이 없습니다." && denied.DetailText == "이 창에서는 읽기 전용으로 엽니다.",
+                "Figma 4874 read-only notice names the lock or permission cause in one line each");
+            denied.Close();
+        });
         await Capture(FileNotices.InvalidRange(31, 12, "시작이 끝보다 뒤입니다."), "64-invalid-range.png");
         await Capture(FileNotices.SaveFailed("화면 검증용 오류: 쓰기 권한 없음"), "70-save-failed.png");
         await Capture(FileNotices.PartialConversion(128, 125, [12, 47, 98]), "79-partial-conversion.png");
@@ -227,6 +236,14 @@ internal static class WindowsQa4Checks
         await Capture(FileNotices.Offline("로컬 화면 검증용 연결 실패"), "82-offline.png");
         await Capture(FileNotices.NoCredits(), "83-no-credits.png");
         await Capture(new MergeBlocksDialog(), "84-merge-blocks.png");
+        var unreadableModel = new DocumentSession();
+        unreadableModel.Add(new EditorBlock { Id = 1, Page = 3, Source = "첫 줄 ■ 둘째", Metadata = new(IsBlocked: true) });
+        unreadableModel.Add(new EditorBlock { Id = 2, Page = 4, Source = "읽은 글 ■ 와 ■ 자리" });
+        check(UnreadableText.Count(unreadableModel) == 2 && UnreadableText.First(unreadableModel) is { Block.Id: 2, Offset: 5 },
+            "Figma 4844 unreadable spots count ■ markers outside blocked blocks and locate the first one");
+        var unreadable = FileNotices.UnreadableCharacters(2);
+        await Capture(unreadable, "86-unreadable-characters.png", () => check(unreadable.ActionButtons[0].IsDefault && Math.Abs(unreadable.ActionButtons[0].ActualWidth - 122) <= 2,
+            "Figma 4844 unreadable-character notice defaults to 해당 위치로 이동 at 122px"));
         var cancelMerge = new MergeBlocksDialog();
         check(Modal(cancelMerge, () => Key(cancelMerge, cancelMerge, System.Windows.Input.Key.Escape)) != true && cancelMerge.Decision == ManualEditDecision.Cancel,
             "Merge confirmation Escape cancels without authorizing manual-braille replacement");
@@ -246,7 +263,9 @@ internal static class WindowsQa4Checks
         var failedSave = FileNotices.SaveFailed("fixture");
         check(Modal(failedSave, () => Key(failedSave, failedSave, System.Windows.Input.Key.Escape)) != true && failedSave.Choice == -1,
             "Save failure Escape preserves the unsaved document without triggering another save");
-        await Capture(FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다.", System.Text.Json.JsonSerializer.SerializeToElement(new { remainingAttempts = 2 }))), "71-login-rejected.png");
+        var rejected = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다.", System.Text.Json.JsonSerializer.SerializeToElement(new { remainingAttempts = 2 })));
+        await Capture(rejected, "71-login-rejected.png", () => check(rejected.DetailText == "남은 횟수 2회입니다. 5회 실패하면 10분 동안 잠깁니다." && Math.Abs(rejected.ActionButtons[1].ActualWidth - 103) <= 2,
+            "Figma 4904 login rejection states the 5-attempt / 10-minute lock policy with a 103px 비밀번호 찾기 button"));
         var alternativeBlock = new EditorBlock { Metadata = new(Type: "caption", SelectedIndex: 2, Alternatives: [
             new("생략", "", null, "", "설명 생략"), new("짧은 제목", "네 지역의 기후 특성", null, "⠁", "간략한 제목"),
             new("개조식", "그림: 네 지역의 기후 특성\n1. (가) 최한월 −6℃, 연강수량 1,300㎜\n2. (나) 최한월 −2℃, 연강수량 1,100㎜", null, "⠁⠃⠉", "항목별 설명"),
@@ -273,7 +292,10 @@ internal static class WindowsQa4Checks
         try { await render(expandedRules, Path.Combine(directory, "52-rules-expanded.png")); ((Expander)expandedRules.RuleResults.Children[0]).IsExpanded = true; await render(expandedRules, Path.Combine(directory, "52-rules-expanded.png")); } finally { expandedRules.Close(); }
         var keys = new SixDotDialog("F D S J K L", true, true);
         await Capture(keys, "39-six-keys.png", () => check(keys.KeyFields.Length == 6 && keys.KeyFields.All(k => k.IsVisible && k.MaxLength == 1), "QA4 six-dot mapping exposes six individual editable keys"));
-        await Capture(new HelpWindow("점자 직접 고치기"), "40-help-tree.png");
+        var help = new HelpWindow("점자 직접 고치기");
+        await Capture(help, "40-help-tree.png", () => check(Children(help).OfType<TabItem>().Select(t => t.Tag as string).SequenceEqual(["separator", "separator", null])
+            && Children(help).OfType<FlowDocumentScrollViewer>().Single().Document.TextAlignment == TextAlignment.Left,
+            "Figma 4641 help tabs read 내용 | 색인 | 검색 and the topic body is left-aligned"));
         var editor = new MainWindow(smoke: true); editor.Show();
         try
         {
@@ -383,11 +405,11 @@ internal static class WindowsQa4Checks
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath; Paths.Add(path);
-            object Form(string id, bool builtin) => new { formId = id, name = builtin ? "시험지" : "사용자 검수 양식", builtin, baseFormId = builtin ? null : "builtin:EXAM", layoutOptions = JobClient.LayoutBody(new()), brailleOptions = JobClient.OptionsBody(new()) };
+            object Form(string id, bool builtin, string? name = null) => new { formId = id, name = name ?? (builtin ? "시험지" : "사용자 검수 양식"), builtin, baseFormId = builtin ? null : "builtin:EXAM", layoutOptions = JobClient.LayoutBody(new()), brailleOptions = JobClient.OptionsBody(new()) };
             object result = path switch
             {
                 "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER", alias = "검수자" },
-                "/api/users/braille-forms" => new { items = new[] { Form("builtin:EXAM", true), Form("user:1", false) } },
+                "/api/users/braille-forms" => new { items = new[] { Form("builtin:EXAM", true), Form("user:1", false), Form("builtin:TEXTBOOK", true, "중·고 교과서") } },
                 "/api/users/braille-options" => new { formId = "builtin:EXAM", pageNumberLine = "odd", hangulGrade = "grade2", englishGrade = "grade1", visualDescriptions = VisualDescriptions.Defaults() },
                 "/api/users/usage/daily" => new { from = "2026-10-01", to = "2026-10-27", orgRemaining = 8251, orgAllocated = 10000, usedCredits = 1749, usedPercent = 17.49,
                     daily = Enumerable.Range(1, 27).Select(day => new { date = $"2026-10-{day:00}", credits = day == 20 ? 600 : day == 21 ? 1149 : 0 }).ToArray(),

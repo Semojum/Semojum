@@ -41,8 +41,8 @@ public sealed class HelpWindow : Window
         var history = new List<Topic>(); var index = -1;
         void Render(Topic topic)
         {
-            var doc = new FlowDocument { FontFamily = (FontFamily)FindResource("InterfaceFont"), FontSize = 14, PagePadding = new(24, 20, 24, 20) };
-            doc.Blocks.Add(new Paragraph(new Run(topic.Title)) { FontSize = 20, FontWeight = FontWeights.SemiBold, LineHeight = 28, Margin = new(0, 0, 0, 12) });
+            var doc = new FlowDocument { FontFamily = (FontFamily)FindResource("InterfaceFont"), FontSize = 14, TextAlignment = TextAlignment.Left, PagePadding = new(24, 22, 24, 20) };
+            doc.Blocks.Add(new Paragraph(new Run(topic.Title)) { FontSize = 20, FontWeight = FontWeights.SemiBold, LineHeight = 28, Margin = new(0, 0, 0, 11) });
             doc.Blocks.Add(new Paragraph(new Run(topic.Body)) { LineHeight = 22, Margin = new(0) });
             if (topic.Title == "추가 도구")
             {
@@ -72,7 +72,7 @@ public sealed class HelpWindow : Window
         {
             if (mode == "내용")
             {
-                var tree = new TreeView { BorderThickness = new(0), Padding = new(0), Background = Brushes.Transparent, FontSize = 12, FontWeight = FontWeights.Normal };
+                var tree = new TreeView { BorderThickness = new(0), Padding = new(0), Margin = new(0, 2, 0, 0), Background = Brushes.Transparent, FontSize = 12, FontWeight = FontWeights.Normal };
                 ScrollViewer.SetVerticalScrollBarVisibility(tree, ScrollBarVisibility.Hidden);
                 tree.Resources[typeof(TreeViewItem)] = FindResource("HelpTreeItem");
                 foreach (var group in Topics.GroupBy(t => t.Group))
@@ -88,7 +88,7 @@ public sealed class HelpWindow : Window
                     tree.Items.Add(branch);
                 }
                 tree.SelectedItemChanged += (_, _) => { if (tree.SelectedItem is TreeViewItem { Tag: Topic topic }) Visit(topic); };
-                tabs.Items.Add(new TabItem { Header = "내용", Content = tree }); continue;
+                tabs.Items.Add(new TabItem { Header = "내용", Content = tree, Tag = "separator" }); continue;
             }
             var panel = new DockPanel(); var list = new ListBox { DisplayMemberPath = "Title" };
             if (mode == "검색")
@@ -98,7 +98,7 @@ public sealed class HelpWindow : Window
             }
             list.ItemsSource = mode == "색인" ? Topics.OrderBy(t => t.Title).ToArray() : Topics;
             list.SelectionChanged += (_, _) => { if (list.SelectedItem is Topic topic) Visit(topic); };
-            panel.Children.Add(list); tabs.Items.Add(new TabItem { Header = mode, Content = panel });
+            panel.Children.Add(list); tabs.Items.Add(new TabItem { Header = mode, Content = panel, Tag = mode == "색인" ? "separator" : null });
         }
         var matched = Topics.FirstOrDefault(t => t.Title.Contains(context));
         if (matched is null)
