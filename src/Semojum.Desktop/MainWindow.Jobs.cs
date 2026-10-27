@@ -174,6 +174,7 @@ public partial class MainWindow
             if (session == model) ShowActiveBlock();
             model.Progress = null;
             await ShowJobOutcomeAsync(model, status);
+            if (applyInitialChoices) await ShowUnreadableNoticeAsync(model);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -208,6 +209,18 @@ public partial class MainWindow
             else if (notice.Choice == 1 && EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();
             else if (notice.Choice == 2) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
+    }
+
+    // Shown once per fresh conversion; reopening a saved job does not repeat it. Counts the ■ markers still in the text.
+    private async Task ShowUnreadableNoticeAsync(DocumentSession model)
+    {
+        var count = UnreadableText.Count(model);
+        if (count == 0 || resourcesReleased || session != model) return;
+        await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (resourcesReleased || session != model) return;
+        var notice = FileNotices.UnreadableCharacters(count); notice.Owner = this; notice.ShowDialog();
+        if (notice.Choice == 0 && UnreadableText.First(model) is { } first) await NavigateToAsync(new(first.Block, SearchPanel.Text, first.Offset));
+        session.Status = $"원본을 읽지 못한 자리 {count}군데 · ■ 를 찾아 직접 입력하세요 (Ctrl+F로 ■ 검색)";
     }
 
     private static async Task CacheOriginalAsync(DocumentSession model, RemotePage page, CancellationToken ct)

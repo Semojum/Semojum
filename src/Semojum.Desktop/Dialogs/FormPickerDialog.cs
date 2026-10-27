@@ -25,14 +25,8 @@ public sealed class FormPickerDialog : CompactDialog
         DockPanel.SetDock(title, Dock.Top); panel.Children.Add(title);
         ChoicesList.ItemsSource = forms; ChoicesList.DisplayMemberPath = nameof(BrailleForm.Name); ChoicesList.SelectedItem = selected;
         ChoicesList.BorderThickness = new(0); ChoicesList.Margin = new(3, 8, 3, 6); ChoicesList.Padding = new(0);
-        // The default ListBox template pads its border by 1px, which pushed six 24px rows past the viewport and showed a scrollbar.
-        var surface = new ControlTemplate(typeof(ListBox));
-        var scroll = new FrameworkElementFactory(typeof(ScrollViewer));
-        scroll.SetValue(ScrollViewer.FocusableProperty, false);
-        scroll.SetValue(ScrollViewer.VerticalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
-        scroll.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
-        scroll.AppendChild(new FrameworkElementFactory(typeof(ItemsPresenter)));
-        surface.VisualTree = scroll; ChoicesList.Template = surface;
+        // The default template's 1px padding pushed six 24px rows past the viewport and showed a scrollbar.
+        StripListPadding(ChoicesList);
         ChoicesList.ItemContainerStyle = (Style)FindResource("FormChoice"); panel.Children.Add(ChoicesList);
         void Accept() { if (Selected is not null) DialogResult = true; }
         ChoicesList.PreviewMouseLeftButtonUp += (_, e) =>

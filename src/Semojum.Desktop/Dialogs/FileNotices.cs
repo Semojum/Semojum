@@ -13,6 +13,7 @@ internal static class FileNotices
         var dialog = new NoticeDialog($"{total}쪽 중 {failed.Length}쪽을 변환하지 못했습니다.", $"{string.Join(" · ", failed)}쪽입니다. 나머지 {succeeded}쪽은 사용할 수 있습니다.", ["실패한 쪽 다시 변환", "그대로 열기"]);
         DisableResume(dialog, "실패한 쪽만 다시 변환하는 API는 현재 지원되지 않습니다."); return dialog;
     }
+    internal static NoticeDialog UnreadableCharacters(int count) => new($"원본에서 글을 읽지 못한 자리가 {count}군데 있습니다.", "■ 로 표시했습니다. 원본 이미지를 보고 직접 입력하십시오.", ["해당 위치로 이동", "확인"]);
     internal static NoticeDialog ConversionFailed() => new("변환하지 못했습니다.", "같은 파일로 다시 시도하거나 변환 설정을 바꾸십시오.", ["다시 시도", "변환 설정", "문의하기"], error: true, height: 190);
     internal static NoticeDialog Disconnected(int completed)
     {

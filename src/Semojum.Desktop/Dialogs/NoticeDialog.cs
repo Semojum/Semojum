@@ -16,7 +16,7 @@ public class NoticeDialog : Window
     private static readonly Dictionary<string, double> DesignWidths = new()
     {
         ["비밀번호 찾기"] = 103, ["읽기 전용으로 열기"] = 134, ["다른 이름으로 저장"] = 134, ["실패한 쪽 다시 변환"] = 140,
-        ["그대로 열기"] = 91, ["크레딧 구매"] = 91, ["오프라인으로 계속"] = 127, ["범위 다시 지정"] = 110,
+        ["그대로 열기"] = 91, ["크레딧 구매"] = 91, ["오프라인으로 계속"] = 127, ["범위 다시 지정"] = 110, ["해당 위치로 이동"] = 122,
     };
     protected StackPanel MessageBody { get; } = new();
     internal string MessageText { get; }

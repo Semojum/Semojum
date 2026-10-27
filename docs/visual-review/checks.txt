@@ -69,6 +69,8 @@ PASS QA4 job statuses use user-facing labels
 PASS QA4 footer manager has start, alignment and content columns
 PASS Memo author avatar renders the downloaded Figma SVG resource
 PASS Figma 4874 read-only notice names the lock or permission cause in one line each
+PASS Figma 4844 unreadable spots count ■ markers outside blocked blocks and locate the first one
+PASS Figma 4844 unreadable-character notice defaults to 해당 위치로 이동 at 122px
 PASS Merge confirmation Escape cancels without authorizing manual-braille replacement
 PASS Merge confirmation retains the existing keep-manual-braille option
 PASS Partial conversion cannot request unsupported resume and keeps completed pages through its default action

@@ -24,7 +24,11 @@ internal static class WindowsSmoke
         }
         window.WindowState = WindowState.Normal; window.Width = 1440; window.Height = 1000;
         window.PageEditor.Editor.Focus();
+        // Figma 1:112 shows lines 2–3 selected with the caret at the start of line 4 (the visible panel is the continuous page editor).
+        var mainDocument = window.PageEditor.Editor.Document;
+        if (mainDocument.LineCount >= 4) window.PageEditor.FollowActive(mainDocument.GetLineByNumber(2).Offset, mainDocument.GetLineByNumber(4).Offset - mainDocument.GetLineByNumber(2).Offset);
         await RenderAsync(window, Path.Combine(directory, "01-main.png"));
+        window.PageEditor.FollowActive(0, 0);
         Check(window.PageEditor.Editor.ActualWidth > 250 && window.Braille.ActualWidth > 250, "Three-panel layout has usable editor widths");
         Check(window.LineStrip.ActualHeight == 64 && Math.Abs(window.LineStrip.ActualWidth - window.PanelGrid.ActualWidth) < 2,
             "Figma line translation strip spans all panels at 64px");

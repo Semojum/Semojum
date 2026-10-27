@@ -194,10 +194,13 @@
     <Style x:Key="HelpTabs" TargetType="TabControl">
       <Setter Property="Background" Value="#FAFAFA"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">
-        <Border Background="{TemplateBinding Background}" BorderBrush="#D6D6D6" BorderThickness="0,0,1,0"><DockPanel>
-          <TabPanel DockPanel.Dock="Top" Height="32" Margin="12,0,0,0" IsItemsHost="True"/>
-          <ContentPresenter ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
-        </DockPanel></Border>
+        <Grid Background="{TemplateBinding Background}">
+          <Border Width="1" HorizontalAlignment="Right" Background="#D6D6D6"/>
+          <DockPanel>
+            <TabPanel DockPanel.Dock="Top" Height="32" Margin="12,0,0,0" IsItemsHost="True"/>
+            <ContentPresenter ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
+          </DockPanel>
+        </Grid>
       </ControlTemplate></Setter.Value></Setter>
       <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="TabItem">
         <Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="0,11,0,0"/><Setter Property="Height" Value="32"/><Setter Property="FontWeight" Value="SemiBold"/>

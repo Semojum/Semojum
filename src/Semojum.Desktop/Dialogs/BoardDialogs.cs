@@ -186,7 +186,8 @@ public sealed class NotificationsDialog : CompactDialog
 {
     public NotificationsDialog(BoardClient client, string workInfo) : base("알림", 400, 230)
     {
-        var list = new ListBox { Margin = new(16, 40, 16, 12), BorderThickness = new(0), Padding = new(0), Background = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        var list = new ListBox { Margin = new(16, 38, 16, 12), BorderThickness = new(0), Padding = new(0), Background = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        StripListPadding(list);
         var itemStyle = new Style(typeof(ListBoxItem)); itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0))); itemStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
         itemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch)); list.ItemContainerStyle = itemStyle;
         list.ItemTemplate = new DataTemplate { VisualTree = new FrameworkElementFactory(typeof(NotificationView)) }; Body(list);
@@ -202,11 +203,11 @@ public sealed class NotificationView : ContentControl
     public NotificationView() => DataContextChanged += (_, _) =>
     {
         if (DataContext is not BoardNotification item) return;
-        var row = new DockPanel { Height = 47 };
-        row.Children.Add(new ContentControl { Content = FindResource("Icon.note"), Width = 16, Height = 16, Margin = new(0, 2, 8, 0), VerticalAlignment = VerticalAlignment.Top });
+        var row = new DockPanel { Height = 42 };
+        row.Children.Add(new ContentControl { Content = FindResource("Icon.note"), Width = 16, Height = 16, Margin = new(0, 4, 8, 0), VerticalAlignment = VerticalAlignment.Top });
         var text = new StackPanel(); row.Children.Add(text);
         text.Children.Add(new TextBlock { Text = $"{item.PostId}. {item.Title}", FontWeight = item.Read ? FontWeights.Normal : FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
-        text.Children.Add(new TextBlock { Text = $"운영자 답변 {item.AnswerCount}건 · {item.LastAnsweredAt}", Foreground = (Brush)FindResource("Muted"), Margin = new(0, 2, 0, 0) });
-        Content = new Border { BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = row };
+        text.Children.Add(new TextBlock { Text = $"운영자 답변 {item.AnswerCount}건 · {item.LastAnsweredAt}", Foreground = (Brush)FindResource("Muted"), Margin = new(0, 3, 0, 0) });
+        Content = new Border { BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Margin = new(0, 0, 0, 5), Child = row };
     };
 }

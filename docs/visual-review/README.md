@@ -1,6 +1,6 @@
 # Figma / 실제 앱 화면 비교
 
-2026-10-28 후속 실행본(app-pass27). 왼쪽 Figma, 오른쪽 실제 WPF 캡처를 같은 픽셀 크기로 배치했다. 59개 설계 중 54개 대응 화면이 있다. 캡처는 `--smoke-test`에서 창을 96 DPI로 배치해 Figma 1x PNG와 1:1로 비교한다(디스플레이 배율 150%에서도 동일). 메뉴는 실제 팝업 6개를 각각 캡처한 뒤 합성했고, 크레딧 안내는 전체 앱 캡처에서 해당 부분을 잘랐다. 메모·답글은 Figma 예시 데이터를 같은 컴포넌트에 넣어 캡처했다.
+2026-10-28 후속 실행본(app-pass27). 왼쪽 Figma, 오른쪽 실제 WPF 캡처를 같은 픽셀 크기로 배치했다. 59개 설계 중 55개 대응 화면이 있다(이번에 인식 불가 문자 안내가 추가됐다). 캡처는 `--smoke-test`에서 창을 96 DPI로 배치해 Figma 1x PNG와 1:1로 비교한다(디스플레이 배율 150%에서도 동일). 메뉴는 실제 팝업 6개를 각각 캡처한 뒤 합성했고, 크레딧 안내는 전체 앱 캡처에서 해당 부분을 잘랐다. 메모·답글·꼬리말 관리·점역 양식·알림은 Figma 예시 데이터를 같은 컴포넌트에 넣어 캡처했고, 메인 편집기는 Figma와 같은 선택·캐럿 상태로 캡처했다.
 
 문서 본문·선택·계정·사용량 등은 테스트 데이터다. 전체 크기가 같은 52개도 픽셀 일치를 뜻하지 않는다. 범위 저장·페이지 설정의 높이 증가는 사용자 승인 예외다. 이번에 수정한 화면과 남은 점은 [후속 기록](../figma-alignment-2026-10-28-followup.md)과 [작업 목록](../remaining-work.md)을 참고한다.
 
@@ -55,7 +55,7 @@
 | [207:4795](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2276) | 변환 실패 | 520×190 / 520×190 | [나란히 보기](207-4795.png) |
 | [207:4812](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2293) | 연결 끊김 | 520×180 / 520×180 | [나란히 보기](207-4812.png) |
 | [207:4827](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2308) | 수동 점자 덮어쓰기 | 520×190 / 520×190 | [나란히 보기](207-4827.png) |
-| [207:4844](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2325) | 인식 불가 문자 | 520×180 / — | 대응 화면 미구현 |
+| [207:4844](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2325) | 인식 불가 문자 | 520×180 / 520×180 | [나란히 보기](207-4844.png) |
 | [207:4859](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2340) | 엔진 응답 오류 | 440×180 / 440×180 | [나란히 보기](207-4859.png) |
 | [207:4874](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2355) | 읽기 전용 파일 | 520×180 / 520×180 | [나란히 보기](207-4874.png) |
 | [207:4889](https://www.figma.com/design/GTexdXykSRobKPUCDjqnxB?node-id=1-2370) | 블록 합치기 | 440×180 / 440×180 | [나란히 보기](207-4889.png) |
@@ -68,7 +68,7 @@
 
 ## 검사 로그
 
-- [WPF 157개](checks.txt)
+- [WPF 159개](checks.txt)
 - [코어·동봉 엔진 78/78 passed](core.txt)
 - [화면별 반영·남은 차이](screen-status.json)
 
