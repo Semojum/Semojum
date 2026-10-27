@@ -29,8 +29,8 @@ internal static class IntegrationChecks
         yield return ("Braille folding respects syllables, empty lines and note indicators", Folding);
         yield return ("Tags distinguish pairs, singletons and layout-only footer", Tags);
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_PYTHON") is { Length: > 0 } python)
-            yield return ("Real v3.4.31 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
-        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.31 Python executable");
+            yield return ("Real v3.4.35 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
+        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.35 Python executable");
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_EXECUTABLE") is { Length: > 0 } executable)
             yield return ("Packaged engine grades, table drafts and BRF round trip", () => RealEngine(executable, true));
     }
@@ -209,9 +209,9 @@ internal static class IntegrationChecks
         session.ServerPages[1] = [new("t1", true)];
         var snapshot = SmjFile.Snapshot(session); session.ActiveBlock!.Source = "changed";
         var saved = await client.SaveAsync(snapshot); True(!saved.Complete); Equal(1, saved.Plan.ExpectedPages); Equal(1, saves);
-        session.OwnerLoginId = "someone";
+        session.JobStatus = "IN_PROGRESS";
         await Reject<InvalidOperationException>(() => client.SaveAsync(SmjFile.Snapshot(session))); Equal(1, saves);
-        session.OwnerLoginId = "test"; session.ActiveBlock.ServerId = null;
+        session.JobStatus = "COMPLETED"; session.ActiveBlock.ServerId = "invalid/id";
         await Reject<InvalidOperationException>(() => client.SaveAsync(SmjFile.Snapshot(session))); Equal(1, saves);
     }
 
@@ -355,7 +355,12 @@ internal static class IntegrationChecks
         await using var sidecar = new BrailleSidecar(new(python, packaged ? [] : ["-u", Path.Combine(AppContext.BaseDirectory, "engine-adapter", "engine-entry.py")]));
         var engine = new LocalBrailleEngine(sidecar);
         var grade2 = await engine.TranslateElementAsync("가", new(), new()); Equal("⠫", grade2.Cells.Trim('⠀'));
-        Equal("3.4.31", sidecar.EngineVersion);
+        Equal("3.4.35", sidecar.EngineVersion);
+        var spaced = await engine.TranslateElementAsync("  가나다", new(), new());
+        var tagged = await engine.TranslateElementAsync("<!2칸>가나다", new(), new()); Equal(tagged.Cells, spaced.Cells);
+        var evidence = await engine.TranslateElementAsync("<!주>설명<!/주>", new(), new());
+        True(evidence.RuleTrail?.Any(r => r.Title.Length > 0 && r.Excerpt.Length > 0 && r.ColumnEnd > r.ColumnStart) == true);
+
         var grade1 = await engine.TranslateElementAsync("가", new(), new(KoreanGrade1: true)); Equal("⠈⠣", grade1.Cells.Trim('⠀'));
         var dropped = await engine.TranslateElementAsync("가▶나", new(), new()); True(dropped.NeedsReview); Equal("▶", dropped.Dropped[0].Text);
         var table = await engine.TranslateElementAsync("", new(Type: "table", TableSource: "<!표>\n<!행><!칸>구분<!칸>가<!/행>\n<!행><!칸>나<!칸>다<!/행>\n<!/표>", RenderMode: "table_grid"), new());

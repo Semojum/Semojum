@@ -4,22 +4,24 @@ using System.Text.Json;
 
 namespace Semojum.Core;
 
-public sealed record LineMemo(string LocalId, long? ServerId, string Panel, int LineIndex, string LineText, string Body, DateTimeOffset CreatedAt, bool Resolved = false);
+public sealed record MemoReply(string? Author, string Body, DateTimeOffset CreatedAt);
+public sealed record LineMemo(string LocalId, long? ServerId, string Panel, int LineIndex, string LineText, string Body, DateTimeOffset CreatedAt,
+    bool Resolved = false, string? Author = null, DateTimeOffset? ResolvedAt = null, MemoReply[]? Replies = null);
 public sealed record SmjBlock(int Id, string? ServerId, int Page, string Heading, string Source, string Braille,
     string Memo, bool HasManualBraille, BlockMetadata Metadata, BrailleTranslation? Translation, LineMemo[] Memos,
-    int SourceCaret = 0, int BrailleCaret = 0);
+    int SourceCaret = 0, int BrailleCaret = 0, string? ClientId = null);
 public sealed record OriginalAsset(string Entry, string FileName, long Length, string Sha256);
 public sealed record SmjManifest(string Format, int Version, string? JobId, string? OwnerLoginId, string JobStatus,
     PageLayout Layout, BrailleOptions Options, string FooterText, int? ActiveBlockId, SmjBlock[] Blocks, OriginalAsset[] Originals,
     Dictionary<int, string>? PageStatuses = null, Dictionary<int, OriginalPage>? OriginalPages = null, FooterRange[]? FooterRanges = null,
-    Dictionary<int, ServerBlockRecord[]>? ServerPages = null, Dictionary<int, QualityIssue[]>? QualityReports = null);
+    Dictionary<int, ServerBlockRecord[]>? ServerPages = null, Dictionary<int, QualityIssue[]>? QualityReports = null, bool? IsTextJob = null);
 public sealed record SmjSnapshot(SmjManifest Manifest, IReadOnlyDictionary<string, byte[]> Assets);
 
 /// <summary>Versioned, self-contained ZIP. All reading happens in memory; archive paths are never extracted.</summary>
 public static class SmjFile
 {
     public const string Format = "semojum-work";
-    public const int Version = 3;
+    public const int Version = 4;
     public const long MaximumExpandedBytes = 512L * 1024 * 1024;
     private const long MaximumManifestBytes = 64L * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -34,11 +36,11 @@ public static class SmjFile
             return new OriginalAsset(entry, pair.Key, bytes.LongLength, Convert.ToHexString(SHA256.HashData(bytes)));
         }).ToArray();
         var blocks = session.Blocks.Select(b => new SmjBlock(b.Id, b.ServerId, b.Page, b.Heading, b.Source, b.Braille,
-            b.Memo, b.HasManualBraille, b.Metadata, b.Translation, b.Memos.ToArray(), b.SourceCaret, b.BrailleCaret)).ToArray();
+            b.Memo, b.HasManualBraille, b.Metadata, b.Translation, b.Memos.ToArray(), b.SourceCaret, b.BrailleCaret, b.ClientId)).ToArray();
         var manifest = new SmjManifest(Format, Version, session.JobId, session.OwnerLoginId, session.JobStatus,
             session.Layout, session.Options, session.FooterText, session.ActiveBlock?.Id, blocks, originals,
             new(session.PageStatuses), new(session.OriginalPages), session.FooterRanges.ToArray(),
-            new(session.ServerPages), new(session.QualityReports));
+            new(session.ServerPages), new(session.QualityReports), session.IsTextJob);
         // Detach nested arrays from live editor/engine state before awaiting disk or network I/O.
         manifest = JsonSerializer.Deserialize<SmjManifest>(JsonSerializer.SerializeToUtf8Bytes(manifest, Json), Json)!;
         Validate(manifest);
@@ -112,11 +114,11 @@ public static class SmjFile
         return model;
     }
 
-    private static DocumentSession Restore(SmjManifest manifest, string title)
+    internal static DocumentSession Restore(SmjManifest manifest, string title)
     {
         var model = new DocumentSession
         {
-            Title = title, JobId = manifest.JobId, OwnerLoginId = manifest.OwnerLoginId, JobStatus = manifest.JobStatus,
+            Title = title, JobId = manifest.JobId, OwnerLoginId = manifest.OwnerLoginId, JobStatus = manifest.JobStatus, IsTextJob = manifest.IsTextJob,
             Layout = manifest.Layout, Options = manifest.Options, FooterText = manifest.FooterText, FooterRanges = manifest.FooterRanges ?? []
         };
         foreach (var pair in manifest.PageStatuses ?? []) model.PageStatuses.Add(pair.Key, pair.Value);
@@ -128,7 +130,7 @@ public static class SmjFile
         {
             var block = new EditorBlock
             {
-                Id = b.Id, ServerId = b.ServerId, Page = b.Page, Heading = b.Heading, Source = b.Source, Braille = b.Braille,
+                Id = b.Id, ServerId = b.ServerId, ClientId = b.ClientId ?? "app_" + Guid.NewGuid().ToString("N"), Page = b.Page, Heading = b.Heading, Source = b.Source, Braille = b.Braille,
                 Memo = b.Memo, HasManualBraille = b.HasManualBraille, Metadata = b.Metadata, Translation = b.Translation,
                 SourceCaret = Math.Clamp(b.SourceCaret, 0, b.Source.Length), BrailleCaret = Math.Clamp(b.BrailleCaret, 0, b.Braille.Length),
                 State = b.HasManualBraille ? "직접 수정" : b.Translation?.NeedsReview == true ? "검토 필요" : "저장된 점자"
@@ -142,7 +144,7 @@ public static class SmjFile
 
     private static void Validate(SmjManifest m)
     {
-        if (m.Format != Format || m.Version is not (1 or 2 or Version)) throw new InvalidDataException("지원하지 않는 .smj 형식 또는 버전입니다.");
+        if (m.Format != Format || m.Version is not (1 or 2 or 3 or Version)) throw new InvalidDataException("지원하지 않는 .smj 형식 또는 버전입니다.");
         if (m.Layout is null || m.Options is null || m.FooterText is null || m.Blocks is not { Length: > 0 } || m.Originals is null)
             throw new InvalidDataException("작업 필수 정보가 없습니다.");
         m.Layout.Validate();
@@ -152,7 +154,8 @@ public static class SmjFile
             throw new InvalidDataException("서버 블록 기록 또는 품질 보고서가 올바르지 않습니다.");
         if (m.Options.LineBreakUnit is not ("syllable" or "word")) throw new InvalidDataException("알 수 없는 줄바꿈 옵션입니다.");
         if (m.Blocks.Any(b => b is null || b.Id < 1 || b.Page < 1 || b.Heading is null || b.Source is null || b.Braille is null
-            || b.Memo is null || b.Metadata is null || b.Memos is null || b.Memos.Any(x => x is null || x.Panel is not ("TEXT" or "BRAILLE") || x.LineIndex < 0 || x.Body is null))
+            || b.Memo is null || b.Metadata is null || b.Memos is null || b.Memos.Any(x => x is null || x.Panel is not ("TEXT" or "BRAILLE") || x.LineIndex < 0 || x.Body is null
+                || (x.Replies ?? []).Any(r => r is null || string.IsNullOrWhiteSpace(r.Body))))
             || m.Blocks.Select(b => b.Id).Distinct().Count() != m.Blocks.Length)
             throw new InvalidDataException("문서 블록 또는 메모가 올바르지 않습니다.");
         long total = 0;

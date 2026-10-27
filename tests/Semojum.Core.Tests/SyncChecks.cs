@@ -4,13 +4,13 @@ using System.Text.Json;
 using Semojum.Core;
 using Semojum.Core.Integration;
 
-/// <summary>Client-side checks for the C-01..C-04 handoff items against the verified BE 5d8dda0a contract (fake HTTP, not production).</summary>
+/// <summary>Client-side checks for the C-01..C-04 handoff items against the 2026-10-21 V3.1 contract (fake HTTP, not production).</summary>
 internal static class SyncChecks
 {
     public static IEnumerable<(string Name, Func<Task> Run)> Tests()
     {
-        yield return ("Save plan keeps blocked blocks and memos, skips placeholders, empties deleted pages and never invents braille ids", SavePlan);
-        yield return ("Save rejects new blocks and duplicate ids before sending, and confirms only accepted pages", SaveGuards);
+        yield return ("Save plan keeps blocked blocks and memos, skips placeholders, empties deleted pages and pairs the first braille by stable id", SavePlan);
+        yield return ("Save accepts stable new block ids, rejects duplicate ids and confirms only accepted pages", SaveGuards);
         yield return ("Job status separates finished, succeeded, failed and remaining pages without double counting", Progress);
         yield return ("Quality report survives page parsing, unknown types, unlinked ids and SMJ v3 round trip", QualityReport);
         yield return ("Layout values the server cannot keep are omitted and reported instead of rewritten", LayoutContract);
@@ -55,14 +55,14 @@ internal static class SyncChecks
         var first = plan.Pages[0];
         Equal("t1,t2", string.Join(",", first.Text!.Select(t => t.Id)));
         Equal(0, first.Text![1].Contents.Length);
-        Equal("t1", first.Braille!.Single().Id); Equal("⠫", first.Braille![0].Contents[0]);
+        Equal("t1,t2", string.Join(",", first.Braille!.Select(b => b.Id))); Equal("⠫", first.Braille![0].Contents[0]);
         Equal("t2", first.Memos!.Single().ElementId); Equal(7L, first.Memos![0].MemoId); Equal("2026-10-14T12:00:00", first.Memos![0].CreatedAt);
-        True(plan.Pages[1].Text!.Single().Id == "t3" && plan.Pages[1].Braille is null && plan.Pages[1].Memos!.Length == 0);
+        True(plan.Pages[1].Text!.Single().Id == "t3" && plan.Pages[1].Braille!.Single().Id == "t3" && plan.Pages[1].Memos!.Length == 0);
         var emptied = plan.Pages[2];
         True(emptied.Text!.Length == 0 && emptied.Braille!.Length == 0 && emptied.Memos!.Length == 0);
-        True(plan.Pages[3].Braille is null);
-        Equal(1, plan.EmptiedPages); Equal(1, plan.SkippedPlaceholderPages); Equal(1, plan.LocalBrailleBlocks); Equal(1, plan.LocalMemoStates);
-        True(plan.LocalOnly.Any(n => n.Contains("빈 쪽")) && plan.LocalOnly.Any(n => n.Contains("해결 상태")) && plan.LocalOnly.Any(n => n.Contains("실패 표시 블록의 메모")));
+        Equal("t6", plan.Pages[3].Braille!.Single().Id);
+        Equal(1, plan.EmptiedPages); Equal(1, plan.SkippedPlaceholderPages); Equal(0, plan.LocalBrailleBlocks); Equal(0, plan.LocalMemoStates);
+        True(plan.LocalOnly.Any(n => n.Contains("실패 표시 블록의 메모")));
         // The request body carries null for untouched panels and camelCase fields the server reads.
         string? body = null;
         using var http = new HttpClient(new Handler(async request =>
@@ -76,14 +76,14 @@ internal static class SyncChecks
         using var json = JsonDocument.Parse(body!);
         var pages = json.RootElement.GetProperty("pages");
         Equal(4, pages.GetArrayLength());
-        Equal(JsonValueKind.Null, pages[1].GetProperty("braille").ValueKind);
+        Equal("t3", pages[1].GetProperty("braille")[0].GetProperty("id").GetString());
         Equal("t2", pages[0].GetProperty("memos")[0].GetProperty("elementId").GetString());
-        True(!pages[0].GetProperty("memos")[0].TryGetProperty("resolved", out _));
+        True(pages[0].GetProperty("memos")[0].GetProperty("resolved").GetBoolean());
         True(!result.Complete); Equal(4, result.Plan.ExpectedPages);
         JobClient.ApplySaved(session, result);
-        Equal("t1:True,t2:False", string.Join(",", session.ServerPages[1].Select(r => $"{r.Id}:{r.HasBraille}")));
+        Equal("t1:True,t2:True", string.Join(",", session.ServerPages[1].Select(r => $"{r.Id}:{r.HasBraille}")));
         Equal("t4:True", string.Join(",", session.ServerPages[4].Select(r => $"{r.Id}:{r.HasBraille}")));
-        Equal("t6:False", string.Join(",", session.ServerPages[6].Select(r => $"{r.Id}:{r.HasBraille}")));
+        Equal("t6:True", string.Join(",", session.ServerPages[6].Select(r => $"{r.Id}:{r.HasBraille}")));
         // A fully successful retry of the emptied page clears its record.
         JobClient.ApplySaved(session, result with { SavedPages = 4, FailedPages = [] });
         Equal(0, session.ServerPages[4].Length);
@@ -93,8 +93,10 @@ internal static class SyncChecks
     {
         var session = MixedDocument();
         session.Add(new EditorBlock { Id = 9, Page = 5, Source = "새 블록" });
-        var fresh = await Rejected(() => Task.FromResult(JobClient.PlanSave(SmjFile.Snapshot(session).Manifest)));
-        True(fresh.Message.Contains("B-01") && fresh.Message.Contains("5쪽"));
+        var fresh = JobClient.PlanSave(SmjFile.Snapshot(session).Manifest);
+        var added = fresh.Pages.Single(p => p.PageNo == 5);
+        Equal(added.Text![0].Id, added.Braille![0].Id);
+        True(added.Text[0].Id!.StartsWith("app_"));
         session.Blocks.Remove(session.Blocks.Single(b => b.Id == 9));
         session.Add(new EditorBlock { Id = 10, Page = 1, ServerId = "t1", Source = "중복" });
         var duplicate = await Rejected(() => Task.FromResult(JobClient.PlanSave(SmjFile.Snapshot(session).Manifest)));
@@ -162,7 +164,7 @@ internal static class SyncChecks
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".smj");
         try
         {
-            var snapshot = SmjFile.Snapshot(model); Equal(3, snapshot.Manifest.Version);
+            var snapshot = SmjFile.Snapshot(model); Equal(SmjFile.Version, snapshot.Manifest.Version);
             await SmjFile.SaveAsync(path, snapshot); var loaded = await SmjFile.LoadAsync(path);
             Equal(3, loaded.QualityReports[3].Length); Equal("deleted", loaded.QualityReports[3][1].ElementId);
             Equal("t1:True,t2:False", string.Join(",", loaded.ServerPages[3].Select(r => $"{r.Id}:{r.HasBraille}")));
@@ -175,7 +177,8 @@ internal static class SyncChecks
             var old = await SmjFile.LoadAsync(path);
             Equal(0, old.ServerPages.Count); Equal(0, old.QualityReports.Count);
             var plan = JobClient.PlanSave(SmjFile.Snapshot(old).Manifest);
-            True(plan.Pages.Single().Braille is null && plan.LocalBrailleBlocks == 1);
+            Equal("t1,t2", string.Join(",", plan.Pages.SelectMany(p => p.Braille!).Select(b => b.Id)));
+            Equal(0, plan.LocalBrailleBlocks);
         }
         finally { File.Delete(path); }
     }

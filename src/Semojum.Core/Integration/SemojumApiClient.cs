@@ -13,7 +13,10 @@ public sealed class SemojumApiException(HttpStatusCode status, string code, stri
     public JsonElement? Details { get; } = details;
 }
 
-public sealed record AccountIdentity(string LoginId, string Role, string? AdminScope);
+public sealed record AccountIdentity(string LoginId, string Role, string? AdminScope, string? Alias = null)
+{
+    public string DisplayName => string.IsNullOrWhiteSpace(Alias) ? LoginId : Alias;
+}
 
 /// <summary>V3.1 envelope and in-memory authentication. The caller owns the HttpClient.</summary>
 public sealed class SemojumApiClient
@@ -24,7 +27,7 @@ public sealed class SemojumApiClient
     private readonly SemaphoreSlim authGate = new(1, 1);
     private Session? session;
     private sealed record Session(Guid Id, AccountIdentity Account, string AccessToken, string RefreshToken);
-    private sealed record LoginResult(string AccessToken, string RefreshToken, string Role, string? AdminScope);
+    private sealed record LoginResult(string AccessToken, string RefreshToken, string Role, string? AdminScope, string? Alias);
     private sealed record RefreshResult(string AccessToken);
     public AccountIdentity? Account => Volatile.Read(ref session)?.Account;
 
@@ -48,7 +51,7 @@ public sealed class SemojumApiClient
             var tokens = result.Deserialize<LoginResult>(Json) ?? throw InvalidResponse();
             if (string.IsNullOrWhiteSpace(tokens.AccessToken) || string.IsNullOrWhiteSpace(tokens.RefreshToken)
                 || tokens.Role is not ("ROLE_USER" or "ROLE_ADMIN" or "ROLE_ORG_ADMIN")) throw InvalidResponse();
-            var account = new AccountIdentity(loginId, tokens.Role, tokens.AdminScope);
+            var account = new AccountIdentity(loginId, tokens.Role, tokens.AdminScope, tokens.Alias);
             Volatile.Write(ref session, new Session(Guid.NewGuid(), account, tokens.AccessToken, tokens.RefreshToken));
             return account;
         }

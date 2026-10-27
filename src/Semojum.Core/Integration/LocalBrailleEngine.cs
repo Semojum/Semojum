@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace Semojum.Core.Integration;
 
-/// <summary>Wire adapter for Semojum/braille v3.4.31, commit 9b6434996bdeffa2536551d20cf2bdbcb82ecab5.</summary>
+/// <summary>Wire adapter for Semojum/braille v3.4.35, commit 74f76d15f3ac6f87c52d75a25882cc580508e51f.</summary>
 public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptions>? options = null) : ITranslationEngine
 {
     private static readonly JsonSerializerOptions Json = new()
@@ -33,9 +33,15 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 translated.Add(Regex.IsMatch(piece, "^" + layoutPattern + "$") ? BrailleTranslation.Plain(piece) :
                     await TranslateElementAsync(piece, metadata, settings, cancellationToken));
             var compositeCells = string.Join("\n", translated.Select(t => t.Cells)); var offset = 0; var breaks = new List<int>();
-            foreach (var t in translated) { breaks.AddRange(t.Breaks.Select(b => offset + b)); offset += t.Cells.Length + 1; }
+            var trail = new List<RuleEvidence>();
+            foreach (var t in translated)
+            {
+                breaks.AddRange(t.Breaks.Select(b => offset + b));
+                trail.AddRange((t.RuleTrail ?? []).Select(r => r with { LineNo = 0, ColumnStart = offset + r.ColumnStart, ColumnEnd = offset + r.ColumnEnd }));
+                offset += t.Cells.Length + 1;
+            }
             return new(compositeCells, breaks.ToArray(), translated.SelectMany(t => t.Dropped).ToArray(), translated.Any(t => t.Blocked), [],
-                UnknownTags: translated.SelectMany(t => t.UnknownTags ?? []).Distinct().ToArray());
+                UnknownTags: translated.SelectMany(t => t.UnknownTags ?? []).Distinct().ToArray(), RuleTrail: trail.ToArray());
         }
         JsonElement response;
         if (metadata.Type == "table" && !text.Contains("<!표>", StringComparison.Ordinal))
@@ -68,7 +74,8 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         return new(cells.GetString()!, ReadArray<int>(response, "breaks"), ReadArray<DroppedCharacter>(response, "dropped"),
             response.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
             ReadArray<BrailleDraft>(response, "drafts"), response.TryGetProperty("render_mode", out var mode) ? mode.GetString() : null,
-            UnknownTags: ReadArray<string>(response, "unknown_tags"));
+            UnknownTags: ReadArray<string>(response, "unknown_tags"),
+            RuleTrail: response.TryGetProperty("rule_trail", out var rules) && rules.ValueKind == JsonValueKind.Array ? rules.EnumerateArray().Select(AppliedRules.Read).ToArray() : null);
     }
 
     public async Task<string> DecodeAsync(string cells, BrailleOptions settings, CancellationToken cancellationToken = default)

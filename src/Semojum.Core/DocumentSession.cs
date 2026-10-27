@@ -12,6 +12,8 @@ public sealed partial class EditorBlock : ObservableObject
     public string Label => $"{Id:00}  {Heading}";
     public string Heading { get; init; } = "";
     public string? ServerId { get; set; }
+    // Stable across snapshots, retries and SMJ transfers, including before the first server save.
+    public string ClientId { get; init; } = "app_" + Guid.NewGuid().ToString("N");
     [ObservableProperty] private BlockMetadata metadata = new();
     [ObservableProperty] private BrailleTranslation? translation;
     public ObservableCollection<LineMemo> Memos { get; } = [];
@@ -72,13 +74,16 @@ public sealed partial class DocumentSession : ObservableObject
     [ObservableProperty] private string status = "준비";
     [ObservableProperty] private ConversionProgress? progress;
     [ObservableProperty] private string creditNotice = "";
+    [ObservableProperty] private string errorNotice = "";
     [ObservableProperty] private PageLayout layout = new();
     [ObservableProperty] private BrailleOptions options = new();
     [ObservableProperty] private string footerText = "";
     [ObservableProperty] private FooterRange[] footerRanges = [];
     public string? JobId { get; set; }
     public string? OwnerLoginId { get; set; }
+    public bool? IsTextJob { get; set; }
     public string JobStatus { get; set; } = "COMPLETED";
+    public bool CancellationRequested { get; set; }
     public Dictionary<int, string> PageStatuses { get; } = [];
     public Dictionary<int, OriginalPage> OriginalPages { get; } = [];
     /// <summary>Blocks the server is known to hold per page (last read or last confirmed save). Drives deletion and braille-panel planning.</summary>
@@ -133,6 +138,7 @@ public sealed record QualityIssue(string Severity, string Type, string? ElementI
 /// </summary>
 public sealed record ConversionProgress(int Total, int Succeeded, int Failed, int Running, string Estimate)
 {
+    public string CompactLabel => $"{Total}쪽 중 {Finished}쪽 · {Estimate}";
     public int Finished => Math.Min(Total, Succeeded + Failed);
     public int Remaining => Math.Max(0, Total - Finished);
     public string Label => $"{Total}쪽 중 {Finished}쪽 처리 · 성공 {Succeeded} · 확인 필요 {Failed}"

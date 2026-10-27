@@ -41,7 +41,7 @@ internal static class RemainingChecks
             using (var writer = new StreamWriter(zip.CreateEntry("manifest.json").Open())) await writer.WriteAsync(json.ToJsonString());
             var loaded = await SmjFile.LoadAsync(path);
             Check(loaded.Blocks[0].Source == "이전 파일" && loaded.Layout.NumberRanges is null && loaded.FooterRanges.Length == 0);
-            var migrated = SmjFile.Snapshot(loaded); Check(migrated.Manifest.Version == SmjFile.Version && SmjFile.Version == 3);
+            var migrated = SmjFile.Snapshot(loaded); Check(migrated.Manifest.Version == SmjFile.Version && SmjFile.Version == 4);
             await SmjFile.SaveAsync(path, migrated); Check((await SmjFile.LoadAsync(path)).Blocks[0].Braille == "⠁");
         }
         finally { File.Delete(path); }
