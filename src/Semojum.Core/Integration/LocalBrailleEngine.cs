@@ -203,6 +203,16 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         static bool HasAlignment(SmjBlock b) => Regex.IsMatch(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>");
         static BrailleLineAlignment[]? AlignmentFor(SmjBlock b) => !b.HasManualBraille && b.Translation is { } t
             && t.SourceText == b.Source && t.Cells == b.Braille ? ValidateLineAlignment(b.Source, b.Braille, t.LineAlignment) : null;
+        static string SingleLineAlignment(SmjBlock b)
+        {
+            // The legacy composer supports block alignment. It is equivalent to line
+            // alignment only when both source and editable braille have exactly one line.
+            if (b.Source.IndexOfAny(['\r', '\n']) >= 0 || b.Braille.IndexOfAny(['\r', '\n']) >= 0
+                || b.Braille.Length == 0 || b.Braille.Any(c => c != ' ' && c is < '\u2800' or > '\u28ff')) return "";
+            var tags = Regex.Matches(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>");
+            if (tags.Count != 1 || Regex.Replace(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>", "").Trim().Length == 0) return "";
+            return tags[0].Groups[1].Value switch { "왼쪽" => "left", "가운데" => "center", "오른쪽" => "right", _ => "" };
+        }
         object Sources(IEnumerable<SmjBlock> blocks) => blocks.GroupBy(b => b.Page).Select(page => new
         {
             orig_page = page.Key,
@@ -214,8 +224,9 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 box_borders = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.BoxBorders : null,
                 corrected_text = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.CorrectedText : null,
                 question_lead = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.QuestionLead : null,
+                align = SingleLineAlignment(b),
                 line_alignments = AlignmentFor(b)?.Select(a => new { braille_start = a.BrailleStart, braille_end = a.BrailleEnd, align = a.Align }).ToArray(),
-                alignment_unknown = HasAlignment(b) && AlignmentFor(b) is null
+                alignment_unknown = HasAlignment(b) && AlignmentFor(b) is null && SingleLineAlignment(b).Length == 0
             }).ToArray()
         }).ToArray();
         var footers = new Dictionary<int, string>();
@@ -296,9 +307,9 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             ? unknown.Deserialize<int[]>() ?? snapshot.Blocks.Select(b => b.Id).ToArray()
             : snapshot.Blocks.Select(b => b.Id).ToArray();
         var alignmentProtocol = result.TryGetProperty("alignment_protocol", out var protocol) && protocol.TryGetInt32(out var version) && version == 1;
-        var alignmentUnknown = !alignmentProtocol ? snapshot.Blocks.Where(HasAlignment).Select(b => b.Id).ToArray() : result.TryGetProperty("alignment_unknown", out var unaligned)
-            ? unaligned.Deserialize<int[]>() ?? snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null).Select(b => b.Id).ToArray()
-            : snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null).Select(b => b.Id).ToArray();
+        var alignmentUnknown = !alignmentProtocol ? snapshot.Blocks.Where(b => HasAlignment(b) && SingleLineAlignment(b).Length == 0).Select(b => b.Id).ToArray() : result.TryGetProperty("alignment_unknown", out var unaligned)
+            ? unaligned.Deserialize<int[]>() ?? snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null && SingleLineAlignment(b).Length == 0).Select(b => b.Id).ToArray()
+            : snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null && SingleLineAlignment(b).Length == 0).Select(b => b.Id).ToArray();
         return new(brf, replaced, pages.Select((lines, i) => new ComposedPage(numbers[i], lines,
             maps[i].Select(row => row.Select(Address).ToArray()).ToArray(), ends[i].Select(Address).ToArray(), kinds[i])).ToArray(), spacingUnknown, alignmentUnknown);
     }

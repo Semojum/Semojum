@@ -9,6 +9,25 @@ internal static class LineAlignmentChecks
         if (string.IsNullOrEmpty(python)) { Console.WriteLine("SKIP line alignment: SEMOJUM_ENGINE_PYTHON is not set"); return; }
         var entry = Path.Combine(AppContext.BaseDirectory, "engine-adapter", "engine-entry.py");
         await using var sidecar = new BrailleSidecar(new(python, ["-u", entry])); var engine = new LocalBrailleEngine(sidecar);
+        var single = new EditorBlock { Id = 20, Page = 1, Source = "<!가운데정렬>나" };
+        if (await new TranslationCoordinator(engine).TranslateAsync(single, ManualEditDecision.Overwrite, TimeSpan.FromSeconds(20)) != TranslationOutcome.Applied)
+            throw new Exception("Single-line translation failed");
+        var singleDocument = new DocumentSession { Layout = new(Columns: 8, Lines: 4, PageNumbers: "출력 안 함", Footer: "출력 안 함", ShowSourcePageNumber: false, ShowBraillePageNumber: false) };
+        singleDocument.Add(single);
+        var singleResult = await engine.ComposeAsync(SmjFile.Snapshot(singleDocument).Manifest);
+        var singleBrf = await engine.ReadBrfAsync(singleResult.Brf);
+        if (singleBrf[0][0] != "⠀⠀⠀⠉") throw new Exception($"Single-line centered BRF did not retain its alignment: {singleBrf[0][0]}");
+        if (singleResult.AlignmentUnknownBlockIds is not { Length: 0 }) throw new Exception("An unambiguous single-line alignment was reported as unknown");
+        single.Source = "<!오른쪽정렬>나";
+        if (await new TranslationCoordinator(engine).TranslateAsync(single, ManualEditDecision.Overwrite, TimeSpan.FromSeconds(20)) != TranslationOutcome.Applied)
+            throw new Exception("Single-line right-aligned translation failed");
+        var right = await engine.ReadBrfAsync((await engine.ComposeAsync(SmjFile.Snapshot(singleDocument).Manifest)).Brf);
+        if (right[0][0] != "⠀⠀⠀⠀⠀⠀⠀⠉") throw new Exception($"Single-line right-aligned BRF is wrong: {right[0][0]}");
+        single.EditBraille("⠛");
+        var manualSingle = await engine.ComposeAsync(SmjFile.Snapshot(singleDocument).Manifest);
+        var manualBrf = await engine.ReadBrfAsync(manualSingle.Brf);
+        if (single.Braille != "⠛" || manualBrf[0][0] != "⠀⠀⠀⠀⠀⠀⠀⠛" || manualSingle.AlignmentUnknownBlockIds is not { Length: 0 })
+            throw new Exception("Single-line manual braille was changed or lost its right alignment");
         var source = "가\n<!가운데정렬>나\n<!오른쪽정렬>다";
         var block = new EditorBlock { Id = 1, Page = 1, Source = source };
         var outcome = await new TranslationCoordinator(engine).TranslateAsync(block, ManualEditDecision.Overwrite, TimeSpan.FromSeconds(20));
