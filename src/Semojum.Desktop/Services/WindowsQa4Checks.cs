@@ -17,6 +17,47 @@ internal static class WindowsQa4Checks
 {
     internal static async Task RunAsync(MainWindow owner, string directory, Action<bool, string> check, Func<Window, string, Task> render)
     {
+        await WindowsSearchSafetyChecks.RunAsync(check);
+        await WindowsDraftSafetyChecks.RunAsync(check, directory);
+        await WindowsNotificationChecks.RunAsync(check);
+        await WindowsPublicInquiryFieldsChecks.RunAsync(check);
+        await WindowsCreditRecoveryChecks.RunAsync(check, directory);
+        await WindowsUncertainRestartChecks.RunAsync(check, directory);
+        WindowsSixDotChecks.Run(owner, check);
+        WindowsImageOrderChecks.Run(owner, check);
+        await WindowsFileOpenChecks.RunAsync(directory, check);
+        await WindowsFileEdgeChecks.RunAsync(directory, check);
+        await WindowsDraftChecks.RunAsync(owner, check);
+        await WindowsDraftApplyChecks.RunAsync(directory, check);
+        await WindowsDraftDockChecks.RunAsync(check);
+        await WindowsDraftPendingChecks.RunAsync(check);
+        await WindowsTableDraftChecks.RunAsync(directory, check);
+        await WindowsTableDockChecks.RunAsync(directory, check);
+        await WindowsMathSafetyChecks.RunAsync(check, directory);
+        await WindowsMathDockChecks.RunAsync(check, directory);
+        await WindowsInlineMathChecks.RunAsync(check, directory);
+        await WindowsSelectionNavigationChecks.RunAsync(check, directory);
+        await WindowsSelectionLinksChecks.RunAsync(check, directory);
+        await WindowsSourceMapChecks.RunAsync(check);
+        await WindowsTabPanelChecks.RunAsync(directory, check);
+        await WindowsTabProgressChecks.RunAsync(check);
+        await WindowsUploadLimitChecks.RunAsync(directory, check);
+        await WindowsUploadSafetyChecks.RunAsync(directory, check);
+        await WindowsExportFileChecks.RunAsync(directory, check);
+        WindowsExportRangeChecks.Run(owner, check);
+        WindowsSpacingPreviewChecks.Run(owner, check);
+        await WindowsResponsiveChecks.RunAsync(check);
+        await WindowsLongDocumentChecks.RunAsync(directory, check);
+        await WindowsMemoDeleteChecks.RunAsync(directory, check);
+        await WindowsMemoRestoreChecks.RunAsync(directory, check);
+        await WindowsMemoHoverChecks.RunAsync(check);
+        await WindowsBoardLatencyChecks.RunAsync(check);
+        await WindowsUpdateSafetyChecks.RunAsync(check);
+        await WindowsRequiredUpdateChecks.RunAsync(check);
+        await WindowsAccountChecks.RunAsync(check);
+        WindowsAccountChecks.CheckLoginNetworkMessage(owner, check);
+        await WindowsAccountChecks.CheckLogoutCancellationAsync(check);
+        await WindowsAccountChecks.CheckRoleChangeAsync(check);
         await CheckViewCommandsAsync(owner, check);
         check(owner.Braille.Editor.Visibility == Visibility.Collapsed && owner.Braille.GridView.ActualHeight > 500,
             "Visual parity keeps one full-height editable braille surface without a duplicate editor");
@@ -86,6 +127,13 @@ internal static class WindowsQa4Checks
         using var handler = new Fixture(); using var http = new HttpClient(handler); var api = new SemojumApiClient(http);
         await api.LoginAsync("qa-ui", "fixture-only"); var settings = new SettingsClient(api);
         var forms = await settings.FormsAsync(); var defaults = await settings.DefaultsAsync();
+        var general = forms[0] with { FormId = "builtin:GENERAL_BOOK", Name = "일반 도서", Builtin = true };
+        var custom = forms[1];
+        var defaultFormOpen = new OpenDocumentDialog([forms[0], general, custom], defaults with { FormId = null });
+        check(defaultFormOpen.FormId == "builtin:GENERAL_BOOK", "Upload defaults to general book when no account form is saved");
+        var customFormOpen = new OpenDocumentDialog([forms[0], general, custom], defaults with { FormId = custom.FormId });
+        check(customFormOpen.FormId == custom.FormId && customFormOpen.Forms.Items.Cast<BrailleForm>().Any(f => f.FormId == custom.FormId),
+            "Upload retains the saved custom form and keeps individually named custom forms selectable");
         async Task Capture(Window window, string file, Action? assertions = null)
         {
             window.Owner = owner; window.Show();
@@ -139,12 +187,22 @@ internal static class WindowsQa4Checks
         owner.Welcome.Visibility = Visibility.Visible;
         await WindowsSmoke.CaptureComponentAsync(owner.WelcomeCard, owner, 420, 260, Path.Combine(directory, "58-empty-state.png"));
         owner.Welcome.Visibility = Visibility.Collapsed;
+        var goTo = new GoToDialog(SearchPanel.Text, (_, _) => Task.FromResult(""));
+        await Capture(goTo, "60-go-to-no-previous.png", () =>
+        {
+            var buttons = Children(goTo).OfType<Button>().Select(button => button.Content?.ToString()).ToArray();
+            check(buttons.Contains("이동") && buttons.Contains("닫기") && !buttons.Contains("이전"),
+                "Go-to dialog retains navigation and close without a previous button");
+        });
         var contextMenu = owner.PageEditor.Editor.ContextMenu; contextMenu.PlacementTarget = owner.PageEditor.Editor; contextMenu.IsOpen = true;
         try
         {
             await WindowsSmoke.RenderElementAsync(contextMenu, Path.Combine(directory, "59-editor-context.png"));
-            check(contextMenu.ActualWidth == 220 && contextMenu.ActualHeight == 154,
-                "Text context menu preserves the 220x154 layout with thin separator rules");
+            var labels = contextMenu.Items.OfType<MenuItem>().Select(item => item.Header?.ToString()).ToArray();
+            check(labels.SequenceEqual(new[] { "메모 추가", "대체 초안 보기", "적용 규정 보기" }),
+                "Text context menu retains memo, draft and rule actions without emphasis or page break");
+            check(!owner.Braille.GridView.ContextMenu.Items.OfType<MenuItem>().Any(item => item.Header?.ToString() == "쪽바꿈"),
+                "Braille context menu does not offer page break");
         }
         finally { contextMenu.IsOpen = false; }
         if (Environment.GetEnvironmentVariable("SEMOJUM_FONT_PROBE") == "1")
@@ -288,6 +346,13 @@ internal static class WindowsQa4Checks
             "Draft Escape preserves the previous selection and every alternative");
         await Capture(new NoticeDialog("변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 440), "55-unsaved-confirmation.png");
         await Capture(new AppliedRulesDialog(api, [new("( 여는 괄호", "⠦", "제23항", "문장부호", "소괄호표는 여는 때 ⠦, 닫는 때 ⠴로 적는다.", "한국 점자 규정", "symbol"), new("~ 물결표", "⠤", "제38항", "문장부호", "물결표는 ⠤로 적고 앞말과 뒷말에 붙여 쓴다.", "한국 점자 규정", "symbol")], false, "(가)~(라)", "⠦⠫⠴⠭⠦⠐⠣⠴", "7줄 3~12칸"), "51-applied-rules.png");
+        var blockEvidence = new AppliedRulesDialog(api,
+            [new("원본 자료 (원문)", "", "제1항", "원본 근거", "원본 변환의 근거", "규정", "fixture", true)],
+            false, "원본", "⠁", "1줄 1칸");
+        await Capture(blockEvidence, "51-applied-rules-block-evidence.png", () =>
+            check(Children(blockEvidence).OfType<TextBlock>().Any(t => t.IsVisible
+                && t.Text.Contains("점자 칸에 적용되는 위치는 확인되지 않았습니다", StringComparison.Ordinal)),
+                "Server evidence without verified coordinates is explicitly identified in the rules dialog"));
         var expandedRules = new RuleDialog(api, [], "", "", "음악") { Owner = owner }; expandedRules.Show();
         try { await render(expandedRules, Path.Combine(directory, "52-rules-expanded.png")); ((Expander)expandedRules.RuleResults.Children[0]).IsExpanded = true; await render(expandedRules, Path.Combine(directory, "52-rules-expanded.png")); } finally { expandedRules.Close(); }
         var keys = new SixDotDialog("F D S J K L", true, true);

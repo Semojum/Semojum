@@ -102,13 +102,13 @@ public partial class BraillePane : UserControl, IDisposable
     }
     private void GridBlockChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation) or nameof(EditorBlock.Source)) QueueGrid(); }
-    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; gridTimer.Stop(); gridTimer.Start(); }
+    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); gridTimer.Stop(); gridTimer.Start(); }
     public async void RefreshGrid()
     {
         if (session is null) return;
         if (gridBusy) { gridPending = true; return; }
         var owner = session; var version = owner.ChangeVersion;
-        gridBusy = true; GridView.IsReadOnly = true;
+        gridBusy = true; GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]);
         try
         {
             var composition = ComposeGridAsync is null ? null : await ComposeGridAsync(owner);
@@ -175,9 +175,9 @@ public partial class BraillePane : UserControl, IDisposable
     private void Hide_Click(object sender, RoutedEventArgs e) => HideRequested?.Invoke(this, EventArgs.Empty);
     private void HandleKeyDown(object sender, KeyEventArgs e)
     {
-        if (!SixDotEnabled || Editor.IsReadOnly || Keyboard.Modifiers != ModifierKeys.None) return;
-        var key = e.Key.ToString();
-        if (key.Length == 1 && chord.Press(key[0])) e.Handled = true;
+        if (!SixDotEnabled || Editor.IsReadOnly || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;
+        var key = SixDotKey.FromEvent(e);
+        if (key is { } c && chord.Press(c)) e.Handled = true;
         else if (e.Key == Key.Space)
         {
             e.Handled = true;
@@ -188,10 +188,10 @@ public partial class BraillePane : UserControl, IDisposable
     private void HandleKeyUp(object sender, KeyEventArgs e)
     {
         if (!SixDotEnabled) { chord.Reset(); return; }
-        var key = e.Key.ToString();
-        if (key.Length != 1 || !chord.IsMapped(key[0])) return;
+        var key = SixDotKey.FromEvent(e);
+        if (key is not { } c || !chord.IsMapped(c)) return;
         e.Handled = true;
-        var cell = chord.Release(key[0]);
+        var cell = chord.Release(c);
         if (cell is not null && !Editor.IsReadOnly) { if (sender == GridView) _ = GridView.InsertAsync(cell); else Editor.SelectedText = cell; }
     }
     private void Detach_Click(object sender, RoutedEventArgs e) => DetachRequested?.Invoke(this, EventArgs.Empty);

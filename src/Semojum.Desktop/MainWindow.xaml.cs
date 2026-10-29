@@ -53,22 +53,28 @@ public partial class MainWindow : Window
     }
 
     internal DocumentSession Session => session;
+    internal string? StartupFilePath { get; set; }
     internal EditorDocuments Documents => documents;
     internal BraillePane? DetachedPane => detachedPane;
     internal Window? DetachedWindow => detachedWindow;
     internal void PrepareSmokeShutdown() => allowClose = true;
 
-    internal MainWindow(bool smoke = false, bool testWithoutAccount = false)
+    internal MainWindow(bool smoke = false, bool testWithoutAccount = false, bool startEmpty = false)
     {
         this.smoke = smoke;
-        api = new(http); jobs = new(api);
+        api = new(http) { RefreshedIdentityAllowed = AutomaticLogin.IsEditorAllowed }; jobs = new(api);
         if (smoke) engine = new MockTranslationEngine();
         else { sidecar = EngineRuntime.Create(); engine = new LocalBrailleEngine(sidecar, () => session.Options); }
         translator = new(engine);
         InitializeComponent();
+        InitializeOriginalUpload();
         WindowFrame.Apply(this, editor: true);
         NativeIme.Attach(SourceEditor);
-        Loaded += (_, _) => WindowBounds.Fit(this);
+        Loaded += (_, _) =>
+        {
+            WindowBounds.Fit(this);
+            if (!smoke) WindowState = WindowState.Maximized;
+        };
         PopulateTagMenu();
         void StyleSeparators(ItemsControl menu)
         {
@@ -104,11 +110,18 @@ public partial class MainWindow : Window
         OriginalPanel.PreviewMouseDown += (_, _) => SetActiveEditor(null);
         ZoomPicker.ItemsSource = new[] { "75%", "100%", "125%", "150%", "175%", "200%" };
         ZoomPicker.SelectedItem = "100%";
-        SetSession(smoke ? DocumentSession.Sample() : BlankDocument(), null, smoke);
+        SetSession(smoke && !startEmpty ? DocumentSession.Sample() : BlankDocument(), null, true, showUpload: !smoke || startEmpty);
+        if (!smoke || startEmpty) { openDocument!.IsStartupPlaceholder = true; openDocument.PlaceholderVersion = session.ChangeVersion; }
         RestorePreferences(); ApplyAppearance(new());
-        if (!smoke && !testWithoutAccount) Loaded += async (_, _) => await StartAccountAsync();
+        if (!smoke && !testWithoutAccount) Loaded += async (_, _) =>
+        {
+            await StartAccountAsync();
+            if (IsVisible && api.Account is not null && StartupFilePath is { } path) await OpenStartupFileAsync(path);
+        };
         TimeoutToggle.Visibility = Visibility.Collapsed;
         BindCommonKeys(this);
+        InitializeDraftAvailability();
+        InitializeMathPreview();
         UpdatePanelLayout(); RefreshEditorStatus();
         Closed += (_, _) => _ = ReleaseResourcesAsync();
     }
@@ -120,7 +133,7 @@ public partial class MainWindow : Window
         model.IsDirty = false; return model;
     }
 
-    private void SetSession(DocumentSession model, string? path, bool showOriginal)
+    private void SetSession(DocumentSession model, string? path, bool showOriginal, bool showUpload = false)
     {
         if (resourcesReleased) return;
         switching = true;
@@ -128,13 +141,17 @@ public partial class MainWindow : Window
         {
             documentLifetime.Cancel(); documentLifetime.Dispose(); documentLifetime = new();
             if (session is not null) session.PropertyChanged -= SessionChanged;
+            var previous = openDocument;
             StoreActiveDocument();
-            openDocument = RegisterDocument(model, path, showOriginal);
+            openDocument = RegisterDocument(model, path, showOriginal, showUpload);
+            if (previous != openDocument && IsUntouchedPlaceholder(previous)) RemoveDocument(previous!);
             documents = openDocument.Buffers; translator = new(engine); translatedRevisions.Clear();
             foreach (var pair in openDocument.Translated) translatedRevisions[pair.Key] = pair.Value;
             previewGeneration++; debounce?.Cancel(); pendingSourceTranslation = false;
             SelectionPane.Visibility = Visibility.Collapsed; BlockSelectionList.UnselectAll();
             session = model; filePath = openDocument.Path;
+            OriginalToggle.IsChecked = openDocument.ShowOriginal; SourceToggle.IsChecked = openDocument.ShowSource; BrailleToggle.IsChecked = openDocument.ShowBraille;
+            UpdatePanelLayout();
             tabSwitching = true; DocumentTabs.SelectedItem = openDocument.Tab; tabSwitching = false;
             foreach (var block in session.Blocks.Where(b => !translatedRevisions.ContainsKey(b))) translatedRevisions[block] = block.Braille.Length != 0
                 && (block.Translation?.SourceText is null || block.Translation.SourceText == block.Source) ? block.SourceRevision : -1;
@@ -150,11 +167,12 @@ public partial class MainWindow : Window
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
             OriginalEmpty.Visibility = showOriginal ? Visibility.Collapsed : Visibility.Visible;
             ShowActiveBlock();
+            OriginalUpload.Visibility = openDocument.ShowUpload ? Visibility.Visible : Visibility.Collapsed;
         }
         finally { switching = false; }
     }
 
-    private void ErrorNotice_Close(object sender, RoutedEventArgs e) => session.ErrorNotice = "";
+    private void ErrorNotice_Close(object sender, RoutedEventArgs e) { if (!session.HasPendingServerPages && !session.HasPendingRestart) session.ErrorNotice = ""; }
 
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -169,8 +187,7 @@ public partial class MainWindow : Window
 
     private void ShowActiveBlock()
     {
-        Welcome.Visibility = !smoke && session.JobId is null && filePath is null && session.Blocks.Count == 1
-            && session.Blocks[0].Source.Length == 0 && session.Blocks[0].Braille.Length == 0 && !session.IsDirty ? Visibility.Visible : Visibility.Collapsed;
+        Welcome.Visibility = Visibility.Collapsed;
         if (session.ActiveBlock is not { } block) return;
         var wasSwitching = switching; switching = true;
         try
@@ -257,7 +274,7 @@ public partial class MainWindow : Window
 
     internal async Task ExecuteAsync(string action)
     {
-        if (resourcesReleased) return;
+        if (resourcesReleased || accountStarting) return;
         CompleteSourceInput();
         try
         {
@@ -574,9 +591,13 @@ public partial class MainWindow : Window
             if (candidate is null) { ShowError(new IOException("다른 창에서 편집 중이거나 쓸 수 없는 경로입니다. 다른 이름으로 저장해 주세요.")); return false; }
         }
         fileBusy = true;
+        var saveContext = openDocument;
+        if (saveContext is not null) saveContext.ServerSaveInProgress = true;
         try
         {
             var owner = session; var version = owner.ChangeVersion; var snapshot = SmjFile.Snapshot(owner);
+            var serverBlockedAtStart = saveContext?.PageSyncInProgress > 0 || owner.HasPendingRestart || owner.HasPendingServerPages
+                || saveContext is not null && HasOtherTabForJob(saveContext);
             await SmjFile.SaveAsync(path, snapshot);
             if (candidate is not null && openDocument is not null) { openDocument.Lease?.Dispose(); openDocument.Lease = candidate; candidate = null; }
             owner.IsReadOnly = false; ShowActiveBlock();
@@ -585,6 +606,15 @@ public partial class MainWindow : Window
             string[] localOnly = [];
             if (owner.JobId is not null)
             {
+                if (serverBlockedAtStart || saveContext?.PageSyncInProgress > 0 || owner.HasPendingRestart || owner.HasPendingServerPages
+                    || saveContext is not null && HasOtherTabForJob(saveContext))
+                {
+                    owner.IsDirty = owner.ChangeVersion != version;
+                    owner.Status = "로컬 작업 파일은 저장했습니다. 재개 상태와 충돌 결과를 확인한 뒤 서버에 저장해 주세요.";
+                    owner.ErrorNotice = owner.PendingRestart is { Unconfirmed: true } ? UnconfirmedRestartNotice
+                        : "다른 탭을 닫고 재개 상태를 확인해 주세요. 재개 작업을 닫았다면 원본 파일을 다시 열어 확인해 주세요.";
+                    return !owner.IsDirty;
+                }
                 try
                 {
                     var result = await jobs.SaveAsync(snapshot);
@@ -634,7 +664,7 @@ public partial class MainWindow : Window
             candidate?.Dispose(); candidate = null; fileBusy = false;
             return await SaveAsync(failed.Choice == 0);
         }
-        finally { candidate?.Dispose(); fileBusy = false; }
+        finally { if (saveContext is not null) saveContext.ServerSaveInProgress = false; candidate?.Dispose(); fileBusy = false; }
     }
     private async Task<bool> ConfirmDiscardAsync()
     {
@@ -646,6 +676,16 @@ public partial class MainWindow : Window
             1 => true,
             _ => false
         };
+    }
+    internal async Task OpenStartupFileAsync(string path)
+    {
+        try
+        {
+            if (!Path.GetExtension(path).Equals(".smj", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("시작할 때는 세모점 작업 파일(.smj)을 열 수 있습니다.");
+            await OpenAsync(path);
+        }
+        catch (Exception ex) { ShowError(ex); }
     }
     internal async Task OpenAsync(string? requestedPath = null, DocumentSession? textSettings = null, string? formId = null)
     {
@@ -662,19 +702,21 @@ public partial class MainWindow : Window
             DocumentSession model;
             if (Path.GetExtension(requestedPath).Equals(".txt", StringComparison.OrdinalIgnoreCase))
             {
-                if (new FileInfo(requestedPath).Length > JobClient.MaximumUploadBytes) throw new InvalidDataException("텍스트 파일은 100 MB까지 열 수 있습니다.");
-                var text = await File.ReadAllTextAsync(requestedPath, new System.Text.UTF8Encoding(false, true));
+                var original = (await UploadFileReader.ReadAsync([requestedPath], documentLifetime.Token))[0].Bytes;
+                using var input = new MemoryStream(original, writable: false);
+                using var reader = new StreamReader(input, new System.Text.UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true);
+                var text = await reader.ReadToEndAsync(documentLifetime.Token);
                 model = new DocumentSession { Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj" };
                 var index = 0;
                 foreach (var chunk in TextImport.Split(text)) model.Add(new EditorBlock { Id = ++index, Page = 1, Heading = $"불러온 텍스트 {index}", Source = chunk, State = "점역 전" });
-                model.OriginalFiles[Path.GetFileName(requestedPath)] = await File.ReadAllBytesAsync(requestedPath);
+                model.OriginalFiles[Path.GetFileName(requestedPath)] = original;
                 await ConfigureTextJobAsync(model, textSettings, formId);
                 model.IsDirty = true; SetSession(model, null, false);
                 OriginalToggle.IsChecked = false; UpdatePanelLayout();
                 _ = TranslateImportedTextAsync(openDocument!);
             }
             else if (requestedPath.EndsWith(".mock.smi", StringComparison.OrdinalIgnoreCase))
-            { model = await WorkFile.LoadAsync(requestedPath); model.Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj"; SetSession(model, null, false); }
+            { model = await WorkFile.LoadAsync(requestedPath); model.Title = Path.GetFileNameWithoutExtension(requestedPath) + ".smj"; SetSession(model, null, OriginalToggle.IsChecked); }
             else
             {
                 var lease = WorkFileLease.TryAcquire(requestedPath, out var accessDenied);
@@ -686,7 +728,8 @@ public partial class MainWindow : Window
                         var readOnly = FileNotices.ReadOnlyDocument(accessDenied); readOnly.Owner = this; readOnly.ShowDialog();
                         if (readOnly.Choice != 0) return;
                     }
-                    SetSession(model, requestedPath, false); openDocument!.Lease = lease; lease = null;
+                    SetSession(model, requestedPath, OriginalToggle.IsChecked); openDocument!.Lease = lease; lease = null;
+                    BindClosedJobRecovery(openDocument);
                     await RememberFileAsync(requestedPath);
                 }
                 finally { lease?.Dispose(); }

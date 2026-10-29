@@ -3,12 +3,42 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using Semojum.Core;
+using Semojum.Core.Integration;
 using Semojum.Desktop.Dialogs;
 
 namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    internal Controls.OriginalUploadView OriginalUpload { get; private set; } = null!;
+    private void InitializeOriginalUpload()
+    {
+        OriginalUpload = new Controls.OriginalUploadView { Visibility = Visibility.Collapsed };
+        Grid.SetRow(OriginalUpload, 1);
+        ((Grid)OriginalPanel.Child).Children.Add(OriginalUpload);
+        OriginalUpload.UploadRequested += async paths =>
+        {
+            try
+            {
+                if (fileBusy || uploadFlowBusy) return;
+                var selected = paths is { Length: > 0 } ? paths : FilePicker is null ? OpenDocumentDialog.SelectPaths(this) : FilePicker(this);
+                if (selected is not { Length: > 0 }) return;
+                if (!(selected.Length == 1 && Path.GetExtension(selected[0]).Equals(".smj", StringComparison.OrdinalIgnoreCase)))
+                {
+                    long total = 0;
+                    foreach (var path in selected)
+                    {
+                        var length = new FileInfo(path).Length;
+                        total = length > long.MaxValue - total ? long.MaxValue : total + length;
+                    }
+                    if (total > JobClient.MaximumUploadBytes) { OriginalUpload.ShowLimitWarning(selected, total); return; }
+                }
+                OriginalUpload.ClearLimitWarning();
+                await UploadAsync(selected);
+            }
+            catch (Exception ex) { ShowError(ex); }
+        };
+    }
     private readonly LocalWorkspace workspace = new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Semojum", "preferences.json"));
     private EditorPreferences preferences = new();
     private AccountPreferences accountPreferences = new();

@@ -10,7 +10,7 @@ public static class DocumentSearch
 
     public static IReadOnlyList<SearchMatch> FindAll(IEnumerable<EditorBlock> blocks, SearchPanel panel, string query)
     {
-        if (string.IsNullOrEmpty(query)) return [];
+        if (string.IsNullOrEmpty(query) || panel == SearchPanel.Braille && !IsBrailleText(query)) return [];
         var matches = new List<SearchMatch>();
         foreach (var block in blocks)
         {
@@ -30,16 +30,20 @@ public static class DocumentSearch
     {
         var matches = FindAll(blocks, panel, query);
         if (matches.Count == 0) return null;
-        var startIndex = start is null ? -1 : blocks.ToList().IndexOf(start);
+        if (start is null) return matches[0];
+        var startIndex = blocks.ToList().IndexOf(start);
         if (startIndex < 0) return matches[0];
         var current = matches.FirstOrDefault(m => m.Block == start && m.Offset >= offset);
         if (current is not null) return current;
+        // Index the first hit per block once: scanning every match for each empty block
+        // makes a wrapped search quadratic in long documents.
+        var firstByBlock = new Dictionary<EditorBlock, SearchMatch>();
+        foreach (var match in matches) firstByBlock.TryAdd(match.Block, match);
         for (var step = 1; step < blocks.Count; step++)
         {
-            var next = matches.FirstOrDefault(m => m.Block == blocks[(startIndex + step) % blocks.Count]);
-            if (next is not null) return next;
+            if (firstByBlock.TryGetValue(blocks[(startIndex + step) % blocks.Count], out var next)) return next;
         }
-        return matches.FirstOrDefault(m => m.Block == start);
+        return firstByBlock.GetValueOrDefault(start);
     }
 
     public static bool IsBrailleText(string text) => text.All(c => c is >= '\u2800' and <= '\u28ff' || c is ' ' or '\n' or '\r' or '\t');

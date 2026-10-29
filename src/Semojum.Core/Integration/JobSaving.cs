@@ -11,6 +11,8 @@ public sealed partial class JobClient
     /// <summary>V3.1 (2026-10-21): both panels share an app-generated stable ID. Never infer IDs from prose or order.</summary>
     public static JobSavePlan PlanSave(SmjManifest manifest)
     {
+        if (manifest.PendingServerPages is { Count: > 0 } || manifest.PendingRestart is not null)
+            throw new InvalidOperationException("재개 결과와 로컬 교정이 충돌합니다. 작업 파일은 로컬에 저장되며, 결과를 확인하기 전에는 서버에 저장할 수 없습니다.");
         var blocks = manifest.Blocks.Where(b => b.ServerId is not null || !b.Metadata.IsBlocked).ToArray();
         foreach (var block in blocks)
         {

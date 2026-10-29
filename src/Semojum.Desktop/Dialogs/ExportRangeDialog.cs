@@ -1,76 +1,174 @@
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
+using System.Windows.Media;
 using Semojum.Core;
+using Semojum.Desktop.Controls;
+using SharpVectors.Converters;
 
 namespace Semojum.Desktop.Dialogs;
 
 public sealed class ExportRangeDialog : CompactDialog
 {
-    private readonly ComboBox scope = new();
+    private readonly SegmentedChoice scope = new("원본 페이지", "점자 페이지");
+    private readonly ComboBox formatChoice = new();
     private readonly TextBox start = new(), end = new();
-    private readonly TextBlock bounds = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
+    private readonly TextBlock bounds = new();
     private readonly int[] originalNumbers;
     private readonly Func<Task<int>>? brailleCount;
     private int? pageCount;
     private bool loading;
-    private TextBlock Error => Status;
     public ExportRange Result { get; private set; } = new();
+    public string SelectedFormat => formatChoice.SelectedItem as string ?? ".brf";
 
-    public ExportRangeDialog(int[] originalNumbers, Func<Task<int>>? brailleCount, bool brailleOnly = false, string format = ".brf") : base("범위 지정 저장", 520, 240)
+    public ExportRangeDialog(int[] originalNumbers, Func<Task<int>>? brailleCount, bool brailleOnly = false, string format = ".brf", bool allowFormatChange = false)
+        : base("범위 지정 저장", 520, 324, popover: true)
     {
         this.originalNumbers = originalNumbers; this.brailleCount = brailleCount;
-        scope.Items.Add("전체 문서"); scope.Items.Add(new ComboBoxItem { Content = "원본 쪽 범위", IsEnabled = !brailleOnly });
-        if (brailleCount is not null) scope.Items.Add("점자 면 범위");
-        var fields = new StackPanel { Margin = new(16, 12, 16, 0) }; Body(fields);
-        void Field(string label, FrameworkElement value)
+        if (Content is Border frame) { frame.CornerRadius = new(8); frame.BorderBrush = Brush("#EAEAEA"); frame.Background = Brush("#F3F3F3"); }
+        var layout = new Grid();
+        layout.RowDefinitions.Add(new() { Height = new(56) });
+        layout.RowDefinitions.Add(new() { Height = new(204) });
+        layout.RowDefinitions.Add(new() { Height = new(64) }); Body(layout);
+
+        var title = new Grid { Margin = new(24, 0, 24, 0) };
+        title.Children.Add(new TextBlock { Text = "범위 지정 저장", FontSize = 16, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
+        var close = new Button { Width = 28, Height = 28, MinWidth = 0, MinHeight = 0, Padding = new(0), Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Right, Content = DesignIcon("range-close.svg", 16, 16) };
+        close.Template = SurfaceTemplate(0); AutomationProperties.SetName(close, "닫기"); close.Click += (_, _) => Close(); title.Children.Add(close);
+        layout.Children.Add(title);
+
+        var body = new StackPanel { Margin = new(24, 16, 24, 0) }; Grid.SetRow(body, 1); layout.Children.Add(body);
+        body.Children.Add(new TextBlock { Text = "범위", Foreground = Brush("#5F5F5F"), FontSize = 12, Margin = new(0, 0, 0, 4) });
+        var form = new Grid { Margin = new(16, 12, 16, 8) };
+        form.ColumnDefinitions.Add(new() { Width = new(134) }); form.ColumnDefinitions.Add(new());
+        for (var i = 0; i < 4; i++) form.RowDefinitions.Add(new() { Height = new(36) });
+        body.Children.Add(new Border { Height = 160, CornerRadius = new(6), Background = Brush("#F9F9F9"), Child = form });
+        void Field(int row, string label, FrameworkElement control)
         {
-            var row = new DockPanel { Height = 32, Margin = new(0, 0, 0, 8) }; row.Children.Add(new TextBlock { Text = label, Width = 120, Foreground = (System.Windows.Media.Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Center });
-            value.Height = 32; value.MinHeight = 32; value.VerticalAlignment = VerticalAlignment.Center; row.Children.Add(value); fields.Children.Add(row);
-            System.Windows.Automation.AutomationProperties.SetName(value, label);
+            var caption = new TextBlock { Text = label, FontSize = 14, Foreground = Brush("#1A1A1A"), VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetRow(caption, row); form.Children.Add(caption);
+            Grid.SetRow(control, row); Grid.SetColumn(control, 1); form.Children.Add(control);
         }
-        Field("기준", scope); Field("시작 페이지 번호", start); Field("끝 페이지 번호", end);
-        Field("형식", new TextBox { Text = format, IsReadOnly = true, ToolTip = "파일 저장 창에서 선택한 형식입니다." });
-        scope.ToolTip = brailleCount is null
-            ? "원문 TXT는 원본 쪽 기준으로 저장합니다."
-            : "점자 면은 표지를 포함해 조판 결과의 첫 면부터 1, 2, 3…으로 셉니다. 인쇄된 쪽번호와 다를 수 있습니다. 선택한 면의 쪽번호·꼬리말은 유지합니다.\n원본 쪽을 고르면 그 쪽만 별도 조판하며 점자 번호는 현재 판면의 시작 번호를 사용합니다.";
+        scope.Width = 240; scope.Height = 32; scope.ItemContainerStyle = ScopeStyle();
+        scope.SetAvailable(0, !brailleOnly, "미리보기에서는 점자 면을 선택합니다.");
+        scope.SetAvailable(1, brailleCount is not null && format != ".txt — 원문", "원문 파일은 원본 페이지를 선택합니다.");
+        AutomationProperties.SetName(scope, "범위 기준"); Field(0, "기준", scope);
+        Field(1, "시작 페이지 번호", NumberField(start, "시작 페이지 번호"));
+        Field(2, "끝 페이지 번호", NumberField(end, "끝 페이지 번호"));
+        var formatField = new Grid { Width = 260, Height = 32, HorizontalAlignment = HorizontalAlignment.Left };
+        formatChoice.ItemsSource = allowFormatChange ? new[] { ".brf", ".txt — 원문", ".txt — 점자" } : new[] { format };
+        formatChoice.SelectedItem = format; formatChoice.Padding = new(11, 0, 27, 0); formatChoice.VerticalContentAlignment = VerticalAlignment.Center;
+        formatChoice.Background = Brush("#FBFBFB"); formatChoice.BorderBrush = Brush("#EAEAEA");
+        formatChoice.ToolTip = allowFormatChange ? "변경한 형식에 맞춰 파일 확장자와 내용을 저장합니다." : "이 명령의 저장 형식입니다.";
+        AutomationProperties.SetName(formatChoice, "형식"); formatField.Children.Add(formatChoice);
+        formatField.Children.Add(new Border { Width = 22, Margin = new(0, 1, 1, 1), Background = Brush("#FBFBFB"),
+            HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
+        var formatIcon = DesignIcon("range-format-chevron.svg", 16, 16); formatIcon.HorizontalAlignment = HorizontalAlignment.Right;
+        formatIcon.Margin = new(0, 0, 5, 0); formatIcon.IsHitTestVisible = false; formatField.Children.Add(formatIcon); Field(3, "형식", formatField);
+        scope.ToolTip = brailleCount is null ? "원문 TXT는 원본 쪽 기준으로 저장합니다."
+            : "점자 면은 표지를 포함한 첫 면부터 1, 2, 3…으로 셉니다. 인쇄된 쪽번호와 다를 수 있으며 쪽번호·꼬리말은 유지합니다.";
         start.ToolTip = end.ToolTip = bounds;
-        Action("저장", () => { if (Apply()) DialogResult = true; }, true); Action("취소", Close);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 24, 16) };
+        Grid.SetRow(actions, 2); layout.Children.Add(actions);
+        var cancel = Button("취소", () => { DialogResult = false; return Task.CompletedTask; });
+        var save = Button("저장", () => { if (Apply()) DialogResult = true; return Task.CompletedTask; }, true);
+        foreach (var button in new[] { cancel, save }) { button.Width = 88; button.MinWidth = 0; button.Height = 32; button.MinHeight = 0; button.Template = SurfaceTemplate(4); actions.Children.Add(button); }
+        cancel.BorderBrush = Brush("#EAEAEA");
         scope.SelectionChanged += async (_, _) => await UpdateBoundsAsync();
-        scope.SelectedIndex = 0;
+        formatChoice.SelectionChanged += (_, _) =>
+        {
+            var canUseBraille = brailleCount is not null && SelectedFormat != ".txt — 원문";
+            scope.SetAvailable(1, canUseBraille, "원문 파일은 원본 페이지를 선택합니다.");
+            if (!canUseBraille && scope.SelectedIndex == 1 && !brailleOnly) scope.SelectedIndex = 0;
+        };
+        scope.SelectedIndex = brailleOnly ? 1 : 0;
+        _ = UpdateBoundsAsync();
+    }
+
+    private static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;
+    private static SvgViewbox DesignIcon(string name, double width, double height) => new()
+    {
+        Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{name}"),
+        Width = width, Height = height, Stretch = Stretch.None
+    };
+    private static ControlTemplate SurfaceTemplate(double radius)
+    {
+        var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius));
+        border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
+        border.SetBinding(Border.BorderBrushProperty, new Binding(nameof(BorderBrush)) { RelativeSource = RelativeSource.TemplatedParent });
+        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(content);
+        return new ControlTemplate(typeof(Button)) { VisualTree = border };
+    }
+    private static Style ScopeStyle()
+    {
+        var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+        border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
+        border.SetBinding(Border.BorderBrushProperty, new Binding(nameof(BorderBrush)) { RelativeSource = RelativeSource.TemplatedParent });
+        var text = new FrameworkElementFactory(typeof(ContentPresenter)); text.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        text.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(text);
+        var style = new Style(typeof(ListBoxItem)); style.Setters.Add(new Setter(TemplateProperty, new ControlTemplate(typeof(ListBoxItem)) { VisualTree = border }));
+        style.Setters.Add(new Setter(BackgroundProperty, Brush("#FBFBFB"))); style.Setters.Add(new Setter(BorderBrushProperty, Brush("#EAEAEA")));
+        style.Setters.Add(new Setter(ForegroundProperty, Brush("#5F5F5F")));
+        var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true };
+        selected.Setters.Add(new Setter(BackgroundProperty, Brush("#EFF6FC"))); selected.Setters.Add(new Setter(BorderBrushProperty, Brush("#005FB8")));
+        selected.Setters.Add(new Setter(ForegroundProperty, Brush("#003E92"))); style.Triggers.Add(selected);
+        var disabled = new Trigger { Property = IsEnabledProperty, Value = false }; disabled.Setters.Add(new Setter(OpacityProperty, .5)); style.Triggers.Add(disabled);
+        return style;
+    }
+    private static FrameworkElement NumberField(TextBox input, string label)
+    {
+        var field = new Grid { Width = 104, Height = 32, HorizontalAlignment = HorizontalAlignment.Left };
+        field.ColumnDefinitions.Add(new() { Width = new(80) }); field.ColumnDefinitions.Add(new() { Width = new(24) });
+        input.Padding = new(11, 0, 2, 0); input.VerticalContentAlignment = VerticalAlignment.Center;
+        input.Background = Brush("#FBFBFB"); input.BorderBrush = Brush("#EAEAEA"); AutomationProperties.SetName(input, label); field.Children.Add(input);
+        var arrows = new Grid { Background = Brush("#F0F0F0") }; arrows.RowDefinitions.Add(new()); arrows.RowDefinitions.Add(new());
+        Grid.SetColumn(arrows, 1); field.Children.Add(arrows);
+        void Step(int delta) { if (!int.TryParse(input.Text, out var n)) n = 0; input.Text = Math.Clamp((long)n + delta, 1, int.MaxValue).ToString(); }
+        var upIcon = DesignIcon("range-spinner-up.svg", 9.60063, 5.19934); upIcon.RenderTransformOrigin = new(.5, .5); upIcon.RenderTransform = new ScaleTransform(1, -1);
+        foreach (var (delta, icon, row) in new[] { (1, upIcon, 0), (-1, DesignIcon("range-spinner-down.svg", 16, 16), 1) })
+        {
+            var button = new RepeatButton { Content = icon, BorderThickness = new(0), Background = Brush("#F0F0F0"), Padding = new(0), MinHeight = 0 };
+            button.SetBinding(IsEnabledProperty, new Binding(nameof(IsEnabled)) { Source = input });
+            AutomationProperties.SetName(button, label + (delta > 0 ? " 증가" : " 감소")); button.Click += (_, _) => Step(delta); Grid.SetRow(button, row); arrows.Children.Add(button);
+        }
+        return field;
     }
 
     private async Task UpdateBoundsAsync()
     {
-        Error.Text = ""; start.IsEnabled = end.IsEnabled = scope.SelectedIndex != 0;
-        if (scope.SelectedIndex == 0) { bounds.Text = "전체 문서를 저장합니다."; return; }
-        if (scope.SelectedIndex == 1)
+        Status.Text = "";
+        if (scope.SelectedIndex == 0)
         {
+            start.IsEnabled = end.IsEnabled = true;
             start.Text = originalNumbers.FirstOrDefault().ToString(); end.Text = originalNumbers.LastOrDefault().ToString();
             bounds.Text = $"원본 {start.Text}–{end.Text}쪽"; return;
         }
-        if (pageCount is null && brailleCount is not null)
+        if (pageCount is null && brailleCount is not null && !loading)
         {
-            loading = true; scope.IsEnabled = start.IsEnabled = end.IsEnabled = false; bounds.Text = "전체 문서의 점자 면 수를 계산하고 있습니다…";
+            loading = true; scope.IsEnabled = formatChoice.IsEnabled = start.IsEnabled = end.IsEnabled = false; bounds.Text = "점자 면 수를 계산하고 있습니다…";
             try { pageCount = await brailleCount(); }
-            catch (Exception ex) { Error.Text = ex.Message; bounds.Text = "면 수를 계산하지 못했습니다. 다른 범위를 선택할 수 있습니다."; }
-            finally { loading = false; scope.IsEnabled = true; start.IsEnabled = end.IsEnabled = true; }
+            catch (Exception ex) { Status.Text = ex.Message; bounds.Text = "면 수를 계산하지 못했습니다. 다른 범위를 선택할 수 있습니다."; }
+            finally { loading = false; scope.IsEnabled = formatChoice.IsEnabled = true; start.IsEnabled = end.IsEnabled = true; }
         }
-        if (pageCount is { } count)
-        {
-            start.Text = "1"; end.Text = count.ToString(); bounds.Text = $"총 {count}면 · 첫 면부터 센 순서";
-        }
+        if (pageCount is { } count) { start.Text = "1"; end.Text = count.ToString(); bounds.Text = $"총 {count}면 · 첫 면부터 센 순서"; }
     }
 
     private bool Apply()
     {
-        if (loading) { Error.Text = "점자 면 수를 계산한 뒤 저장할 수 있습니다."; return false; }
-        var selected = (ExportScope)scope.SelectedIndex;
-        if (selected == ExportScope.All) { Result = new(); return true; }
+        if (loading) { Status.Text = "점자 면 수를 계산한 뒤 저장할 수 있습니다."; return false; }
+        var selected = scope.SelectedIndex == 0 ? ExportScope.OriginalPages : ExportScope.BraillePages;
         if (!int.TryParse(start.Text, out var from) || !int.TryParse(end.Text, out var to))
-        { Error.Text = "시작과 끝 번호를 정수로 입력해 주세요."; return false; }
+        { Status.Text = "시작과 끝 번호를 정수로 입력해 주세요."; return false; }
         try
         {
-            if (selected == ExportScope.BraillePages && pageCount is null) throw new ArgumentException("전체 점자 면 수를 먼저 확인해 주세요.");
+            if (selected == ExportScope.BraillePages && pageCount is null) throw new ArgumentException("점자 면 수를 먼저 확인해 주세요.");
             var range = new ExportRange(selected, from, to);
             range.Validate(selected == ExportScope.OriginalPages ? originalNumbers.FirstOrDefault() : 1,
                 selected == ExportScope.OriginalPages ? originalNumbers.LastOrDefault() : pageCount!.Value);

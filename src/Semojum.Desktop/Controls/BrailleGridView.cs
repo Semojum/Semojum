@@ -87,6 +87,7 @@ public sealed partial class BrailleGridView : ListBox
                     var box = new Rect(TextLeft + x * cw, y * ch, cw, ch); var cell = face.Rows[y][x];
                     if (cell is not null)
                     {
+                        if (owner?.IsLinkedCell(cell) == true) dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : new SolidColorBrush(Color.FromRgb(255, 245, 163)), null, box);
                         if (owner?.IsSelected(cell) == true) dc.DrawRectangle(Brushes.LightSkyBlue, null, box);
                         Text(cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick) : owner?.HighContrast == true ? Brushes.White : Brushes.Black);
                         if (owner?.IsCaret(cell) == true && owner.IsKeyboardFocusWithin) dc.DrawLine(new Pen(Brushes.Black, 1), box.TopLeft, box.BottomLeft);

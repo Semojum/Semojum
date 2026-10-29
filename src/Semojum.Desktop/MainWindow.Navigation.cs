@@ -16,8 +16,9 @@ public partial class MainWindow
     {
         if (target == NavigationTarget.BraillePage)
         {
-            var face = DocumentNavigation.Number(input, lastPreviewPage);
             var pane = detachedPane ?? Braille;
+            var currentFace = pane.GridView.CaretCoordinates?.Face ?? lastPreviewPage;
+            var face = DocumentNavigation.Number(input, currentFace);
             if (!pane.GridView.GoToFace(face)) throw new ArgumentException($"점자 면은 1–{pane.GridView.Items.Count} 범위로 입력해 주세요.");
             lastPreviewPage = face; return $"점자 {face}면으로 이동했습니다.";
         }

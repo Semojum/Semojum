@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Semojum.Core;
 
 public sealed record BrailleOptions(bool KoreanGrade1 = false, bool EnglishGrade1 = false,
@@ -5,9 +7,18 @@ public sealed record BrailleOptions(bool KoreanGrade1 = false, bool EnglishGrade
     string ConsecutiveSpace = "single", string ChoiceLayout = "merge", Dictionary<string, VisualDescription>? VisualDescriptions = null);
 public sealed record VisualDescription(string[] Options, string DefaultOption);
 public sealed record DroppedCharacter(string Text, int Count, string Flag);
-public sealed record BrailleDraft(string RenderMode, string Label, string Cells, int[] Breaks);
+public sealed record BrailleDraft(string RenderMode, string Label, string Cells, int[] Breaks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? SourceText = null);
+public sealed record BrailleSpacingMetadata(bool BoxBorders, string CorrectedText, bool QuestionLead);
+public sealed record SourceLineMap(int SourceStart, int SourceEnd, int BrailleStart, int BrailleEnd);
+public sealed record BrailleLineAlignment(int SourceStart, int SourceEnd, int BrailleStart, int BrailleEnd, string Align);
+public sealed record SourceMapStamp(int SourceRevision, int BrailleRevision, int MetadataRevision);
 public sealed record BrailleTranslation(string Cells, int[] Breaks, DroppedCharacter[] Dropped,
-    bool Blocked, BrailleDraft[] Drafts, string? RenderMode = null, string? SourceText = null, string[]? UnknownTags = null, RuleEvidence[]? RuleTrail = null)
+    bool Blocked, BrailleDraft[] Drafts, string? RenderMode = null, string? SourceText = null, string[]? UnknownTags = null, RuleEvidence[]? RuleTrail = null,
+    BrailleSpacingMetadata? Spacing = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] BrailleLineAlignment[]? LineAlignment = null,
+    [property: JsonIgnore] SourceLineMap[]? SourceLineMap = null,
+    [property: JsonIgnore] SourceMapStamp? SourceMapStamp = null)
 {
     public static BrailleTranslation Plain(string cells) => new(cells, [], [], false, []);
     public bool NeedsReview => Blocked || Dropped.Length != 0 || UnknownTags?.Length > 0;
@@ -15,15 +26,16 @@ public sealed record BrailleTranslation(string Cells, int[] Breaks, DroppedChara
 public sealed record BrailleSymbol(string Char, string Cells, string Group);
 public sealed record CellAddress(int BlockId, int Offset);
 public sealed record ComposedPage(int? Number, string[] Lines, CellAddress?[][] Cells, CellAddress?[] Ends, string[] Kinds);
-public sealed record ComposedBraille(string Brf, Dictionary<string, int> Replaced, ComposedPage[]? Pages = null);
+public sealed record ComposedBraille(string Brf, Dictionary<string, int> Replaced, ComposedPage[]? Pages = null, int[]? SpacingUnknownBlockIds = null, int[]? AlignmentUnknownBlockIds = null);
 public sealed record BlockMetadata(string Type = "text", int HeadingLevel = 0, bool MathPage = false,
     string? TableSource = null, string? RenderMode = null, string? TranslatorNote = null, int TableBoxLevel = 0,
     double[]? BoundingBox = null, int? SelectedIndex = null, string? TableDisplayText = null,
     AlternativeDraft[]? Alternatives = null, RuleEvidence[]? Rules = null, string? OriginalSource = null,
     string? VisualSubtype = null, bool IsBlocked = false, double? OcrConfidence = null);
 public sealed record AlternativeDraft(string Label, string Text, string? TaggedText, string? LegacyBraille, string? Reason);
+public enum RuleEvidenceOrigin { Unknown, TextPanel, BraillePanel }
 public sealed record RuleEvidence(string RuleId, string Source, string Section, string Title, string Excerpt,
-    int LineNo, int ColumnStart, int ColumnEnd, string? Tag = null);
+    int LineNo, int ColumnStart, int ColumnEnd, string? Tag = null, RuleEvidenceOrigin Origin = RuleEvidenceOrigin.Unknown);
 
 /// <summary>Uses engine break offsets; a missing map falls back to whitespace, never arbitrary syllable guesses.</summary>
 public static class BrailleWrapping

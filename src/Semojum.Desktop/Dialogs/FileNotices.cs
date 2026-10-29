@@ -21,7 +21,7 @@ internal static class FileNotices
         return new NoticeDialog("서버와 연결이 끊겼습니다.", $"수신한 {completed}쪽의 내용은 현재 문서에 남아 있습니다. Ctrl+S로 저장해 주세요.", ["이어서 변환", "닫기"]);
     }
     internal static NoticeDialog Offline(string detail) => new("서버에 연결하지 못했습니다.", "저장과 편집은 가능합니다. 변환과 게시판은 연결이 복구된 뒤에 사용할 수 있습니다.", ["다시 시도", "오프라인으로 계속"], error: true) { ToolTip = detail };
-    internal static NoticeDialog NoCredits() => new("크레딧이 모두 소모되어 변환을 멈췄습니다.", "크레딧 추가는 문의로 요청해 주세요. 완료한 쪽은 편집할 수 있습니다. 이어서 처리는 현재 지원하지 않습니다.", ["크레딧 구매", "문의하기", "닫기"], width: 560, height: 210);
+    internal static NoticeDialog NoCredits() => new("크레딧이 모두 소모되어 변환을 멈췄습니다.", "완료한 쪽은 편집할 수 있습니다. 크레딧 충전 후 상단 알림의 이어서 처리로 계속할 수 있습니다.", ["크레딧 구매", "문의하기", "닫기"], width: 560, height: 210);
     // Server policy (LoginAttemptService.MAX_FAILURES = 5, LOCK_DURATION = 10 minutes) behind AUTH4001 remainingAttempts / AUTH4006 unlockAt.
     private const string LoginLockPolicy = "5회 실패하면 10분 동안 잠깁니다.";
     internal static NoticeDialog LoginRejected(Semojum.Core.Integration.SemojumApiException error)

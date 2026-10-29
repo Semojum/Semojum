@@ -14,12 +14,15 @@ internal static class WindowBounds
         if (handle == IntPtr.Zero || !GetMonitorInfo(MonitorFromWindow(handle, 2), ref info)) return;
         var scale = Math.Max(96, GetDpiForWindow(handle)) / 96d;
         var width = info.Work.Right - info.Work.Left; var height = info.Work.Bottom - info.Work.Top;
-        window.MaxHeight = Math.Max(200, height / scale);
-        window.MaxWidth = Math.Max(300, width / scale);
-        window.MinHeight = Math.Min(window.MinHeight, window.MaxHeight);
-        window.MinWidth = Math.Min(window.MinWidth, window.MaxWidth);
-        if (!double.IsNaN(window.Height)) window.Height = Math.Min(window.Height, window.MaxHeight);
-        if (!double.IsNaN(window.Width)) window.Width = Math.Min(window.Width, window.MaxWidth);
+        var maxHeight = Math.Max(200, height / scale);
+        var maxWidth = Math.Max(300, width / scale);
+        // The editor may move to a larger monitor after startup. Constrain its initial
+        // size to this work area without permanently capping later resizing or snap.
+        if (window is not MainWindow) { window.MaxHeight = maxHeight; window.MaxWidth = maxWidth; }
+        window.MinHeight = Math.Min(window.MinHeight, maxHeight);
+        window.MinWidth = Math.Min(window.MinWidth, maxWidth);
+        if (!double.IsNaN(window.Height)) window.Height = Math.Min(window.Height, maxHeight);
+        if (!double.IsNaN(window.Width)) window.Width = Math.Min(window.Width, maxWidth);
         if (window.WindowState != WindowState.Normal) return;
         window.UpdateLayout();
         if (!GetWindowRect(handle, out var bounds)) return;

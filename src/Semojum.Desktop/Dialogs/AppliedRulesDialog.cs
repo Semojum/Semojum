@@ -35,7 +35,12 @@ public sealed class AppliedRulesDialog : CompactDialog
             Rules.Columns.Add(new DataGridTextColumn { Header = header, Binding = new Binding(field), Width = width, ElementStyle = style });
         }
         Rules.ItemsSource = rows; body.Children.Add(Rules);
-        if (rows.Length > 0) Rules.SelectedIndex = 0;
+        if (rows.Length > 0)
+        {
+            Rules.SelectedIndex = 0;
+            if (rows.Any(row => row.IsBlockEvidence))
+                Status.Text = "원본 변환에서 전달된 근거가 포함되어 있습니다. 현재 초안이나 선택한 점자 칸에 적용되는 위치는 확인되지 않았습니다.";
+        }
         else Status.Text = stale ? "편집 후에는 적용 규정의 위치가 달라질 수 있습니다. 재점역하면 현재 결과의 근거를 확인할 수 있습니다." : "선택한 위치에 전달된 적용 규정이 없습니다.";
         var open = Action("규정 전문 열기", () =>
         {

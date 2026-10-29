@@ -133,7 +133,9 @@ public sealed partial class JobClient(SemojumApiClient api)
     private async Task<JobRestart> RestartAsync(string jobId, string action, string field, CancellationToken ct)
     {
         var result = await api.SendAuthenticatedAsync(HttpMethod.Post, JobPath(jobId, action), cancellationToken: ct);
-        var pages = result.TryGetProperty(field, out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Select(p => p.GetInt32()).ToArray() : [];
+        if (!result.TryGetProperty(field, out var list) || list.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("서버가 재개 대상 쪽을 확인해 주지 않았습니다.");
+        var pages = list.EnumerateArray().Select(p => p.GetInt32()).ToArray();
         if (pages.Any(p => p < 1) || pages.Distinct().Count() != pages.Length) throw new InvalidDataException("서버가 돌려준 쪽 번호가 올바르지 않습니다.");
         return new(Text(result, "jobId") ?? jobId, Text(result, "status") ?? "UNKNOWN", Number(result, "totalPages"), pages);
     }
@@ -282,8 +284,10 @@ public sealed partial class JobClient(SemojumApiClient api)
     }
     private static RuleEvidence[] ReadRules(JsonElement text, JsonElement braille)
     {
-        var items = Array(text, "rule_trail").Concat(braille.ValueKind == JsonValueKind.Object ? Array(braille, "rule_trail") : []);
-        return items.Select(AppliedRules.Read).Distinct().ToArray();
+        var textRules = Array(text, "rule_trail").Select(row => AppliedRules.Read(row) with { Origin = RuleEvidenceOrigin.TextPanel });
+        var brailleRules = (braille.ValueKind == JsonValueKind.Object ? Array(braille, "rule_trail") : [])
+            .Select(row => AppliedRules.Read(row) with { Origin = RuleEvidenceOrigin.BraillePanel });
+        return textRules.Concat(brailleRules).Distinct().ToArray();
     }
     private static string JobPath(string id, string suffix) { ArgumentException.ThrowIfNullOrWhiteSpace(id); return $"/api/jobs/{Uri.EscapeDataString(id)}/{suffix}"; }
     // An empty panel body is sent as no lines; a server block that was never given contents stays unchanged that way.

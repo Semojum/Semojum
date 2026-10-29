@@ -15,8 +15,15 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
     public async Task<string> TranslateAsync(string text, int blockId, CancellationToken cancellationToken) =>
         (await TranslateElementAsync(text, new(), options?.Invoke() ?? new(), cancellationToken)).Cells;
 
-    public Task<BrailleTranslation> TranslateBlockAsync(EditorBlock block, CancellationToken cancellationToken) =>
-        TranslateElementAsync(block.Source, block.Metadata, options?.Invoke() ?? new(), cancellationToken);
+    public async Task<BrailleTranslation> TranslateBlockAsync(EditorBlock block, CancellationToken cancellationToken)
+    {
+        var sourceRevision = block.SourceRevision; var brailleRevision = block.BrailleRevision;
+        var metadataRevision = block.MetadataRevision; var previousBraille = block.Braille;
+        var result = await TranslateElementAsync(block.Source, block.Metadata, options?.Invoke() ?? new(), cancellationToken);
+        return result.SourceLineMap is { Length: > 0 }
+            ? result with { SourceMapStamp = new(sourceRevision, brailleRevision + (previousBraille == result.Cells ? 0 : 1), metadataRevision) }
+            : result;
+    }
 
     public async Task<BrailleTranslation> TranslateElementAsync(string text, BlockMetadata metadata, BrailleOptions settings,
         CancellationToken cancellationToken = default)
@@ -54,7 +61,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 table_source = metadata.TableSource, render_mode = metadata.RenderMode ?? "",
                 tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel,
                 korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2, math_page = metadata.MathPage,
-                blank_lines = false
+                blank_lines = false, draft_text = true
             }, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         else
@@ -69,16 +76,83 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 split_choices = settings.ChoiceLayout == "onePerLine", math_page = metadata.MathPage,
                 render_mode = metadata.RenderMode ?? "", tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel,
                 // Engine 3.4.38+ puts the element's surrounding blank lines into cells by default; the app lays pages out itself (build_brf), so keep bare element cells.
-                blank_lines = false
+                blank_lines = false, source_map = true, draft_text = true, line_alignment = true
             }, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         if (!response.TryGetProperty("cells", out var cells) || cells.ValueKind != JsonValueKind.String)
             throw new SidecarException("점역 결과에 점자 데이터가 없습니다.", "INVALID_RESPONSE");
-        return new(cells.GetString()!, ReadArray<int>(response, "breaks"), ReadArray<DroppedCharacter>(response, "dropped"),
-            response.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True,
+        var cellText = cells.GetString()!;
+        var dropped = ReadArray<DroppedCharacter>(response, "dropped"); var unknown = ReadArray<string>(response, "unknown_tags");
+        var isBlocked = response.TryGetProperty("blocked", out var blocked) && blocked.ValueKind == JsonValueKind.True;
+        var canMap = metadata.Type == "text" && metadata.HeadingLevel == 0 && !metadata.MathPage
+            && settings.ChoiceLayout != "onePerLine" && !isBlocked && dropped.Length == 0 && unknown.Length == 0;
+        return new(cellText, ReadArray<int>(response, "breaks"), dropped, isBlocked,
             ReadArray<BrailleDraft>(response, "drafts"), response.TryGetProperty("render_mode", out var mode) ? mode.GetString() : null,
-            UnknownTags: ReadArray<string>(response, "unknown_tags"),
-            RuleTrail: response.TryGetProperty("rule_trail", out var rules) && rules.ValueKind == JsonValueKind.Array ? rules.EnumerateArray().Select(AppliedRules.Read).ToArray() : null);
+            UnknownTags: unknown,
+            RuleTrail: response.TryGetProperty("rule_trail", out var rules) && rules.ValueKind == JsonValueKind.Array ? rules.EnumerateArray().Select(AppliedRules.Read).ToArray() : null,
+            Spacing: response.TryGetProperty("spacing", out var spacing) && spacing.ValueKind == JsonValueKind.Object
+                ? spacing.Deserialize<BrailleSpacingMetadata>(Json) : null,
+            LineAlignment: canMap ? ReadLineAlignment(response, text, cellText) : null,
+            SourceLineMap: canMap ? ReadSourceLineMap(response, text, cellText) : null);
+    }
+
+    private static BrailleLineAlignment[]? ReadLineAlignment(JsonElement response, string source, string cells)
+    {
+        try
+        {
+            return response.TryGetProperty("line_alignment", out var alignment) && alignment.ValueKind == JsonValueKind.Array
+                ? ValidateLineAlignment(source, cells, alignment.Deserialize<BrailleLineAlignment[]>(Json)) : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static BrailleLineAlignment[]? ValidateLineAlignment(string source, string cells, BrailleLineAlignment[]? rows)
+    {
+        if (rows is not { Length: > 0 } || source.Contains('\r') || !source.Contains("정렬>", StringComparison.Ordinal)) return null;
+        var lines = source.Split('\n'); if (lines.Length != rows.Length) return null;
+        var sourceAt = 0; var brailleAt = 0;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (brailleAt > cells.Length) return null;
+            var tags = Regex.Matches(lines[i], "<!(왼쪽|가운데|오른쪽)정렬>");
+            if (tags.Count > 1) return null;
+            var clean = Regex.Replace(lines[i], "<!(왼쪽|가운데|오른쪽)정렬>", "");
+            if (!Regex.IsMatch(clean, @"\A[가-힣]+(?: +[가-힣]+)*\z")) return null;
+            var align = tags.Count == 0 ? "" : tags[0].Groups[1].Value switch { "왼쪽" => "left", "가운데" => "center", _ => "right" };
+            var row = rows[i]; var end = cells.IndexOf('\n', brailleAt); if (end < 0) end = cells.Length;
+            if (row is null || row.SourceStart != sourceAt || row.SourceEnd != sourceAt + clean.Length || row.Align != align
+                || row.BrailleStart < brailleAt || row.BrailleEnd != end || row.BrailleStart >= end
+                || cells[brailleAt..row.BrailleStart].Any(c => c is not ('⠀' or ' '))
+                || cells[row.BrailleStart..end].Any(c => c is < '\u2800' or > '\u28ff')) return null;
+            sourceAt += clean.Length + 1; brailleAt = end + 1;
+        }
+        return brailleAt == cells.Length + 1 ? rows : null;
+    }
+
+    private static SourceLineMap[]? ReadSourceLineMap(JsonElement response, string source, string cells)
+    {
+        if (!response.TryGetProperty("source_line_map", out var value) || value.ValueKind != JsonValueKind.Array || value.GetArrayLength() > source.Length
+            || !Regex.IsMatch(source, @"\A[가-힣]+(?: +[가-힣]+)*(?:\n[가-힣]+(?: +[가-힣]+)*)*\z")) return null;
+        try
+        {
+            var spans = value.Deserialize<SourceLineMap[]>(Json);
+            if (spans is not { Length: > 0 }) return null;
+            var lastSourceStart = -1; var lastSourceEnd = -1; var lastBrailleEnd = 0;
+            foreach (var span in spans)
+            {
+                if (span is null || span.SourceStart < 0 || span.SourceEnd <= span.SourceStart || span.SourceEnd > source.Length
+                    || span.BrailleStart < lastBrailleEnd || span.BrailleEnd <= span.BrailleStart || span.BrailleEnd > cells.Length
+                    || span.SourceStart < lastSourceStart || span.SourceStart < lastSourceEnd && span.SourceStart != lastSourceStart
+                    || span.SourceStart == lastSourceStart && span.SourceEnd != lastSourceEnd
+                    || span.SourceStart > 0 && source[span.SourceStart - 1] != '\n'
+                    || span.SourceEnd < source.Length && source[span.SourceEnd] != '\n'
+                    || cells.AsSpan(span.BrailleStart, span.BrailleEnd - span.BrailleStart).Contains('\n')
+                    || cells[span.BrailleStart..span.BrailleEnd].Any(c => c is < '\u2800' or > '\u28ff')) return null;
+                lastSourceStart = span.SourceStart; lastSourceEnd = span.SourceEnd; lastBrailleEnd = span.BrailleEnd;
+            }
+            return spans;
+        }
+        catch (JsonException) { return null; }
     }
 
     public async Task<string> DecodeAsync(string cells, BrailleOptions settings, CancellationToken cancellationToken = default)
@@ -126,16 +200,22 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             (await TranslateElementAsync(snapshot.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
         string header = "";
         var headers = new Dictionary<int, string>();
+        static bool HasAlignment(SmjBlock b) => Regex.IsMatch(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>");
+        static BrailleLineAlignment[]? AlignmentFor(SmjBlock b) => !b.HasManualBraille && b.Translation is { } t
+            && t.SourceText == b.Source && t.Cells == b.Braille ? ValidateLineAlignment(b.Source, b.Braille, t.LineAlignment) : null;
         object Sources(IEnumerable<SmjBlock> blocks) => blocks.GroupBy(b => b.Page).Select(page => new
         {
             orig_page = page.Key,
             blocks = page.Select((b, order) => new
             {
-                id = b.Id, order, heading_level = b.Metadata.HeadingLevel,
+                id = b.Id, order, type = b.Metadata.Type, heading_level = b.Metadata.HeadingLevel,
                 braille = !b.HasManualBraille && IsLayoutMarker(b.Source) ? b.Source.Trim() : b.Braille,
                 breaks = b.HasManualBraille ? Array.Empty<int>() : b.Translation?.Breaks ?? [],
-                align = Regex.Matches(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>").LastOrDefault()?.Groups[1].Value switch
-                { "왼쪽" => "left", "가운데" => "center", "오른쪽" => "right", _ => "" }
+                box_borders = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.BoxBorders : null,
+                corrected_text = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.CorrectedText : null,
+                question_lead = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.QuestionLead : null,
+                line_alignments = AlignmentFor(b)?.Select(a => new { braille_start = a.BrailleStart, braille_end = a.BrailleEnd, align = a.Align }).ToArray(),
+                alignment_unknown = HasAlignment(b) && AlignmentFor(b) is null
             }).ToArray()
         }).ToArray();
         var footers = new Dictionary<int, string>();
@@ -212,8 +292,15 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         var kinds = result.GetProperty("kinds").Deserialize<string[][]>() ?? [];
         var numbers = result.GetProperty("numbers").Deserialize<int?[]>() ?? [];
         CellAddress? Address(int[]? value) => value is { Length: 2 } ? new(value[0], value[1]) : null;
+        var spacingUnknown = result.TryGetProperty("spacing_unknown", out var unknown)
+            ? unknown.Deserialize<int[]>() ?? snapshot.Blocks.Select(b => b.Id).ToArray()
+            : snapshot.Blocks.Select(b => b.Id).ToArray();
+        var alignmentProtocol = result.TryGetProperty("alignment_protocol", out var protocol) && protocol.TryGetInt32(out var version) && version == 1;
+        var alignmentUnknown = !alignmentProtocol ? snapshot.Blocks.Where(HasAlignment).Select(b => b.Id).ToArray() : result.TryGetProperty("alignment_unknown", out var unaligned)
+            ? unaligned.Deserialize<int[]>() ?? snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null).Select(b => b.Id).ToArray()
+            : snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null).Select(b => b.Id).ToArray();
         return new(brf, replaced, pages.Select((lines, i) => new ComposedPage(numbers[i], lines,
-            maps[i].Select(row => row.Select(Address).ToArray()).ToArray(), ends[i].Select(Address).ToArray(), kinds[i])).ToArray());
+            maps[i].Select(row => row.Select(Address).ToArray()).ToArray(), ends[i].Select(Address).ToArray(), kinds[i])).ToArray(), spacingUnknown, alignmentUnknown);
     }
 
     private static string PagePolicy(string value) => value switch { "모든 페이지" => "every", "짝수 페이지" => "even", "출력 안 함" => "none", _ => "odd" };

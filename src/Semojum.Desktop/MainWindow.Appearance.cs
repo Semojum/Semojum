@@ -25,6 +25,7 @@ public partial class MainWindow
         OriginalPanelTitle.FontWeight = editor is null ? FontWeights.SemiBold : FontWeights.Normal;
         Braille.PanelTitle.FontWeight = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
         if (detachedPane is not null) detachedPane.Header.Background = Braille.Header.Background;
+        RefreshLinkedSource();
         RefreshEditorStatus();
     }
 
@@ -46,7 +47,7 @@ public partial class MainWindow
         if (lastGrid is not null)
         {
             var position = lastGrid.CaretCoordinates;
-            StatusPage.Text = position is { } p ? $"점자 {p.Face}면" : $"총 {lastGrid.Items.Count}면";
+            StatusPage.Text = position is { } p ? $"점자 {p.Face} / {lastGrid.Items.Count}면" : $"총 {lastGrid.Items.Count}면";
             StatusPage.ToolTip = lastGrid.DescribeCaret();
             CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"}";
             StatusCell.Text = $"칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";

@@ -9,6 +9,7 @@ namespace Semojum.Desktop;
 public partial class MainWindow
 {
     private readonly Dictionary<FrameworkElement, Window> detachedPanels = [];
+    private bool panelResizeHooked;
     internal Window? DetachedSourceWindow => detachedPanels.GetValueOrDefault(SourcePanel);
     internal Window? DetachedOriginalWindow => detachedPanels.GetValueOrDefault(OriginalPanel);
 
@@ -67,6 +68,11 @@ public partial class MainWindow
     private void UpdatePanelLayout()
     {
         if (PanelGrid is null) return;
+        if (!panelResizeHooked)
+        {
+            PanelScroll.SizeChanged += (_, _) => ResizePanelGrid();
+            panelResizeHooked = true;
+        }
         foreach (var splitter in PanelGrid.Children.OfType<GridSplitter>().ToArray()) PanelGrid.Children.Remove(splitter);
         PanelGrid.ColumnDefinitions.Clear();
         var panels = new[]
@@ -75,6 +81,8 @@ public partial class MainWindow
             (Panel: (FrameworkElement)SourcePanel, Visible: SourceToggle.IsChecked && !detachedPanels.ContainsKey(SourcePanel), Weight: OriginalToggle.IsChecked ? 484d : 864d, Minimum: 300d),
             (Panel: (FrameworkElement)BrailleContainer, Visible: BrailleToggle.IsChecked && detachedWindow is null, Weight: 576d, Minimum: 300d)
         };
+        PanelGrid.MinWidth = panels.Where(p => p.Visible).Sum(p => p.Minimum);
+        ResizePanelGrid();
         SourcePanelNumber.Text = OriginalToggle.IsChecked ? "2" : "1";
         Braille.PanelNumber.Text = OriginalToggle.IsChecked ? "3" : "2";
         var column = 0;
@@ -93,5 +101,10 @@ public partial class MainWindow
             PanelGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(item.Weight, GridUnitType.Star), MinWidth = item.Minimum });
             Grid.SetColumn(item.Panel, column++); item.Panel.Visibility = Visibility.Visible;
         }
+    }
+    private void ResizePanelGrid()
+    {
+        var width = Math.Max(PanelGrid.MinWidth, PanelScroll.ActualWidth);
+        if (width > 0 && (!double.IsFinite(PanelGrid.Width) || Math.Abs(PanelGrid.Width - width) > 0.5)) PanelGrid.Width = width;
     }
 }

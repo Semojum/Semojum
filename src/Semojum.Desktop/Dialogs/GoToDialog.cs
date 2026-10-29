@@ -35,7 +35,7 @@ public sealed class GoToDialog : CompactDialog
         Target.ToolTip = hint; Number.ToolTip = "+3 · −3처럼 상대 이동도 가능합니다.";
         body.Children.Add(Result);
         var busy = false;
-        foreach (var (label, delta) in new[] { ("이동", ""), ("이전", "-1"), ("닫기", "close") })
+        foreach (var (label, delta) in new[] { ("이동", ""), ("닫기", "close") })
         {
             if (delta == "close") { Action(label, Close); continue; }
             Action(label, async () =>

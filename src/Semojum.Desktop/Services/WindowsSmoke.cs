@@ -236,6 +236,10 @@ internal static class WindowsSmoke
         try
         {
             real.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Check(real.WindowState == WindowState.Maximized,
+                "The editor starts maximized for a new user session");
+            real.WindowState = WindowState.Normal;
             real.PageEditor.Editor.Focus();
             real.PageEditor.Editor.Text = "가";
             var deadline = DateTime.UtcNow.AddSeconds(25);
@@ -353,9 +357,11 @@ internal static class WindowsSmoke
             thread.ReplyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(memoBlock.Memos.Count == 2 && memoBlock.Memos[0].Replies is [{ Author: "검수자", Body: "원 작성자를 유지하는 답글" }], "Reply stays in its memo thread with its author");
             thread.MemoItems.SelectedIndex = 0; thread.ResolveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Check(thread.MemoItems.Items.Count == 0 && memoBlock.Memos.Count == 2 && memoBlock.Memos.All(m => m.Resolved), "Resolving hides a memo without deleting its body or replies");
+            Check(!thread.IsVisible, "Resolving a memo closes its conversation");
+            Check(memoBlock.Memos.Count == 2 && memoBlock.Memos.All(m => m.Resolved), "Resolving hides a memo without deleting its body or replies");
             Check(memoBlock.Memos[0].ResolvedAt.HasValue && memoBlock.Memos[0].Replies?.Length == 1, "Resolve records its timestamp and preserves replies");
-            thread.ShowResolved.IsChecked = true;
+            thread = new MemoThreadDialog(memoBlock, "TEXT", 0, "회귀 검사", action => action(), memoModel, showResolved: true, author: "검수자") { Owner = window };
+            thread.Show();
             Check(thread.MemoItems.Items.Count == 2, "Resolved memos can be retrieved explicitly");
             thread.MemoItems.SelectedIndex = 0; thread.ResolveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             thread.ShowResolved.IsChecked = false;
@@ -382,6 +388,49 @@ internal static class WindowsSmoke
         var margin = new Controls.MemoMargin(() => memoBlock, "TEXT", _ => { });
         Check(margin.Preview(0).Contains("미해결 회신") && margin.Preview(0).Contains("검수자") && !margin.Preview(0).Contains("해결된 메모"), "QA4 memo hover includes author, body and replies while hiding resolved items");
         Check(thread.Title == "메모", "QA4 memo title omits block and line coordinates");
+        var keyboardMemo = new MemoInputDialog("검수자") { Owner = window };
+        var saveGesture = keyboardMemo.InputBindings.OfType<KeyBinding>().SingleOrDefault(b => b.Key == Key.Enter && b.Modifiers == ModifierKeys.Control);
+        Check(saveGesture is not null, "Memo entry offers Ctrl+Enter to save");
+        var blankMemoStayedOpen = false;
+        _ = keyboardMemo.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+        {
+            keyboardMemo.Input.Text = "   ";
+            ((RoutedCommand)saveGesture!.Command).Execute(saveGesture.CommandParameter, keyboardMemo);
+            blankMemoStayedOpen = keyboardMemo.IsVisible;
+            keyboardMemo.Input.Text = "  단축키 메모  ";
+            ((RoutedCommand)saveGesture.Command).Execute(saveGesture.CommandParameter, keyboardMemo);
+        }));
+        Check(keyboardMemo.ShowDialog() == true && keyboardMemo.Value == "단축키 메모", "Memo Ctrl+Enter saves the entered text");
+        Check(blankMemoStayedOpen, "Memo Ctrl+Enter leaves a blank entry open for correction");
+        var memoEditor = new MainWindow(smoke: true);
+        try
+        {
+            memoEditor.Show();
+            var editedBlock = memoEditor.Session.ActiveBlock!;
+            var originalMemo = new LineMemo("undo-memo", null, "TEXT", 0, "원문", "작성한 메모", DateTimeOffset.Now, Author: "작성자");
+            memoEditor.EditStructure(() => editedBlock.Memos.Add(originalMemo));
+            var historyThread = new MemoThreadDialog(editedBlock, "TEXT", 0, "원문", memoEditor.EditStructure, memoEditor.Session, author: "답글 작성자") { Owner = memoEditor };
+            historyThread.Show();
+            historyThread.ReplyInput.Text = "답글 내용";
+            historyThread.ReplyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            historyThread.Close();
+            memoEditor.ReplayHistory();
+            Check(editedBlock.Memos.Single(m => m.LocalId == "undo-memo").Replies?.Length is null or 0, "Undo removes a newly written memo reply");
+            memoEditor.ReplayHistory(true);
+            Check(editedBlock.Memos.Single(m => m.LocalId == "undo-memo").Replies is [{ Author: "답글 작성자", Body: "답글 내용" }], "Redo restores the reply and its author");
+            historyThread = new MemoThreadDialog(editedBlock, "TEXT", 0, "원문", memoEditor.EditStructure, memoEditor.Session, author: "답글 작성자") { Owner = memoEditor };
+            historyThread.Show();
+            historyThread.ResolveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            memoEditor.ReplayHistory();
+            var undoneMemo = editedBlock.Memos.Single(m => m.LocalId == "undo-memo");
+            Check(!undoneMemo.Resolved && undoneMemo.Author == "작성자" && undoneMemo.Replies is [{ Author: "답글 작성자", Body: "답글 내용" }], "Undo of memo resolution preserves the original author and replies");
+            memoEditor.ReplayHistory(true);
+            var memoPath = Path.Combine(directory, "memo-history.smj");
+            await SmjFile.SaveAsync(memoPath, SmjFile.Snapshot(memoEditor.Session));
+            var reopenedMemo = (await SmjFile.LoadAsync(memoPath)).Blocks.SelectMany(b => b.Memos).Single(m => m.LocalId == "undo-memo");
+            Check(reopenedMemo.Resolved && reopenedMemo.Author == "작성자" && reopenedMemo.Replies is [{ Author: "답글 작성자", Body: "답글 내용" }], "Redo of memo resolution survives SMJ save and reopen with replies");
+        }
+        finally { await memoEditor.ReleaseResourcesAsync(); memoEditor.PrepareSmokeShutdown(); memoEditor.Close(); }
         await CaptureDialogAsync(new MemoInputDialog { Owner = window }, directory, "26-memo-input.png");
         await using (var engineConnection = EngineRuntime.Create())
         {

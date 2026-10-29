@@ -26,13 +26,22 @@ public sealed class BoardDialog : CompactDialog
         System.Windows.Automation.AutomationProperties.SetName(query, "게시판 검색어");
         Actions.HorizontalAlignment = HorizontalAlignment.Left; Actions.Margin = new(16, 0, 44, 24); ((Border)Actions.Parent).BorderThickness = new(0);
         Actions.Children.Add(fields); Actions.Children.Add(query);
-        int page = 1, total = 0; bool mine = initiallyMine;
+        int page = 1, total = 0; bool mine = initiallyMine, loadingList = false;
+        // A delayed list request must not trap the user in the dialog. Other
+        // operations keep the shared busy guard to protect pending edits.
+        Closing += (_, e) => { if (loadingList) { e.Cancel = false; Lifetime.Cancel(); } };
         async Task LoadAsync()
         {
-            var field = fields.SelectedIndex switch { 1 => "TITLE", 2 => "CONTENT", 3 => "AUTHOR", _ => "TITLE_CONTENT" };
-            var data = await client.ListAsync(page, field, query.Text, mine, Lifetime.Token);
-            total = data.TotalCount; grid.ItemsSource = data.Notices.Concat(data.Items).ToArray();
-            count.Text = $"전체 {total}건 · 10건씩 · {page}/{Math.Max(1, (total + 9) / 10)}쪽";
+            loadingList = true;
+            try
+            {
+                var field = fields.SelectedIndex switch { 1 => "TITLE", 2 => "CONTENT", 3 => "AUTHOR", _ => "TITLE_CONTENT" };
+                var data = await client.ListAsync(page, field, query.Text, mine, Lifetime.Token);
+                if (Lifetime.IsCancellationRequested) return;
+                total = data.TotalCount; grid.ItemsSource = data.Notices.Concat(data.Items).ToArray();
+                count.Text = $"전체 {total}건 · 10건씩 · {page}/{Math.Max(1, (total + 9) / 10)}쪽";
+            }
+            finally { loadingList = false; }
         }
         async Task OpenAsync()
         {
@@ -46,6 +55,8 @@ public sealed class BoardDialog : CompactDialog
         Action("검색", async () => { page = 1; await LoadAsync(); });
         Actions.Children.Add(new Border { Width = 72 });
         var mineButton = Action("내 글 보기", async () => { mine = !mine; page = 1; await LoadAsync(); }); mineButton.Width = 94; mineButton.Margin = new(0);
+        var notifications = Action("알림", () => new NotificationsDialog(client, workInfo) { Owner = this }.ShowDialog());
+        notifications.Margin = new(8, 0, 0, 0);
         var write = Action("글쓰기", async () => { var d = new PostEditorDialog(client, null, workInfo) { Owner = this }; if (d.ShowDialog() == true) { page = 1; await LoadAsync(); } }, true); write.Margin = new(16, 0, 0, 0);
         // Paging and notifications remain accessible when the window is resized.
         var navigation = new StackPanel { Orientation = Orientation.Horizontal }; var pageMenu = new ContextMenu(); pageMenu.Items.Add(new MenuItem { Header = navigation, StaysOpenOnClick = true }); grid.ContextMenu = pageMenu;
@@ -190,10 +201,27 @@ public sealed class NotificationsDialog : CompactDialog
         StripListPadding(list);
         var itemStyle = new Style(typeof(ListBoxItem)); itemStyle.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0))); itemStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
         itemStyle.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch)); list.ItemContainerStyle = itemStyle;
-        list.ItemTemplate = new DataTemplate { VisualTree = new FrameworkElementFactory(typeof(NotificationView)) }; Body(list);
-        async Task LoadAsync() { var n = await client.NotificationsAsync(Lifetime.Token); list.ItemsSource = n.Items; list.ToolTip = $"안 읽음 {n.UnreadCount}"; }
+        list.ItemTemplate = new DataTemplate { VisualTree = new FrameworkElementFactory(typeof(NotificationView)) };
+        var content = new Grid(); var empty = new TextBlock { Text = "새 알림이 없습니다.", HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        content.Children.Add(list); content.Children.Add(empty); Body(content);
+        var loadingList = false;
+        Closing += (_, e) => { if (loadingList) { e.Cancel = false; Lifetime.Cancel(); } };
+        async Task LoadAsync()
+        {
+            loadingList = true;
+            try
+            {
+                var n = await client.NotificationsAsync(Lifetime.Token);
+                if (Lifetime.IsCancellationRequested) return;
+                list.ItemsSource = n.Items; list.ToolTip = $"안 읽음 {n.UnreadCount}";
+                empty.Visibility = n.Items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            finally { loadingList = false; }
+        }
         Action("열기", async () => { if (list.SelectedItem is BoardNotification n) { new PostDialog(client, await client.ReadAsync(n.PostId, Lifetime.Token), workInfo) { Owner = this }.ShowDialog(); await LoadAsync(); } }, true);
         Action("모두 읽음", async () => { await client.ReadAllAsync(Lifetime.Token); await LoadAsync(); });
+        Action("새로고침", LoadAsync);
         OnLoad(LoadAsync);
     }
 }
