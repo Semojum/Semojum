@@ -29,7 +29,13 @@ public sealed class BoardClient(SemojumApiClient api)
     public async Task<BoardPost> ReadAsync(long id, CancellationToken ct = default) => Read<BoardPost>(await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/board/posts/" + id, cancellationToken: ct));
     public Task<JsonElement> NoticeAsync(string id, CancellationToken ct = default) => api.SendAuthenticatedAsync(HttpMethod.Get, "/api/board/notices/" + Uri.EscapeDataString(id), cancellationToken: ct);
     public Task DeleteAsync(long id, CancellationToken ct = default) => api.SendAuthenticatedAsync(HttpMethod.Delete, "/api/board/posts/" + id, cancellationToken: ct);
-    public async Task<BoardNotifications> NotificationsAsync(CancellationToken ct = default) => Read<BoardNotifications>(await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/board/notifications", cancellationToken: ct));
+    public async Task<BoardNotifications> NotificationsAsync(CancellationToken ct = default)
+    {
+        var result = Read<BoardNotifications>(await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/board/notifications", cancellationToken: ct));
+        if (result.Items is null || result.UnreadCount < 0 || result.Items.Any(n => n is null || n.PostId < 1 || n.NotificationId < 1 || n.Title is null))
+            throw new InvalidDataException("알림 목록의 서버 응답을 확인할 수 없습니다. 다시 불러와 주세요.");
+        return result;
+    }
     public Task ReadAllAsync(CancellationToken ct = default) => api.SendAuthenticatedAsync(HttpMethod.Patch, "/api/board/notifications/read-all", cancellationToken: ct);
     public async Task<(long Id, BoardPost? Post)> SaveAsync(long? id, string title, string content, bool secret,
         long[] keepAttachmentIds, UploadFile[] files, CancellationToken ct = default)

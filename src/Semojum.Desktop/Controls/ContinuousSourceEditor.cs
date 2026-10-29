@@ -119,7 +119,12 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         { page = p; QueueRefresh(); }
         if (e.PropertyName == nameof(DocumentSession.IsReadOnly)) QueueRefresh();
     }
-    private void BlocksChanged(object? sender, NotifyCollectionChangedEventArgs e) { Observe(); QueueRefresh(); }
+    private void BlocksChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        Observe(); QueueRefresh();
+        if (e.Action == NotifyCollectionChangedAction.Move)
+            Dispatcher.BeginInvoke(() => FollowActive(), DispatcherPriority.DataBind);
+    }
     private void Observe()
     {
         foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; observed.Remove(b); }

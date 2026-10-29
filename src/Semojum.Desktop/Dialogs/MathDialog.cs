@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Semojum.Core;
 using WpfMath.Controls;
@@ -13,13 +14,15 @@ public sealed class MathDialog : CompactDialog
     internal WrapPanel SymbolButtons { get; } = new();
     public string Latex => Input.Text.Trim();
     public BrailleTranslation? Translation { get; private set; }
-    public bool Edited => Translation is not null && BrailleInput.Text != Translation.Cells;
+    public bool Edited => Translation is not null && (manuallyEdited || BrailleInput.Text != Translation.Cells);
     private readonly Func<string, CancellationToken, Task<BrailleTranslation>> translate;
     private string? translatedFor;
     private int revision;
-    public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null) : base("수식 편집기", 980, 462)
+    private bool manuallyEdited, settingBraille;
+    private readonly bool inlinePreview;
+    public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 462)
     {
-        this.translate = translate;
+        this.translate = translate; this.inlinePreview = inlinePreview;
         Input.FontFamily = (FontFamily)FindResource("MonoFont");
         var body = new DockPanel { Margin = new(8, 8, 8, 0) }; Body(body);
         var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(250, 250, 250)), BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
@@ -62,10 +65,29 @@ public sealed class MathDialog : CompactDialog
         left.Children.Add(latexHost);
         BrailleInput.Height = 252; BrailleInput.Padding = new(6, 20, 6, 6); BrailleInput.VerticalContentAlignment = VerticalAlignment.Top; BrailleInput.BorderThickness = new(2); BrailleInput.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 95, 184));
         var brailleHost = new Grid { VerticalAlignment = VerticalAlignment.Top }; brailleHost.Children.Add(BrailleInput);
-        brailleHost.Children.Add(new TextBlock { Text = "점자 수식", Foreground = (Brush)FindResource("Muted"), Margin = new(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false });
+        brailleHost.Children.Add(new TextBlock { Text = inlinePreview ? "점자 수식 미리보기 (읽기 전용)" : "점자 수식", Foreground = (Brush)FindResource("Muted"), Margin = new(8, 4, 0, 0), VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false });
         Grid.SetColumn(brailleHost, 2); panes.Children.Add(brailleHost);
         System.Windows.Automation.AutomationProperties.SetName(Input, "LaTeX 수식");
         System.Windows.Automation.AutomationProperties.SetName(BrailleInput, "점자 수식");
+        if (manualBraille is not null) { BrailleInput.Text = manualBraille; manuallyEdited = true; }
+        BrailleInput.TextChanged += (_, _) => { if (!settingBraille) manuallyEdited = true; };
+        var brailleMenu = new ContextMenu();
+        var useAutomatic = new MenuItem { Header = "자동 점역 결과 사용" };
+        useAutomatic.Click += (_, _) =>
+        {
+            if (Translation is null || translatedFor != Latex) return;
+            settingBraille = true;
+            try { BrailleInput.Text = Translation.Cells; manuallyEdited = false; }
+            finally { settingBraille = false; }
+            Status.Text = Translation.NeedsReview ? "점역 결과에 검토할 문자가 있습니다." : "";
+        };
+        brailleMenu.Items.Add(useAutomatic); brailleMenu.Items.Add(new Separator());
+        foreach (var (label, command) in new[] { ("잘라내기", ApplicationCommands.Cut), ("복사", ApplicationCommands.Copy), ("붙여넣기", ApplicationCommands.Paste), ("모두 선택", ApplicationCommands.SelectAll) })
+            brailleMenu.Items.Add(new MenuItem { Header = label, Command = command, CommandTarget = BrailleInput });
+        brailleMenu.Opened += (_, _) => useAutomatic.IsEnabled = !inlinePreview && Translation is not null && translatedFor == Latex;
+        BrailleInput.ContextMenu = brailleMenu;
+        BrailleInput.ToolTip = inlinePreview ? "인라인 수식의 부분 점자 좌표가 없어 미리보기만 제공합니다."
+            : "점자를 직접 수정할 수 있습니다. 자동 점역 결과는 우클릭 메뉴에서 다시 선택하세요.";
         Input.Text = latex ?? @"\frac{a+b}{2}=\sqrt{c}";
         if (Input.Text.StartsWith(@"\frac", StringComparison.Ordinal) && SymbolButtons.Children[0] is Button fraction)
         { fraction.Background = new SolidColorBrush(Color.FromRgb(204, 228, 247)); fraction.BorderBrush = (Brush)FindResource("Accent"); }
@@ -96,11 +118,19 @@ public sealed class MathDialog : CompactDialog
             Status.Text = "점역 중…";
             var result = await translate(latex, Lifetime.Token);
             if (generation != revision || Lifetime.IsCancellationRequested) return;
-            Translation = result; translatedFor = latex; BrailleInput.Text = result.Cells;
-            Status.Text = result.NeedsReview ? "점역 결과에 검토할 문자가 있습니다." : "";
+            Translation = result; translatedFor = latex;
+            if (!manuallyEdited)
+            {
+                settingBraille = true;
+                try { BrailleInput.Text = result.Cells; }
+                finally { settingBraille = false; }
+            }
+            Status.Text = inlinePreview ? "인라인 수식은 블록 전체를 다시 점역하거나 기존 점자를 유지합니다."
+                : manuallyEdited ? "직접 고친 점자를 유지했습니다. 수식이 바뀌었다면 점자를 확인해 주세요."
+                : result.NeedsReview ? "점역 결과에 검토할 문자가 있습니다." : "";
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { if (generation == revision) { Status.Text = ex.Message; BrailleInput.Clear(); } }
-        finally { if (generation == revision) BrailleInput.IsReadOnly = false; }
+        catch (Exception ex) { if (generation == revision) { Status.Text = ex.Message; if (!manuallyEdited) { settingBraille = true; try { BrailleInput.Clear(); } finally { settingBraille = false; } } } }
+        finally { if (generation == revision) BrailleInput.IsReadOnly = inlinePreview; }
     }
 }

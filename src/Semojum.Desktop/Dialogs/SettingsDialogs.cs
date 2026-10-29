@@ -105,7 +105,7 @@ public sealed class DefaultsDialog : CompactDialog
             DialogResult = true;
         }, true);
         Action("취소", () => DialogResult = false);
-        Action("기본값 복원", () => { forms.SelectedItem = forms.Items.Cast<BrailleForm>().FirstOrDefault(f => f.FormId == "builtin:MIDHIGH_TEXTBOOK"); options.Set(new()); pageNumberLine = "odd"; }).Width = 99;
+        Action("기본값 복원", () => { forms.SelectedItem = forms.Items.Cast<BrailleForm>().FirstOrDefault(f => f.FormId == "builtin:GENERAL_BOOK"); options.Set(new()); pageNumberLine = "odd"; }).Width = 99;
     }
 }
 

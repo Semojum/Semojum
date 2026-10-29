@@ -93,9 +93,9 @@ public sealed class SixDotDialog : CompactDialog
         var chars = string.Concat(current.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
         KeyFields = Enumerable.Range(0, 6).Select(i => new TextBox { Text = i < chars.Length ? chars[i].ToString() : "", CharacterCasing = CharacterCasing.Upper, MaxLength = 1, Width = 34, Height = 24, Padding = new(0), Margin = new(0, 0, 6, 0), HorizontalContentAlignment = HorizontalAlignment.Center }).ToArray();
         var body = new StackPanel { Margin = new(16, 16, 16, 0) }; Body(body);
-        var mode = new Controls.SegmentedChoice("1단", "2단", "3단", "사용자") { SelectedIndex = chars == "FDSJKL" ? 1 : 3 };
-        mode.SetAvailable(0, false, "1단 키 배치는 아직 정의되지 않았습니다. 사용자 지정으로 키를 설정할 수 있습니다.");
-        mode.SetAvailable(2, false, "3단 키 배치는 아직 정의되지 않았습니다. 사용자 지정으로 키를 설정할 수 있습니다.");
+        string[] presets = ["WERUIO", "FDSJKL", "XCVNM,"];
+        var presetIndex = Array.IndexOf(presets, chars);
+        var mode = new Controls.SegmentedChoice("1단", "2단", "3단", "사용자") { SelectedIndex = presetIndex < 0 ? 3 : presetIndex };
         void Field(string label, FrameworkElement value)
         {
             var row = new DockPanel { Height = 40 };
@@ -109,12 +109,20 @@ public sealed class SixDotDialog : CompactDialog
         {
             System.Windows.Automation.AutomationProperties.SetName(field, $"{i + 1}점 키"); keys.Children.Add(field);
             field.TextChanged += (_, _) => { if (!settingPreset) mode.SelectedIndex = 3; };
+            field.GotKeyboardFocus += (_, _) => field.SelectAll();
+            field.PreviewMouseLeftButtonDown += (_, e) => { field.Focus(); field.SelectAll(); e.Handled = true; };
+            field.PreviewTextInput += (_, e) => { if (e.Text.Length != 1 || e.Text[0] < '!' || e.Text[0] > '~') e.Handled = true; };
+            DataObject.AddPastingHandler(field, (_, e) =>
+            {
+                if (!e.DataObject.GetDataPresent(DataFormats.UnicodeText) || e.DataObject.GetData(DataFormats.UnicodeText) is not string text ||
+                    text.Length != 1 || text[0] < '!' || text[0] > '~') e.CancelCommand();
+            });
         }
         mode.SelectionChanged += (_, _) =>
         {
-            if (mode.SelectedIndex != 1) return;
+            if (mode.SelectedIndex is < 0 or > 2) return;
             settingPreset = true;
-            try { for (var i = 0; i < 6; i++) KeyFields[i].Text = "FDSJKL"[i].ToString(); }
+            try { for (var i = 0; i < 6; i++) KeyFields[i].Text = presets[mode.SelectedIndex][i].ToString(); }
             finally { settingPreset = false; }
         };
         Field("키 지정", keys);
@@ -123,7 +131,7 @@ public sealed class SixDotDialog : CompactDialog
     private bool Apply()
     {
         var value = string.Concat(KeyFields.Select(k => k.Text.Trim())).ToUpperInvariant();
-        if (value.Length != 6 || value.Any(c => !char.IsAsciiLetter(c)) || value.Distinct().Count() != 6) throw new ArgumentException("서로 다른 영문 키 6개를 입력해 주세요.");
+        new SixDotInput().Configure(value);
         Keys = string.Join(" ", value.ToCharArray()); return true;
     }
 }

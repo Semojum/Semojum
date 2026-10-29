@@ -1,4 +1,5 @@
 using System.Net;
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Semojum.Core;
@@ -10,6 +11,8 @@ internal static class Qa4Checks
     {
         yield return ("QA4 rules preserve full text and search-only flags, and encode query/filter/page", Rules);
         yield return ("QA4 applied rules use actual engine fields and select only overlapping current cells", Applied);
+        yield return ("Server evidence is available without claiming an unknown braille position", AppliedServerEvidence);
+        yield return ("Text and braille panel evidence survives page parsing and SMJ round trip", RuleOriginRoundTrip);
         yield return ("QA4 inserting a footer continues to the next start without overlap or loss", Footers);
         yield return ("QA4 initial visual choice retains every alternative and protects saved manual results", VisualChoices);
         yield return ("QA4 user forms create, update, copy and delete without changing the built-in form", Forms);
@@ -63,11 +66,77 @@ internal static class Qa4Checks
         Check(AppliedRules.Select(block, 3, 0).Length == 0 && AppliedRules.Select(block, 0, 2).Length == 1);
         block.HasManualBraille = true; Check(AppliedRules.Select(block, 2, 0).Length == 0);
         block.HasManualBraille = false; block.Source = "바뀜"; Check(AppliedRules.Select(block, 2, 0).Length == 0);
+        block.Source = "기호"; block.Braille = new string('⠁', 72) + "\n⠃⠉⠙";
+        block.Translation = BrailleTranslation.Plain(block.Braille) with { SourceText = "기호", RuleTrail = [rule with { LineNo = 0, ColumnStart = 74, ColumnEnd = 76 }] };
+        Check(AppliedRules.Select(block, 74, 0).Single().Cells == "⠉⠙" && AppliedRules.Select(block, 73, 0).Length == 0);
         block.Source = "기호"; block.Translation = null; block.Braille = "⠿\n⠁⠃⠉⠙"; block.Metadata = new(Rules: [rule with { LineNo = 1 }]);
-        Check(AppliedRules.Select(block, 3, 0).Single().Cells == "⠃⠉");
+        var originalRule = AppliedRules.Select(block, 3, 0).Single();
+        Check(originalRule.Cells == "" && originalRule.IsBlockEvidence);
         using var legacy = JsonDocument.Parse("""{"rule_id":"old","title":"제목","excerpt":"옛 본문","line_no":-1}""");
         Check(AppliedRules.Read(legacy.RootElement).Excerpt == "옛 본문");
         return Task.CompletedTask;
+    }
+    private static Task AppliedServerEvidence()
+    {
+        var rule = new RuleEvidence("NISE-6.4.1", "fixture", "6.4.1", "시각 자료", "원본 규정", -1, 0, 0, "symbol");
+        var block = new EditorBlock { Id = 1, Source = "그림 설명", Braille = "⠁⠃⠉⠙",
+            Translation = BrailleTranslation.Plain("⠁⠃⠉⠙") with { SourceText = "그림 설명", RuleTrail = [] },
+            Metadata = new(Type: "chart_graph", Rules: [rule]) };
+        var rows = AppliedRules.Select(block, 0, 0);
+        Check(rows.Length == 1 && rows[0].RuleId == "NISE-6.4.1" && rows[0].Symbol == "기호 (출처 미확인)"
+            && rows[0].Cells == "" && rows[0].IsBlockEvidence);
+        block.Translation = block.Translation! with { RuleTrail = [rule with { RuleId = "local", LineNo = 0, ColumnStart = 1, ColumnEnd = 3 }] };
+        rows = AppliedRules.Select(block, 1, 0);
+        Check(rows.Length == 2 && rows.Any(r => r.RuleId == "local" && r.Cells == "⠃⠉" && !r.IsBlockEvidence)
+            && rows.Any(r => r.RuleId == "NISE-6.4.1" && r.Cells == "" && r.IsBlockEvidence));
+        rows = AppliedRules.Select(block, 3, 0);
+        Check(rows.Length == 1 && rows[0].RuleId == "NISE-6.4.1" && rows[0].Cells == "");
+        block.HasManualBraille = true; Check(AppliedRules.Select(block, 1, 0).Length == 0);
+        block.HasManualBraille = false; block.Source = "고친 원문"; Check(AppliedRules.Select(block, 1, 0).Length == 0);
+        return Task.CompletedTask;
+    }
+    private static async Task RuleOriginRoundTrip()
+    {
+        using var document = JsonDocument.Parse("""
+            {"status":"COMPLETED","result":{"text_list":[{"id":"one","type":"image","contents":["그림"],
+              "rule_trail":[{"rule_id":"same","rule_name":"규정","line_no":0,"col_start":0,"col_end":1}]}],
+              "braille_text_list":[{"id":"one","contents":["⠁"],
+              "rule_trail":[{"rule_id":"same","rule_name":"규정","line_no":0,"col_start":0,"col_end":1}]}]}}
+            """);
+        var block = JobClient.ReadPage(document.RootElement, 1, 1).Blocks.Single();
+        Check(block.Metadata.Rules?.Length == 2 && block.Metadata.Rules[0].Origin == RuleEvidenceOrigin.TextPanel
+            && block.Metadata.Rules[1].Origin == RuleEvidenceOrigin.BraillePanel);
+        var session = new DocumentSession(); session.Add(block);
+        var path = Path.Combine(Path.GetTempPath(), "rule-origin-" + Guid.NewGuid().ToString("N") + ".smj");
+        try
+        {
+            await SmjFile.SaveAsync(path, SmjFile.Snapshot(session));
+            var restored = await SmjFile.LoadAsync(path);
+            var evidence = restored.Blocks.Single().Metadata.Rules!;
+            Check(evidence.Length == 2 && evidence[0].Origin == RuleEvidenceOrigin.TextPanel
+                && evidence[1].Origin == RuleEvidenceOrigin.BraillePanel);
+
+            // An older v4 document has the same rule fields but no origin. Its
+            // contents remain readable, while positions are treated as unknown.
+            var manifest = JsonSerializer.SerializeToNode(SmjFile.Snapshot(session).Manifest,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+            foreach (var row in manifest["blocks"]![0]!["metadata"]!["rules"]!.AsArray())
+                row!.AsObject().Remove("origin");
+            var oldPath = path + ".old";
+            try
+            {
+                using (var archive = ZipFile.Open(oldPath, ZipArchiveMode.Create))
+                using (var stream = archive.CreateEntry("manifest.json").Open())
+                    await JsonSerializer.SerializeAsync(stream, manifest);
+                var legacy = (await SmjFile.LoadAsync(oldPath)).Blocks.Single();
+                Check(legacy.Metadata.Rules!.All(rule => rule.Origin == RuleEvidenceOrigin.Unknown));
+                legacy.HasManualBraille = false;
+                var legacyRows = AppliedRules.Select(legacy, 0, 0);
+                Check(legacyRows.Length > 0 && legacyRows.All(row => row.IsBlockEvidence && row.Cells == ""));
+            }
+            finally { if (File.Exists(oldPath)) File.Delete(oldPath); }
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
     }
     private static Task Footers()
     {

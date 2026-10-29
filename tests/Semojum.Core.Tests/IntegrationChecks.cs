@@ -356,6 +356,49 @@ internal static class IntegrationChecks
         var engine = new LocalBrailleEngine(sidecar);
         var grade2 = await engine.TranslateElementAsync("가", new(), new()); Equal("⠫", grade2.Cells.Trim('⠀'));
         Equal("3.4.41", sidecar.EngineVersion);
+        var spacingPing = await sidecar.InvokeAsync("ping");
+        var spacingCapable = spacingPing.TryGetProperty("editor_spacing_protocol", out var spacingProtocol) && spacingProtocol.GetInt32() == 1;
+        if (spacingCapable)
+        {
+        True(grade2.Spacing is not null);
+        var spacingDoc = new DocumentSession { Layout = new(Columns: 16, Lines: 12, PageNumbers: "출력 안 함", Footer: "출력 안 함") };
+        foreach (var item in new[] { ("가", "text", 0), ("나", "title", 3), ("다", "title", 3), ("라", "text", 0) })
+        {
+            var metadata = new BlockMetadata(Type: item.Item2, HeadingLevel: item.Item3);
+            var translated = await engine.TranslateElementAsync(item.Item1, metadata, new());
+            spacingDoc.Add(new EditorBlock { Id = spacingDoc.Blocks.Count + 1, Page = 1, Source = item.Item1,
+                Metadata = metadata, Braille = translated.Cells, Translation = translated });
+        }
+        var firstSpacing = await engine.ComposeAsync(SmjFile.Snapshot(spacingDoc).Manifest);
+        Equal(0, firstSpacing.SpacingUnknownBlockIds!.Length);
+        var firstRows = (await engine.ReadBrfAsync(firstSpacing.Brf))[0];
+        foreach (var line in new[] { 1, 3, 5 }) True(firstRows[line].All(c => c == '⠀'));
+        foreach (var line in new[] { 0, 2, 4, 6 }) True(firstRows[line].Any(c => c != '⠀'));
+        var spacingPath = Path.Combine(Path.GetTempPath(), "semojum-spacing-" + Guid.NewGuid() + ".smj");
+        try
+        {
+            await SmjFile.SaveAsync(spacingPath, SmjFile.Snapshot(spacingDoc));
+            var restored = await SmjFile.LoadAsync(spacingPath);
+            True(restored.Blocks[1].Translation?.Spacing is not null);
+            Equal(firstSpacing.Brf, (await engine.ComposeAsync(SmjFile.Snapshot(restored).Manifest)).Brf);
+            var savedCells = restored.Blocks[1].Braille;
+            restored.Blocks[1].EditBraille(savedCells + "\n\n");
+            var manual = await engine.ComposeAsync(SmjFile.Snapshot(restored).Manifest);
+            True(manual.SpacingUnknownBlockIds!.Contains(restored.Blocks[1].Id));
+            Equal(savedCells + "\n\n", restored.Blocks[1].Braille);
+            var grid = BrailleGrid.FromComposition(manual, restored.Blocks, restored.Layout);
+            True(grid.SelectMany(face => face.Kinds!).Contains("spacing"));
+        }
+        finally { if (File.Exists(spacingPath)) File.Delete(spacingPath); }
+        }
+        else
+        {
+            var legacy = new DocumentSession();
+            legacy.Add(new EditorBlock { Id = 1, Page = 1, Source = "가", Braille = grade2.Cells, Translation = grade2 });
+            var legacyComposition = await engine.ComposeAsync(SmjFile.Snapshot(legacy).Manifest);
+            True(legacyComposition.SpacingUnknownBlockIds!.Contains(1));
+            Equal(grade2.Cells, legacy.Blocks[0].Braille);
+        }
         var spaced = await engine.TranslateElementAsync("  가나다", new(), new());
         var tagged = await engine.TranslateElementAsync("<!2칸>가나다", new(), new()); Equal(tagged.Cells, spaced.Cells);
         var evidence = await engine.TranslateElementAsync("<!주>설명<!/주>", new(), new());

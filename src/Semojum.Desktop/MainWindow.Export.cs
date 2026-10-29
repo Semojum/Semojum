@@ -10,6 +10,10 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    internal Func<string, string, MessageBoxResult>? ExportConfirmation { get; set; }
+    internal Func<ExportRangeDialog, bool>? ExportRangeSelection { get; set; }
+    private MessageBoxResult ConfirmExport(string message, string title) => ExportConfirmation?.Invoke(message, title)
+        ?? MessageBox.Show(this, message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
     private async Task ExportAsync(string? path = null, int format = 1, bool chooseRange = true)
     {
         if (fileBusy || session.Blocks.Count == 0) return;
@@ -26,7 +30,7 @@ public partial class MainWindow
             var snapshot = SmjFile.Snapshot(owner).Manifest;
             var invalid = owner.Blocks.Where(b => b.IsBrailleLocked || b.Braille.Length == 0 && b.Source.Length > 0 && !LocalBrailleEngine.IsLayoutMarker(b.Source) && !LocalBrailleEngine.IsNonPrintingTag(b.Source)
                 || !b.HasManualBraille && translatedRevisions.GetValueOrDefault(b, -1) != b.SourceRevision).Select(b => b.Id).ToHashSet();
-            var plainText = dialog.FilterIndex == 2;
+            var initialFormat = dialog.FilterIndex == 1 ? ".brf" : dialog.FilterIndex == 2 ? ".txt — 원문" : ".txt — 점자";
             var local = engine as LocalBrailleEngine;
             string? fullBrf = null;
             async Task<string> BuildAsync(SmjManifest selected)
@@ -36,7 +40,15 @@ public partial class MainWindow
                     throw new InvalidOperationException("선택한 범위에 점역하지 못했거나 원문·옵션 변경 후 점역이 필요한 블록이 있습니다. 재점역 후 내보내 주세요.");
                 if (local is null) throw new InvalidOperationException("샘플 엔진에서는 점자 문서를 내보낼 수 없습니다.");
                 var result = await local.ComposeAsync(selected, ct);
-                if (result.Replaced.Count > 0 && MessageBox.Show(this, "BRF에서 빈칸으로 바뀌는 문자: " + string.Join(", ", result.Replaced.Select(p => $"{p.Key}({p.Value})")) + "\n계속 내보내시겠습니까?", "문자 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) throw new OperationCanceledException("내보내기를 취소했습니다.");
+                if (result.Replaced.Count > 0 && ConfirmExport("BRF에서 빈칸으로 바뀌는 문자: " + string.Join(", ", result.Replaced.Select(p => $"{p.Key}({p.Value})")) + "\n계속 내보내시겠습니까?", "문자 확인") != MessageBoxResult.Yes) throw new OperationCanceledException("내보내기를 취소했습니다.");
+                if (result.SpacingUnknownBlockIds is { Length: > 0 } ids && ConfirmExport(
+                    "현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록의 빈 줄을 확인해 주세요. 블록: " + DescribeSpacingBlocks(ids)
+                    + "\n저장된 점자는 그대로 유지됩니다. 현재 판면으로 내보내시겠습니까?", "조판 빈 줄 확인") != MessageBoxResult.Yes)
+                    throw new OperationCanceledException("내보내기를 취소했습니다.");
+                if (result.AlignmentUnknownBlockIds is { Length: > 0 } alignmentIds && ConfirmExport(
+                    "정렬 태그와 점자 줄의 대응을 확인할 수 없습니다. 블록: " + DescribeSpacingBlocks(alignmentIds)
+                    + "\n해당 줄의 정렬을 적용하지 않은 현재 판면으로 내보내시겠습니까?", "줄별 정렬 확인") != MessageBoxResult.Yes)
+                    throw new OperationCanceledException("내보내기를 취소했습니다.");
                 return result.Brf;
             }
             async Task<int> CountAsync()
@@ -44,8 +56,15 @@ public partial class MainWindow
                 fullBrf ??= await BuildAsync(snapshot);
                 return DocumentExport.BrfPages(fullBrf).Length;
             }
-            var ranges = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), plainText ? null : CountAsync, format: dialog.FilterIndex == 1 ? ".brf" : plainText ? ".txt — 원문" : ".txt — 점자") { Owner = this };
-            if (chooseRange && ranges.ShowDialog() != true) return;
+            var ranges = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), CountAsync, format: initialFormat, allowFormatChange: true);
+            if (ExportRangeSelection is null) ranges.Owner = this;
+            if (chooseRange && !(ExportRangeSelection?.Invoke(ranges) ?? ranges.ShowDialog() == true)) return;
+            var selectedFormat = ranges.SelectedFormat;
+            var plainText = selectedFormat == ".txt — 원문";
+            var brailleBrf = selectedFormat == ".brf";
+            var targetPath = Path.ChangeExtension(dialog.FileName, brailleBrf ? ".brf" : ".txt");
+            if (!string.Equals(targetPath, dialog.FileName, StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath)
+                && ConfirmExport($"형식 변경으로 선택한 파일이 이미 있습니다.\n{targetPath}\n덮어쓰시겠습니까?", "파일 확인") != MessageBoxResult.Yes) return;
             var range = ranges.Result;
             var selected = DocumentExport.SelectOriginal(snapshot, range);
             DocumentExport.RequireCompletedPages(selected);
@@ -54,18 +73,18 @@ public partial class MainWindow
             else
             {
                 if (selected.Blocks.Any(b => b.Translation?.NeedsReview == true)
-                    && MessageBox.Show(this, "선택한 범위에 누락 문자 또는 점역 불가 표시가 있습니다. 현재 점자로 내보내시겠습니까?", "점역 결과 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+                    && ConfirmExport("선택한 범위에 누락 문자 또는 점역 불가 표시가 있습니다. 현재 점자로 내보내시겠습니까?", "점역 결과 확인") != MessageBoxResult.Yes) return;
                 var brf = range.Scope == ExportScope.OriginalPages ? await BuildAsync(selected) : fullBrf ?? await BuildAsync(snapshot);
                 brf = DocumentExport.SelectBraille(brf, range);
-                text = dialog.FilterIndex == 1 ? brf : DocumentExport.BrailleText(await local!.ReadBrfAsync(brf, ct));
+                text = brailleBrf ? brf : DocumentExport.BrailleText(await local!.ReadBrfAsync(brf, ct));
             }
             ct.ThrowIfCancellationRequested();
-            var temp = dialog.FileName + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            var temp = targetPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 await File.WriteAllTextAsync(temp, text, new UTF8Encoding(false), ct);
                 ct.ThrowIfCancellationRequested();
-                File.Move(temp, dialog.FileName, overwrite: true);
+                File.Move(temp, targetPath, overwrite: true);
             }
             finally { if (File.Exists(temp)) File.Delete(temp); }
             if (session == owner) session.Status = "선택한 범위를 내보냈습니다. 작업 파일 저장은 Ctrl+S를 눌러 주세요.";

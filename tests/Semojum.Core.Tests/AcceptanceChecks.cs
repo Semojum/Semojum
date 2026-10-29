@@ -13,6 +13,8 @@ internal static class AcceptanceChecks
         yield return ("Uploaded local-only settings survive successful and failed jobs and SMJ reopen", UploadSettings);
         yield return ("Image multipart retains ordered filenames, MIME types and every input byte", ImageMultipart);
         yield return ("Credit exhaustion is read without conflating blocked pages with successful pages", CreditStatus);
+        yield return ("Six-dot presets support the specified physical keys including comma", SixDotPresets);
+        yield return ("Six-dot custom digit and punctuation keys survive account preference reload", SixDotCustomKeys);
     }
     private static void Check(bool value) { if (!value) throw new Exception("Acceptance regression failed"); }
     private static HttpResponseMessage Ok(object result) => new(HttpStatusCode.OK)
@@ -90,5 +92,47 @@ internal static class AcceptanceChecks
         var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
         var status = await new JobClient(api).StatusAsync("fixture");
         Check(status.CreditExhausted && status.SucceededPages == 1 && status.FailedPages == 2 && status.FinishedPages == 3);
+    }
+
+    private static Task SixDotPresets()
+    {
+        var input = new SixDotInput();
+        foreach (var keys in new[] { "W E R U I O", "F D S J K L", "X C V N M ," })
+        {
+            input.Configure(keys);
+            var dots = keys.Where(c => !char.IsWhiteSpace(c)).ToArray();
+            var expected = new[] { "⠁", "⠂", "⠄", "⠈", "⠐", "⠠" };
+            for (var i = 0; i < dots.Length; i++)
+            {
+                Check(input.Press(dots[i]));
+                Check(input.Release(dots[i]) == expected[i]);
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    private static async Task SixDotCustomKeys()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "semojum-sixdot-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new AccountPreferenceStore(dir);
+            await store.SaveAsync("fixture", new(SixDotKeys: "Q 1 , 4 - /"));
+            var input = new SixDotInput();
+            input.Configure(store.Load("fixture").SixDotKeys);
+            foreach (var (key, expected) in new[] { ('q', "⠁"), ('1', "⠂"), (',', "⠄"), ('4', "⠈"), ('-', "⠐"), ('/', "⠠") })
+            {
+                Check(input.Press(key));
+                Check(input.Release(key) == expected);
+            }
+            foreach (var invalid in new[] { "Q 1 ! 4 - /", "Q 1 , 4 - 가", "Q 1 , 4 -" })
+            {
+                try { input.Configure(invalid); }
+                catch (ArgumentException) { continue; }
+                throw new Exception("Invalid six-dot mapping accepted");
+            }
+            Check(input.Press(',') && input.Release(',') == "⠄");
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 }

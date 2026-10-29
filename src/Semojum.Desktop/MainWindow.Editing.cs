@@ -62,8 +62,10 @@ public partial class MainWindow
         {
             if (session?.ActiveBlock is { } block)
                 SourceEditor.CaretOffset = Math.Clamp(block.SourceCaret, 0, SourceEditor.Document.TextLength);
+            RefreshLinkedSource();
             RefreshSourcePosition();
         };
+        PageEditor.Editor.TextArea.SelectionChanged += (_, _) => RefreshLinkedSource();
     }
     private void InstallEditorMenu(TextEditor editor)
     {
@@ -73,7 +75,7 @@ public partial class MainWindow
     private ContextMenu CreateEditorContextMenu()
     {
         var menu = new ContextMenu { Style = (Style)FindResource("EditorContextMenu") };
-        foreach (var (label, action) in new[] { ("메모 추가", "memo"), ("", ""), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules"), ("", ""), ("강조 넣기", "tag:강조"), ("쪽바꿈 넣기", "tag:쪽바꿈") })
+        foreach (var (label, action) in new[] { ("메모 추가", "memo"), ("", ""), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules") })
         {
             if (label.Length == 0) { menu.Items.Add(new Separator { Style = (Style)menu.Style.Resources[typeof(Separator)], Height = 9, Margin = new(0) }); continue; }
             var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);

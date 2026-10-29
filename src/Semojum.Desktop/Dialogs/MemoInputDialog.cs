@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using SharpVectors.Converters;
 
@@ -18,6 +19,8 @@ public sealed class MemoInputDialog : CompactDialog
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         panel.Children.Add(buttons);
         var save = Action("저장", () => { if (Value.Length == 0) throw new ArgumentException("메모를 입력해 주세요."); DialogResult = true; }, true);
+        InputBindings.Add(new KeyBinding(ApplicationCommands.Save, Key.Enter, ModifierKeys.Control) { CommandTarget = this });
+        CommandBindings.Add(new CommandBinding(ApplicationCommands.Save, (_, e) => { save.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); e.Handled = true; }));
         var cancel = Action("취소", () => DialogResult = false);
         foreach (var button in new[] { save, cancel })
         { Actions.Children.Remove(button); button.MinWidth = button.Width = 56; button.Height = 32; buttons.Children.Add(button); }

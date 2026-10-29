@@ -13,6 +13,8 @@ public partial class App : Application
         // Smoke captures are compared 1:1 with Figma's 1x PNGs, so lay windows out at 96 DPI regardless of the display scale.
         if (smoke && Environment.GetEnvironmentVariable("SEMOJUM_SMOKE_DPI") != "native") SetThreadDpiAwarenessContext(new IntPtr(-1));
         var window = new MainWindow(smoke);
+        if (!smoke && e.Args.Length == 1 && !e.Args[0].StartsWith("--", StringComparison.Ordinal))
+            window.StartupFilePath = e.Args[0];
         MainWindow = window;
         if (e.Args.Length == 2 && e.Args[0] == "--smoke-test")
         {

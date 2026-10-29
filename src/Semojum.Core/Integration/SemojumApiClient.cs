@@ -18,6 +18,12 @@ public sealed record AccountIdentity(string LoginId, string Role, string? AdminS
     public string DisplayName => string.IsNullOrWhiteSpace(Alias) ? LoginId : Alias;
 }
 
+/// <summary>Refresh credential for an OS-protected store. Never serialize to ordinary app preferences or logs.</summary>
+public sealed record SessionCredential(string LoginId, string RefreshToken)
+{
+    public override string ToString() => "SessionCredential { redacted }";
+}
+
 /// <summary>V3.1 envelope and in-memory authentication. The caller owns the HttpClient.</summary>
 public sealed class SemojumApiClient
 {
@@ -26,10 +32,44 @@ public sealed class SemojumApiClient
     private readonly Uri origin;
     private readonly SemaphoreSlim authGate = new(1, 1);
     private Session? session;
+    private SessionCredential? ownedCredential;
     private sealed record Session(Guid Id, AccountIdentity Account, string AccessToken, string RefreshToken);
     private sealed record LoginResult(string AccessToken, string RefreshToken, string Role, string? AdminScope, string? Alias);
-    private sealed record RefreshResult(string AccessToken);
+    private sealed record RefreshResult(string AccessToken, string? LoginId = null, string? Role = null, string? AdminScope = null, string? Alias = null);
     public AccountIdentity? Account => Volatile.Read(ref session)?.Account;
+    /// <summary>Optional application policy evaluated before retrying a request with a refreshed identity.</summary>
+    public Func<AccountIdentity, bool>? RefreshedIdentityAllowed { get; set; }
+
+    public SessionCredential? GetSessionCredential()
+    {
+        var current = Volatile.Read(ref session);
+        return current is null ? null : new(current.Account.LoginId, current.RefreshToken);
+    }
+    /// <summary>The last credential owned by this client, retained after expiry so explicit logout can forget it.</summary>
+    public SessionCredential? GetOwnedSessionCredential() => Volatile.Read(ref ownedCredential);
+
+    /// <summary>Returns null for an older server that cannot confirm the current identity and role.</summary>
+    public async Task<AccountIdentity?> RestoreSessionAsync(SessionCredential credential, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(credential);
+        ArgumentException.ThrowIfNullOrWhiteSpace(credential.LoginId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(credential.RefreshToken);
+        await authGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Volatile.Read(ref session) is not null) throw new InvalidOperationException("이미 로그인되어 있습니다.");
+            var result = await SendOnceAsync(HttpMethod.Post, "/api/auth/refresh", new { refreshToken = credential.RefreshToken }, null, cancellationToken).ConfigureAwait(false);
+            var tokens = result.Deserialize<RefreshResult>(Json) ?? throw InvalidResponse();
+            if (string.IsNullOrWhiteSpace(tokens.AccessToken)) throw InvalidResponse();
+            if (tokens.LoginId is null && tokens.Role is null) return null;
+            if (tokens.LoginId != credential.LoginId || tokens.Role is not ("ROLE_USER" or "ROLE_ADMIN" or "ROLE_ORG_ADMIN")) throw InvalidResponse();
+            var account = new AccountIdentity(tokens.LoginId, tokens.Role, tokens.AdminScope, tokens.Alias);
+            Volatile.Write(ref ownedCredential, credential);
+            Volatile.Write(ref session, new Session(Guid.NewGuid(), account, tokens.AccessToken, credential.RefreshToken));
+            return account;
+        }
+        finally { authGate.Release(); }
+    }
 
     public SemojumApiClient(HttpClient http, Uri? baseAddress = null)
     {
@@ -52,6 +92,7 @@ public sealed class SemojumApiClient
             if (string.IsNullOrWhiteSpace(tokens.AccessToken) || string.IsNullOrWhiteSpace(tokens.RefreshToken)
                 || tokens.Role is not ("ROLE_USER" or "ROLE_ADMIN" or "ROLE_ORG_ADMIN")) throw InvalidResponse();
             var account = new AccountIdentity(loginId, tokens.Role, tokens.AdminScope, tokens.Alias);
+            Volatile.Write(ref ownedCredential, new SessionCredential(loginId, tokens.RefreshToken));
             Volatile.Write(ref session, new Session(Guid.NewGuid(), account, tokens.AccessToken, tokens.RefreshToken));
             return account;
         }
@@ -62,7 +103,7 @@ public sealed class SemojumApiClient
     {
         await authGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         Session? old;
-        try { old = Interlocked.Exchange(ref session, null); }
+        try { old = Interlocked.Exchange(ref session, null); Volatile.Write(ref ownedCredential, null); }
         finally { authGate.Release(); }
         if (old is not null)
             await SendOnceAsync(HttpMethod.Post, "/api/auth/logout", new { refreshToken = old.RefreshToken }, null, cancellationToken).ConfigureAwait(false);
@@ -139,7 +180,18 @@ public sealed class SemojumApiClient
                 var result = await SendOnceAsync(HttpMethod.Post, "/api/auth/refresh", new { refreshToken = current.RefreshToken }, null, cancellationToken).ConfigureAwait(false);
                 var tokens = result.Deserialize<RefreshResult>(Json) ?? throw InvalidResponse();
                 if (string.IsNullOrWhiteSpace(tokens.AccessToken)) throw InvalidResponse();
-                var updated = current with { AccessToken = tokens.AccessToken };
+                var identity = current.Account;
+                if (tokens.LoginId is not null || tokens.Role is not null)
+                {
+                    if (tokens.LoginId != current.Account.LoginId || tokens.Role is not ("ROLE_USER" or "ROLE_ADMIN" or "ROLE_ORG_ADMIN")) throw InvalidResponse();
+                    identity = new AccountIdentity(tokens.LoginId, tokens.Role, tokens.AdminScope, tokens.Alias);
+                    if (RefreshedIdentityAllowed is { } allowed && !allowed(identity))
+                    {
+                        ClearIfCurrent(current);
+                        throw new SemojumApiException(HttpStatusCode.Forbidden, "AUTH_DESKTOP_ROLE", "계정 권한이 변경되어 에디터를 사용할 수 없습니다. 다시 로그인해 주세요.");
+                    }
+                }
+                var updated = current with { AccessToken = tokens.AccessToken, Account = identity };
                 Volatile.Write(ref session, updated);
                 return updated;
             }

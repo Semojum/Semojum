@@ -24,19 +24,10 @@ public sealed class OpenDocumentDialog : CompactDialog
         this.serverSettingsAvailable = serverSettingsAvailable;
         current = defaults.Options; layout = new(PageNumbers: defaults.PageNumberLine == "every" ? "모든 페이지" : "홀수 페이지");
         var body = new StackPanel { Margin = new(16, 12, 16, 0) }; Body(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        var file = new DockPanel(); var browse = Button("찾기…", () =>
+        var browse = Button("찾기…", () =>
         {
-            var picker = new OpenFileDialog { Multiselect = true, Filter = "지원 파일|*.pdf;*.hwp;*.hwpx;*.txt;*.jpg;*.jpeg;*.png;*.smj|세모점 작업|*.smj|문서|*.pdf;*.hwp;*.hwpx;*.txt|이미지|*.jpg;*.jpeg;*.png" };
-            while (picker.ShowDialog(this) == true)
-            {
-                try { SetPaths(picker.FileNames); break; }
-                catch (ArgumentException ex)
-                {
-                    if (picker.FileNames.All(p => Supported.Contains(Path.GetExtension(p).ToLowerInvariant()))) { Status.Text = ex.Message; break; }
-                    var notice = FileNotices.UnsupportedFormat(); notice.Owner = this; notice.ShowDialog();
-                    if (notice.Choice != 0) break;
-                }
-            }
+            var paths = SelectPaths(this);
+            if (paths is not null) SetPaths(paths);
             return Task.CompletedTask;
         });
         FileNames.IsHitTestVisible = false; FileNames.Focusable = false; FileNames.BorderThickness = new(0); FileNames.Padding = new(8, 0, 8, 0);
@@ -53,7 +44,7 @@ public sealed class OpenDocumentDialog : CompactDialog
         Forms.ItemsSource = forms; FormPickerDialog.Attach(Forms, this); Field("점역 양식", Forms); Field("한글", korean); Field("점역 규정", rule); Field("한영 혼용 규정", mixed);
         void SetOptions(BrailleOptions options) { current = options; korean.SelectedIndex = options.KoreanGrade1 ? 0 : 1; rule.SelectedIndex = options.EnglishDocument ? 1 : 0; mixed.SelectedIndex = options.MixedRule == "english" ? 1 : 0; }
         Forms.SelectionChanged += (_, _) => { if (Forms.SelectedItem is BrailleForm form) { SetOptions(form.Options); layout = form.Layout; } };
-        Forms.SelectedItem = forms.FirstOrDefault(f => f.FormId == defaults.FormId) ?? forms.FirstOrDefault(f => f.FormId == "builtin:MIDHIGH_TEXTBOOK") ?? forms.FirstOrDefault(); SetOptions(defaults.Options);
+        Forms.SelectedItem = forms.FirstOrDefault(f => f.FormId == defaults.FormId) ?? forms.FirstOrDefault(f => f.FormId == "builtin:GENERAL_BOOK") ?? forms.FirstOrDefault(); SetOptions(defaults.Options);
         start = Action("변환 시작", () =>
         {
             if (Paths.Length == 0) throw new ArgumentException("파일을 선택해 주세요.");
@@ -71,11 +62,33 @@ public sealed class OpenDocumentDialog : CompactDialog
     }
     private bool IsLocal => Paths.Length == 1 && Path.GetExtension(Paths[0]).Equals(".smj", StringComparison.OrdinalIgnoreCase);
     private static readonly string[] Supported = [".pdf", ".hwp", ".hwpx", ".txt", ".jpg", ".jpeg", ".png", ".smj"];
-    internal void SetPaths(string[] paths)
+    internal static string[]? SelectPaths(Window owner)
+    {
+        var picker = new OpenFileDialog { Multiselect = true, Filter = "지원 파일|*.pdf;*.hwp;*.hwpx;*.txt;*.jpg;*.jpeg;*.png;*.smj|세모점 작업|*.smj|문서|*.pdf;*.hwp;*.hwpx;*.txt|이미지|*.jpg;*.jpeg;*.png" };
+        while (picker.ShowDialog(owner) == true)
+        {
+            try { ValidatePaths(picker.FileNames); return picker.FileNames; }
+            catch (ArgumentException ex)
+            {
+                if (picker.FileNames.All(p => Supported.Contains(Path.GetExtension(p).ToLowerInvariant())))
+                { MessageBox.Show(owner, ex.Message, "파일 선택", MessageBoxButton.OK, MessageBoxImage.Information); continue; }
+                var notice = FileNotices.UnsupportedFormat(); notice.Owner = owner; notice.ShowDialog();
+                if (notice.Choice != 0) return null;
+            }
+        }
+        return null;
+    }
+
+    private static void ValidatePaths(string[] paths)
     {
         var images = new[] { ".jpg", ".jpeg", ".png" };
         if (paths.Length == 0 || paths.Any(p => !Supported.Contains(Path.GetExtension(p).ToLowerInvariant()))) throw new ArgumentException("지원하는 문서 또는 이미지 파일을 선택해 주세요.");
         if (paths.Length > 1 && paths.Any(p => !images.Contains(Path.GetExtension(p).ToLowerInvariant()))) throw new ArgumentException("문서는 한 개씩, 이미지는 여러 개를 함께 선택할 수 있습니다.");
+        if (paths.Length > 1) UploadFileReader.ValidateUniqueFileNames(paths);
+    }
+    internal void SetPaths(string[] paths)
+    {
+        ValidatePaths(paths);
         Paths = paths; FileNames.Text = string.Join("; ", paths.Select(Path.GetFileName));
         var local = IsLocal;
         start.Content = local ? "열기" : "변환 시작";

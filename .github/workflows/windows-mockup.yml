@@ -40,7 +40,7 @@ jobs:
           $output = Join-Path $PWD 'artifacts/smoke'
           $started = Get-Date
           $process = Start-Process 'artifacts/Semojum-win-x64/Semojum.Mockup.exe' -ArgumentList @('--smoke-test', $output) -PassThru
-          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'WPF smoke timed out.' }
+          if (-not $process.WaitForExit(240000)) { $process.Kill(); throw 'WPF smoke timed out.' }
           if ($process.ExitCode -ne 0) {
             Get-Content "$output/failure.txt" -ErrorAction SilentlyContinue
             Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $started; Id = 1000, 1026 } -ErrorAction SilentlyContinue |

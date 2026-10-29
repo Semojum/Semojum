@@ -33,6 +33,7 @@ public partial class MainWindow
     {
         searchQuery = query;
         if (query.Length == 0) return "찾을 내용을 입력해 주세요.";
+        if (panel == SearchPanel.Braille && !DocumentSearch.IsBrailleText(query)) return "점자 찾기에는 점자와 공백·줄바꿈만 입력할 수 있습니다.";
         var editor = SearchEditor(panel);
         var match = DocumentSearch.Next(session.Blocks, panel, query, session.ActiveBlock, editor.SelectionStart + editor.SelectionLength);
         if (match is null) return "일치하는 내용이 없습니다.";
@@ -66,8 +67,10 @@ public partial class MainWindow
 
     internal async Task<string> ReplaceMatchesAsync(string query, string replacement, SearchPanel panel, bool all)
     {
+        if (session.IsReadOnly) return "읽기 전용 문서는 내용을 바꿀 수 없습니다. 다른 이름으로 저장한 뒤 수정해 주세요.";
         searchQuery = query;
         if (query.Length == 0) return "찾을 내용을 입력해 주세요.";
+        if (panel == SearchPanel.Braille && !DocumentSearch.IsBrailleText(query)) return "점자 찾기에는 점자와 공백·줄바꿈만 입력할 수 있습니다.";
         if (panel == SearchPanel.Braille && !DocumentSearch.IsBrailleText(replacement)) return "점자 바꾸기에는 점자와 공백·줄바꿈만 입력할 수 있습니다.";
         var owner = session;
         var editor = SearchEditor(panel);
@@ -79,10 +82,11 @@ public partial class MainWindow
                 return await FindNextAsync(query, panel);
             matches = [new(owner.ActiveBlock, editor.SelectionStart, editor.SelectionLength)];
         }
-        var groups = matches.Where(m => DocumentSearch.Content(m.Block, panel).Substring(m.Offset, m.Length) != replacement)
-            .GroupBy(m => m.Block).Where(g => !(panel == SearchPanel.Braille && g.Key.IsBrailleLocked)).ToArray();
-        var locked = matches.Count(m => panel == SearchPanel.Braille && m.Block.IsBrailleLocked);
-        if (groups.Length == 0) return locked > 0 ? $"잠긴 점자 {locked}곳은 유지했습니다. 변경한 내용은 없습니다." : "변경할 내용이 없습니다.";
+        bool Protected(SearchMatch match) => match.Block.Metadata.IsBlocked || panel == SearchPanel.Braille && match.Block.IsBrailleLocked;
+        var groups = matches.Where(m => !Protected(m) && DocumentSearch.Content(m.Block, panel).Substring(m.Offset, m.Length) != replacement)
+            .GroupBy(m => m.Block).ToArray();
+        var locked = matches.Count(Protected);
+        if (groups.Length == 0) return locked > 0 ? $"잠긴 내용 {locked}곳은 유지했습니다. 변경한 내용은 없습니다." : "변경할 내용이 없습니다.";
         var decisions = new Dictionary<EditorBlock, ManualEditDecision>();
         if (panel == SearchPanel.Text)
             foreach (var group in groups)
@@ -119,7 +123,7 @@ public partial class MainWindow
         if (session != owner) return "문서가 바뀌어 바꾸기 작업을 종료했습니다.";
         if (!all && count > 0) await FindNextAsync(query, panel);
         var result = $"{changed.Count}개 블록의 {count}곳을 바꿨습니다.";
-        if (locked > 0) result += $" 잠긴 점자 {locked}곳은 유지했습니다.";
+        if (locked > 0) result += $" 잠긴 내용 {locked}곳은 유지했습니다.";
         if (translationFailures > 0) result += $" {translationFailures}개 블록의 재점역에 실패했습니다. 원문 수정은 유지되며 다시 점역할 수 있습니다.";
         return session.Status = result;
     }

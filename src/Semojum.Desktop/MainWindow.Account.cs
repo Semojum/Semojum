@@ -12,17 +12,23 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private readonly IAccountCredentialStore accountCredentials = new WindowsAccountCredentialStore();
+    private string? automaticLoginMessage;
     private string WorkInformation() => $"세모점 {CurrentVersion.ToString(3)}\n운영체제: {Environment.OSVersion}\n작업 ID: {session.JobId ?? "로컬 초안"}\n상태: {session.JobStatus}\n원본 쪽: {session.ActiveBlock?.Page}\n블록 수: {session.Blocks.Count}\n판면: {session.Layout.Columns}칸 × {session.Layout.Lines}줄\n점역 오류 블록: {string.Join(", ", session.Blocks.Where(b => b.IsBrailleLocked).Select(b => b.Id))}";
     private AppVersionInfo? availableVersion;
     private bool downloadingUpdate;
+    private bool accountStarting;
+    internal Func<AppVersionInfo, IProgress<string>, CancellationToken, Task>? UpdateDownloadForChecks { get; set; }
+    internal Func<string, MessageBoxResult>? UpdateConfirmationForChecks { get; set; }
+    internal Action<string>? UpdateRequiredNoticeForChecks { get; set; }
     private readonly CancellationTokenSource appLifetime = new();
     private string updateStatus = "";
     private async Task DownloadUpdateAsync()
     {
-        if (smoke || availableVersion is null || downloadingUpdate) return;
+        if ((smoke && UpdateDownloadForChecks is null) || availableVersion is null || downloadingUpdate) return;
         if (availableVersion.DownloadUrl is null) { updateStatus = "업데이트 다운로드 주소가 아직 등록되지 않았습니다. 관리자에게 문의해 주세요."; return; }
         downloadingUpdate = true;
-        try { await AppUpdates.DownloadAsync(availableVersion, new Progress<string>(s => { updateStatus = s; session.Status = s; }), appLifetime.Token); }
+        try { await (UpdateDownloadForChecks ?? AppUpdates.DownloadAsync)(availableVersion, new Progress<string>(s => { updateStatus = s; session.Status = s; }), appLifetime.Token); }
         catch (OperationCanceledException) { }
         catch (Exception ex) { updateStatus = "업데이트를 준비하지 못했습니다: " + ex.Message; session.Status = updateStatus; }
         finally { downloadingUpdate = false; }
@@ -30,7 +36,9 @@ public partial class MainWindow
     internal static Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new(1, 0, 0);
     private async Task StartAccountAsync()
     {
+        accountStarting = true;
         var content = (UIElement)Content; content.IsEnabled = false;
+        var windowWasEnabled = IsEnabled; IsEnabled = false;
         try
         {
             // Missing/unreachable version metadata must not prevent sign-in.
@@ -40,16 +48,32 @@ public partial class MainWindow
             if (availableVersion?.Required(CurrentVersion) == true)
             {
                 await DownloadUpdateAsync();
-                MessageBox.Show(this, "필수 업데이트가 필요합니다.\n" + updateStatus, "업데이트"); allowClose = true; Close(); return;
+                var notice = "필수 업데이트가 필요합니다.\n" + updateStatus;
+                if (UpdateRequiredNoticeForChecks is { } showNotice) showNotice(notice); else MessageBox.Show(this, notice, "업데이트");
+                if (!await ConfirmAllDocumentsAsync())
+                {
+                    session.Status = "필수 업데이트가 필요합니다. 작업을 저장한 뒤 다시 실행해 주세요.";
+                    return;
+                }
+                allowClose = true; Close(); return;
             }
+            await TryAutomaticLoginAsync();
             if (!EnsureAccount()) { allowClose = true; Close(); return; }
             LoadAccountPreferences();
-            if (availableVersion?.Available(CurrentVersion) == true && availableVersion.DownloadUrl is not null) _ = DownloadUpdateAsync();
             if (preferences.WorkFolder is not null) await OpenWorkFolderAsync(false);
             await RestoreActiveJobAsync();
+            if (availableVersion?.Available(CurrentVersion) == true)
+                session.Status = $"새 버전 {availableVersion.Latest}이 있습니다. 버전 정보에서 확인해 주세요.";
         }
         catch (Exception ex) { ShowError(ex); }
-        finally { content.IsEnabled = true; }
+        finally { accountStarting = false; IsEnabled = windowWasEnabled; content.IsEnabled = true; }
+    }
+    private async Task TryAutomaticLoginAsync()
+    {
+        if (smoke || api.Account is not null) return;
+        var result = await AutomaticLogin.RestoreAsync(api, accountCredentials);
+        automaticLoginMessage = result.Message;
+        if (result.Account is not null) RefreshAccount();
     }
     private void ShowVersion()
     {
@@ -59,7 +83,8 @@ public partial class MainWindow
         if (info.Required(CurrentVersion)) message += "\n이 버전은 더 이상 지원되지 않습니다. 업데이트 후 실행해 주세요.";
         if (!info.Available(CurrentVersion)) { MessageBox.Show(this, message + "\n최신 버전입니다.", "버전 정보"); return; }
         if (info.DownloadUrl is null) { MessageBox.Show(this, message + "\n업데이트 다운로드 주소가 아직 등록되지 않았습니다. 관리자에게 문의해 주세요.", "버전 정보"); return; }
-        if (MessageBox.Show(this, message + "\n\n업데이트를 다운로드하시겠습니까?", "버전 정보", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
+        var question = message + "\n\n업데이트를 다운로드하시겠습니까?";
+        if ((UpdateConfirmationForChecks?.Invoke(question) ?? MessageBox.Show(this, question, "버전 정보", MessageBoxButton.YesNo)) == MessageBoxResult.Yes)
             _ = DownloadUpdateAsync();
     }
     private async Task CheckVersionAsync()
@@ -71,7 +96,13 @@ public partial class MainWindow
     private async Task LogoutAccountAsync()
     {
         if (!await ConfirmAllDocumentsAsync()) return;
-        try { await api.LogoutAsync(); }
+        try
+        {
+            if (smoke) await api.LogoutAsync();
+            else await AutomaticLogin.LogoutAsync(api, accountCredentials);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
+        { MessageBox.Show(this, "저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message, "로그아웃"); return; }
         catch (Exception ex) when (ex is HttpRequestException or SemojumApiException) { } // Local credentials are already cleared, even if remote revocation is unavailable.
         finally { RefreshAccount(); }
         foreach (var d in openDocuments.ToArray()) RemoveDocument(d);
@@ -85,7 +116,7 @@ public partial class MainWindow
         var model = BlankDocument(); model.Title = title; model.ActiveBlock!.Source = text;
         await ConfigureTextJobAsync(model);
         model.IsDirty = text.Length > 0;
-        SetSession(model, null, false); OriginalToggle.IsChecked = false; UpdatePanelLayout();
+        SetSession(model, null, true, showUpload: true);
         session.Status = "새 텍스트 작업 · AI·크레딧 사용 없음 · Ctrl+S로 저장";
     }
     private async Task ConfigureTextJobAsync(DocumentSession model, DocumentSession? selectedSettings = null, string? formId = null)

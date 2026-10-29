@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using System.ComponentModel;
 using Semojum.Core;
 
 namespace Semojum.Desktop.Controls;
@@ -15,6 +16,26 @@ public sealed partial class BrailleGridView
     public Action<string>? Notify { get; set; }
     private GridCell? anchor, caret;
     private BlockSpan[] drawSelection = [];
+    internal IReadOnlyList<EditorBlock> LinkedBlocks { get; private set; } = [];
+    private IReadOnlyList<BlockSpan> linkedRanges = [];
+    internal bool IsLinkedCell(GridCell cell) => CoordinatesCurrent && !cell.IsInsertion && linkedRanges.Any(s => s.Block == cell.Block && cell.Offset >= s.Start && cell.Offset < s.Start + s.Length);
+    internal void SetLinkedBlocks(IReadOnlyList<EditorBlock> blocks)
+        => SetLinkedRanges(blocks.Select(b => new BlockSpan(b, 0, b.Braille.Length)).ToArray());
+    internal void SetLinkedRanges(IReadOnlyList<BlockSpan> ranges)
+    {
+        if (!CoordinatesCurrent) ranges = [];
+        if (linkedRanges.SequenceEqual(ranges)) return;
+        foreach (var block in LinkedBlocks) block.PropertyChanged -= LinkedBlockChanged;
+        linkedRanges = ranges.ToArray(); LinkedBlocks = ranges.Select(r => r.Block).Distinct().ToArray();
+        foreach (var block in LinkedBlocks) block.PropertyChanged += LinkedBlockChanged;
+        InvalidateFaces();
+    }
+    private void LinkedBlockChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Braille) or nameof(EditorBlock.Metadata)
+            or nameof(EditorBlock.Translation) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.IsBrailleLocked))
+            SetLinkedRanges([]);
+    }
     private readonly SixDotInput input = new();
     public bool SixDotEnabled { get; set; }
     public bool SpaceEnabled { get; set; } = true;
@@ -70,7 +91,7 @@ public sealed partial class BrailleGridView
         CellSelected?.Invoke(cell); InvalidateFaces();
     }
     public void ResetSelection()
-    { anchor = caret = null; selectedBlock = false; InvalidateFaces(); }
+    { anchor = caret = null; selectedBlock = false; SetLinkedRanges([]); InvalidateFaces(); }
     public Task InsertAsync(string text) => InsertCoreAsync(text, false);
     public Task InsertPageBreakAsync() => InsertCoreAsync("\n<!쪽바꿈>\n", true);
     private async Task InsertCoreAsync(string text, bool layoutMarker)
@@ -125,10 +146,14 @@ public sealed partial class BrailleGridView
     {
         get
         {
-            foreach (var f in Items.Cast<BrailleGridFace>())
+            var faces = Items.Cast<BrailleGridFace>().ToArray();
+            for (var face = 0; face < faces.Length; face++)
+            {
+                var f = faces[face];
                 for (var y = 0; y < f.Rows.Length; y++)
                     for (var x = 0; x < f.Rows[y].Length; x++)
-                        if (f.Rows[y][x] is { } c && IsCaret(c)) return (f.Number, y + 1, x + 1);
+                        if (f.Rows[y][x] is { } c && IsCaret(c)) return (face + 1, y + 1, x + 1);
+            }
             return null;
         }
     }
@@ -153,10 +178,10 @@ public sealed partial class BrailleGridView
             var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
             if (ctrl && e.Key is Key.Z or Key.Y) { e.Handled = true; ReplayHistory?.Invoke(e.Key == Key.Y); ResetSelection(); return; }
             if (caret is null) return;
-            if (SixDotEnabled && Keyboard.Modifiers == ModifierKeys.None)
+            if (SixDotEnabled && (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) == 0)
             {
-                var key = e.Key.ToString();
-                if (key.Length == 1 && input.Press(key[0])) { e.Handled = true; return; }
+                var key = SixDotKey.FromEvent(e);
+                if (key is { } c && input.Press(c)) { e.Handled = true; return; }
                 if (e.Key == Key.Space && (!SpaceEnabled || e.IsRepeat) || e.Key == Key.Enter && !EnterEnabled) { e.Handled = true; return; }
             }
             if (ctrl && e.Key == Key.A)
@@ -189,9 +214,9 @@ public sealed partial class BrailleGridView
         PreviewKeyUp += async (_, e) =>
         {
             if (!SixDotEnabled) { input.Reset(); return; }
-            var key = e.Key.ToString();
-            if (key.Length == 1 && input.IsMapped(key[0]))
-            { e.Handled = true; if (input.Release(key[0]) is { } cell) await InsertAsync(cell); }
+            var key = SixDotKey.FromEvent(e);
+            if (key is { } c && input.IsMapped(c))
+            { e.Handled = true; if (input.Release(c) is { } cell) await InsertAsync(cell); }
         };
         LostKeyboardFocus += (_, _) => input.Reset();
         LostMouseCapture += (_, _) => dragSelecting = false;

@@ -88,6 +88,34 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<int, OriginalPage> OriginalPages { get; } = [];
     /// <summary>Blocks the server is known to hold per page (last read or last confirmed save). Drives deletion and braille-panel planning.</summary>
     public Dictionary<int, ServerBlockRecord[]> ServerPages { get; } = [];
+    public Dictionary<int, PendingServerPage> PendingServerPages { get; } = [];
+    private PendingRestart? pendingRestart;
+    public PendingRestart? PendingRestart
+    {
+        get => pendingRestart;
+        set
+        {
+            if (Equals(pendingRestart, value)) return;
+            pendingRestart = value;
+            OnPropertyChanged(nameof(PendingRestart)); OnPropertyChanged(nameof(HasPendingRestart));
+            MarkChanged();
+        }
+    }
+    public bool HasPendingRestart => pendingRestart is not null;
+    public bool HasPendingServerPages => PendingServerPages.Count != 0;
+    public void SetPendingServerPage(PendingServerPage page)
+    {
+        PendingServerPages[page.Page] = page;
+        OnPropertyChanged(nameof(HasPendingServerPages));
+        MarkChanged();
+    }
+    public void ClearPendingServerPages()
+    {
+        if (PendingServerPages.Count == 0) return;
+        PendingServerPages.Clear();
+        OnPropertyChanged(nameof(HasPendingServerPages));
+        MarkChanged();
+    }
     /// <summary>Server quality report per page. Replaced on every page read; kept in .smj for offline review.</summary>
     public Dictionary<int, QualityIssue[]> QualityReports { get; } = [];
     /// <summary>Page average OCR confidence measured by the AI (BE B-10). Null when the AI sent none; never estimated locally.</summary>

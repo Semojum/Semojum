@@ -36,7 +36,7 @@ public partial class MainWindow
             if (result.Replaced.Count > 0) throw new ArgumentException("조판에서 빈칸으로 바뀌는 문자가 있습니다: " + string.Join(", ", result.Replaced.Keys) + ". 편집 화면에서 확인해 주세요.");
             var pages = await local.ReadBrfAsync(result.Brf, documentLifetime.Token);
             if (face < 1 || face > pages.Length) throw new ArgumentException($"1–{pages.Length}면 범위로 입력해 주세요.");
-            var dialog = new BraillePreviewDialog(pages, result.Brf, snapshot.Layout, session.Title, face) { Owner = this };
+            var dialog = new BraillePreviewDialog(pages, result.Brf, snapshot.Layout, session.Title, face, result.SpacingUnknownBlockIds, result.AlignmentUnknownBlockIds) { Owner = this };
             dialog.ShowDialog(); lastPreviewPage = dialog.Page;
             session.Status = $"조판 결과 {pages.Length}면 · 마지막 확인 {dialog.Page}면";
         }
