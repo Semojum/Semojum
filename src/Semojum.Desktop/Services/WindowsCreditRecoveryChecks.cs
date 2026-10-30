@@ -472,12 +472,12 @@ internal static class WindowsCreditRecoveryChecks
             await window.OpenAsync(path2);
             await window.ExecuteAsync("save");
             check(fixture.SaveRequests == 0 && File.Exists(path2), "The second copy saves locally but cannot save to the server during resume");
-            var original = window.DocumentTabs.Items.OfType<TabItem>().First(t => (t.ToolTip as string) == path1);
+            var original = window.DocumentTabs.Items.OfType<TabItem>().First(t => (t.ToolTip as string) is { } tooltip && (tooltip == path1 || tooltip == path1 + " · 저장되지 않음"));
             ((StackPanel)original.Header).Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             deadline = DateTime.UtcNow.AddSeconds(5);
             while (window.DocumentTabs.Items.Contains(original) && DateTime.UtcNow < deadline) await Task.Delay(25);
             check(!window.DocumentTabs.Items.Contains(original), "The original pending tab can close after local save");
-            window.DocumentTabs.SelectedItem = window.DocumentTabs.Items.OfType<TabItem>().Single(t => (t.ToolTip as string) == path2);
+            window.DocumentTabs.SelectedItem = window.DocumentTabs.Items.OfType<TabItem>().Single(t => (t.ToolTip as string) is { } tooltip && (tooltip == path2 || tooltip == path2 + " · 저장되지 않음"));
             fixture.HoldSave = true;
             var finalSave = window.ExecuteAsync("save");
             deadline = DateTime.UtcNow.AddSeconds(5);

@@ -3,6 +3,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Semojum.Core;
 using Semojum.Core.Integration;
 
@@ -79,10 +80,44 @@ public sealed class AppliedRulesDialog : CompactDialog
         }
         else Status.Text = stale ? "편집 후에는 적용 규정의 위치가 달라질 수 있습니다. 재점역하면 현재 결과의 근거를 확인할 수 있습니다." : "선택한 위치에 전달된 적용 규정이 없습니다.";
         var footer = new Border { BorderBrush = ExportRangeDialog.Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0) }; Grid.SetRow(footer, 2); layout.Children.Add(footer);
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 15, 24, 16) }; footer.Child = actions;
+        var footerLayout = new Grid { Margin = new(16, 0, 24, 0) };
+        footerLayout.ColumnDefinitions.Add(new()); footerLayout.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.Child = footerLayout;
+        var reason = new TextBlock { FontSize = 12, Foreground = ExportRangeDialog.Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 8, 0) };
+        AutomationProperties.SetAutomationId(reason, "AppliedRulesOpenUnavailableReason");
+        AutomationProperties.SetLiveSetting(reason, AutomationLiveSetting.Polite);
+        footerLayout.Children.Add(reason);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 15, 0, 16) }; Grid.SetColumn(actions, 1); footerLayout.Children.Add(actions);
         var close = Action("닫기", Close); Actions.Children.Remove(close);
-        var open = Action("규정 전문 열기", () => { if (Rules.SelectedItem is AppliedRuleRow row) new RuleDialog(api, [], "", "", row.RuleId) { Owner = this }.ShowDialog(); }, true);
-        Actions.Children.Remove(open); open.IsEnabled = api.Account is not null && rows.Length > 0;
+        Button open = null!;
+        void UpdateOpenAvailability()
+        {
+            var message = api.Account is null ? "규정 전문을 보려면 로그인해 주세요."
+                : Rules.SelectedItem is not AppliedRuleRow ? "전문을 볼 규정 행을 선택해 주세요."
+                : string.IsNullOrWhiteSpace(((AppliedRuleRow)Rules.SelectedItem).RuleId) ? "선택한 규정의 식별자가 없어 전문을 열 수 없습니다."
+                : "";
+            open.IsEnabled = message.Length == 0;
+            open.ToolTip = message.Length == 0 ? null : message;
+            AutomationProperties.SetHelpText(open, message);
+            reason.Text = message;
+            reason.Visibility = message.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+        open = Action("규정 전문 열기", () =>
+        {
+            UpdateOpenAvailability();
+            if (open.IsEnabled && Rules.SelectedItem is AppliedRuleRow row)
+                new RuleDialog(api, [], "", "", row.RuleId) { Owner = this }.ShowDialog();
+        }, true);
+        Actions.Children.Remove(open);
+        ToolTipService.SetShowOnDisabled(open, true);
+        Rules.SelectionChanged += (_, _) => UpdateOpenAvailability();
+        Activated += (_, _) => UpdateOpenAvailability();
+        // Authentication can expire while this modal remains open. Keep the
+        // visible action in sync without changing the selected evidence row.
+        var accountCheck = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        accountCheck.Tick += (_, _) => UpdateOpenAvailability();
+        Loaded += (_, _) => accountCheck.Start();
+        Closed += (_, _) => accountCheck.Stop();
+        UpdateOpenAvailability();
         foreach (var (button, width) in new[] { (close, 88d), (open, 132d) })
         { button.Width = width; button.MinWidth = 0; button.Height = 32; button.MinHeight = 0; button.Padding = new(0); button.BorderBrush = button == close ? ExportRangeDialog.Brush("#EAEAEA") : ExportRangeDialog.Brush("#005FB8"); button.Template = ExportRangeDialog.SurfaceTemplate(4); actions.Children.Add(button); }
     }

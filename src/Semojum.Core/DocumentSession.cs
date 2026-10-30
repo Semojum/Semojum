@@ -204,7 +204,7 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<int, double?> OcrConfidence { get; } = [];
     /// <summary>Last "kept locally only" notice shown for this document, so repeated saves do not repeat the same dialog. Not persisted.</summary>
     public string? LastSyncNotice { get; set; }
-    public string WindowTitle => $"{(IsDirty ? "● " : "")}{Title} — 세모점";
+    public string WindowTitle => $"{(IsDirty ? "*" : "")}{Title} — 세모점";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnLayoutChanged(PageLayout value) { ChangeVersion++; IsDirty = true; }

@@ -29,6 +29,30 @@ internal static class WindowsBoardDesignChecks
         {
             await WaitAsync(() => Descendants(board).OfType<DataGrid>().Any(g => g.Items.Count == 1));
             CheckWorkAreaFit(board, "Board", check);
+            var allNav = Descendants(board).OfType<Button>().Single(b => Equals(b.Content, "전체 글"));
+            var mineNav = Descendants(board).OfType<Button>().Single(b => Equals(b.Content, "내 글"));
+            check(allNav.FontWeight == FontWeights.SemiBold && mineNav.FontWeight == FontWeights.Normal
+                && AutomationProperties.GetItemStatus(allNav) == "선택됨" && AutomationProperties.GetItemStatus(mineNav) == "선택 안 됨",
+                "The successfully loaded all-posts view has the selected weight and accessible state");
+            mineNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitAsync(() => fixture.RequestedModes.Contains(true) && mineNav.FontWeight == FontWeights.SemiBold);
+            check(allNav.FontWeight == FontWeights.Normal && AutomationProperties.GetItemStatus(mineNav) == "선택됨"
+                && Descendants(board).OfType<TextBlock>().Any(t => t.Text == "내 글"),
+                "A successful my-posts switch updates the title and both selected styles");
+            var loadedItems = Descendants(board).OfType<DataGrid>().Single().ItemsSource;
+            fixture.FailMine = false;
+            allNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitAsync(() => Descendants(board).OfType<TextBlock>().Any(t => t.Text.Contains("fixture view failure")));
+            check(mineNav.FontWeight == FontWeights.SemiBold && allNav.FontWeight == FontWeights.Normal
+                && AutomationProperties.GetItemStatus(mineNav) == "선택됨"
+                && ReferenceEquals(Descendants(board).OfType<DataGrid>().Single().ItemsSource, loadedItems)
+                && Descendants(board).OfType<TextBlock>().Any(t => t.Text == "내 글"),
+                "A failed all-posts switch preserves the loaded list, title and selected state");
+            fixture.FailMine = null;
+            allNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitAsync(() => allNav.FontWeight == FontWeights.SemiBold && AutomationProperties.GetItemStatus(allNav) == "선택됨");
+            check(mineNav.FontWeight == FontWeights.Normal && Descendants(board).OfType<TextBlock>().Any(t => t.Text == "전체 글"),
+                "Retrying the list switch commits the successfully loaded all-posts view");
             check(HasIcon(board, "board-caption-close.svg") && HasIcon(board, "board-chevron-down.svg"), "Board title bar and search use the final Figma SVGs");
             check(HasIcon(board, "board-chevron-left.svg") && HasIcon(board, "board-chevron-right.svg"), "Board pagination renders both Figma arrow icons");
             check(Descendants(board).OfType<Button>().Any(b => Equals(b.Content, "알림")), "Board retains access to notifications");
@@ -71,6 +95,24 @@ internal static class WindowsBoardDesignChecks
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             CheckWorkAreaFit(editor, "Post editor", check);
+            var titleInput = Descendants(editor).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "게시글 제목");
+            var contentInput = Descendants(editor).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "게시글 본문");
+            var titleHint = Descendants(editor).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "BoardTitlePlaceholder");
+            var bodyHint = Descendants(editor).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "BoardContentPlaceholder");
+            check(titleInput.Text == "" && contentInput.Text == "" && titleHint.IsVisible && bodyHint.IsVisible
+                && !titleHint.IsHitTestVisible && !bodyHint.IsHitTestVisible && titleHint.FontSize == 12 && bodyHint.FontSize == 12
+                && titleHint.Foreground is SolidColorBrush { Color: var hc } && hc == Color.FromRgb(138, 138, 138),
+                "Empty post inputs show non-intercepting Figma hints without changing submitted values");
+            titleInput.Focus(); titleInput.Text = "실제 제목"; contentInput.Text = "실제 본문";
+            check(titleHint.Visibility == Visibility.Collapsed && bodyHint.Visibility == Visibility.Collapsed,
+                "Entering post text hides both hints");
+            titleInput.Clear(); contentInput.Clear();
+            check(titleHint.Visibility == Visibility.Visible && bodyHint.Visibility == Visibility.Visible,
+                "Clearing the inputs restores both hints");
+            var beforeSave = fixture.SaveRequests;
+            Descendants(editor).OfType<Button>().Single(b => Equals(b.Content, "등록")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(fixture.SaveRequests == beforeSave, "Placeholder text cannot make an empty post valid or reach the server");
             check(Descendants(editor).OfType<ComboBox>().Any(c => AutomationProperties.GetName(c) == "게시글 분류" && !c.IsEnabled
                 && AutomationProperties.GetHelpText(c).Contains("제공하지 않습니다")), "Unsupported post classification remains visible with an explicit unavailable state");
             check(Descendants(editor).OfType<TextBox>().Any(t => t.AcceptsReturn && t.Height == 220), "Post editor offers the final Figma multiline field");
@@ -92,6 +134,33 @@ internal static class WindowsBoardDesignChecks
                 "The narrow post editor can scroll to its file picker");
         }
         finally { editor.Close(); }
+        var editPost = new BoardPost(42, "기존 제목", "기존 본문", "작성자", true, false, false, "2026-10-21", "", 4, [], []);
+        var editing = new PostEditorDialog(client, editPost, "검수"); editing.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var hints = Descendants(editing).OfType<TextBlock>().Where(t => AutomationProperties.GetAutomationId(t) is "BoardTitlePlaceholder" or "BoardContentPlaceholder").ToArray();
+            check(hints.Length == 2 && hints.All(h => h.Visibility == Visibility.Collapsed)
+                && Descendants(editing).OfType<TextBox>().Any(t => AutomationProperties.GetName(t) == "게시글 제목" && t.Text == "기존 제목")
+                && Descendants(editing).OfType<TextBox>().Any(t => AutomationProperties.GetName(t) == "게시글 본문" && t.Text == "기존 본문"),
+                "Editing existing post content never overlays placeholder text");
+        }
+        finally { editing.Close(); }
+        var submitted = new PostEditorDialog(client, null, "검수");
+        var timedOut = false;
+        var saveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        saveTimer.Tick += (_, _) => { timedOut = true; saveTimer.Stop(); submitted.Close(); };
+        submitted.Loaded += (_, _) => submitted.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            Descendants(submitted).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "게시글 제목").Text = "서버에 보낼 제목";
+            Descendants(submitted).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "게시글 본문").Text = "서버에 보낼 본문";
+            Descendants(submitted).OfType<Button>().Single(b => Equals(b.Content, "등록")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }));
+        saveTimer.Start(); bool? saved;
+        try { saved = submitted.ShowDialog(); } finally { saveTimer.Stop(); if (submitted.IsVisible) submitted.Close(); }
+        check(!timedOut && saved == true && fixture.LastSaveBody.Contains("서버에 보낼 제목") && fixture.LastSaveBody.Contains("서버에 보낼 본문")
+            && !fixture.LastSaveBody.Contains("한 줄로 무엇이 문제인지 적는다") && !fixture.LastSaveBody.Contains("12쪽 7줄에서"),
+            "Submitting a post sends only the entered values, never the placeholder hints");
         var post = new BoardPost(42, "문의 제목", "서버의 본문", "작성자", true, false, false, "2026-10-21", "", 4, [new(3, "첨부.pdf", 1024, "https://example.invalid/attachment.pdf")], [new(1, "운영자 답변 내용", false, "2026-10-22", "")]);
         var detail = new PostDialog(client, post, "검수");
         check(detail.Width == 1440 && detail.Height == 1000, "Post detail requests the final Figma geometry before work-area fitting");
@@ -181,17 +250,29 @@ internal static class WindowsBoardDesignChecks
     private sealed class Fixture : HttpMessageHandler
     {
         internal List<int> RequestedPages { get; } = [];
+        internal List<bool> RequestedModes { get; } = [];
         internal int? FailPage { get; set; }
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        internal bool? FailMine { get; set; }
+        internal int SaveRequests { get; private set; }
+        internal string LastSaveBody { get; private set; } = "";
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var page = 1;
-            if (request.RequestUri!.AbsolutePath == "/api/board/posts")
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/board/posts")
+            {
+                SaveRequests++; LastSaveBody = await request.Content!.ReadAsStringAsync(token);
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":{\"postId\":43}}", Encoding.UTF8, "application/json") };
+            }
+            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/api/board/posts")
             {
                 var value = request.RequestUri.Query.TrimStart('?').Split('&').FirstOrDefault(v => v.StartsWith("page=", StringComparison.Ordinal));
                 if (value is not null && int.TryParse(value.AsSpan(5), out var parsed)) page = parsed;
                 RequestedPages.Add(page);
+                var mine = request.RequestUri.Query.Contains("mine=true", StringComparison.OrdinalIgnoreCase); RequestedModes.Add(mine);
+                if (FailMine == mine)
+                    return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"FIXTURE\",\"message\":\"fixture view failure\"}", Encoding.UTF8, "application/json") };
                 if (FailPage == page)
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"FIXTURE\",\"message\":\"fixture page failure\"}", Encoding.UTF8, "application/json") });
+                    return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"FIXTURE\",\"message\":\"fixture page failure\"}", Encoding.UTF8, "application/json") };
             }
             object result = request.RequestUri!.AbsolutePath switch
             {
@@ -200,7 +281,7 @@ internal static class WindowsBoardDesignChecks
                 "/api/board/notifications" => new { unreadCount = 1, items = new[] { new { notificationId = 1, postId = 42, title = "문의 제목", answerCount = 1, lastAnsweredAt = "2026-10-22", read = false } } },
                 _ => new { }
             };
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { isSuccess = true, result }), Encoding.UTF8, "application/json") });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { isSuccess = true, result }), Encoding.UTF8, "application/json") };
         }
     }
 }

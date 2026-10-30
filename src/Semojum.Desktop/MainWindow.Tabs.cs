@@ -110,8 +110,9 @@ public partial class MainWindow
         AutomationProperties.SetAutomationId(close, "DocumentTabClose");
         void UpdateLabel()
         {
-            label.Text = (model.IsReadOnly ? "[읽기 전용] " : "") + (model.IsDirty ? "● " : "") + model.Title;
-            context.Tab.ToolTip = context.Path ?? model.Title;
+            label.Text = (model.IsReadOnly ? "[읽기 전용] " : "") + model.Title;
+            context.Tab.ToolTip = (context.Path ?? model.Title) + (model.IsDirty ? " · 저장되지 않음" : "");
+            AutomationProperties.SetName(context.Tab, model.Title + (model.IsDirty ? " · 저장되지 않음" : "") + (model.IsReadOnly ? " · 읽기 전용" : ""));
             AutomationProperties.SetName(close, $"{model.Title} 탭 닫기");
         }
         context.ProgressIndicator = new TabConversionProgress(model, () => CancelTabJobAsync(context));

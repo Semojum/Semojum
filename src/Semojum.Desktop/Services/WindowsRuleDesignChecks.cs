@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Semojum.Core;
 using Semojum.Core.Integration;
 using Semojum.Desktop.Dialogs;
@@ -43,6 +44,7 @@ internal static class WindowsRuleDesignChecks
                 await WindowsSmoke.RenderElementAsync(applied, appliedCapture);
         }
         finally { applied.Close(); }
+        await CheckAppliedRuleAccessAsync(api, http, fixture, check);
         if (Environment.GetEnvironmentVariable("RULES_MATCH_CAPTURE") is { Length: > 0 } matchingCapture)
         {
             var match = new AppliedRulesDialog(api,
@@ -103,6 +105,92 @@ internal static class WindowsRuleDesignChecks
                 "Applied rule evidence remains available from the context menu when no evidence exists");
         }
         finally { dialog.Close(); }
+    }
+
+    private static async Task CheckAppliedRuleAccessAsync(SemojumApiClient api, HttpClient http, Fixture fixture, Action<bool, string> check)
+    {
+        var noId = new AppliedRuleRow("원문", "", "제1항", "식별자 없음", "근거", "규정", "  ", true);
+        var withId = new AppliedRuleRow("점자", "⠁", "제2항", "식별자 있음", "근거", "규정", "specific-rule-id");
+        var dialog = new AppliedRulesDialog(api, [noId, withId], false) { Width = 480 };
+        dialog.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var open = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "규정 전문 열기"));
+            var reason = Descendants(dialog).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "AppliedRulesOpenUnavailableReason");
+            check(!open.IsEnabled && reason.IsVisible && reason.Text.Contains("식별자", StringComparison.Ordinal)
+                && AutomationProperties.GetHelpText(open) == reason.Text && ToolTipService.GetShowOnDisabled(open),
+                "An applied rule with no identifier explains why full text cannot be opened");
+            var bounds = reason.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, reason.ActualWidth, reason.ActualHeight));
+            check(bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= dialog.ActualWidth + 1 && bounds.Bottom <= dialog.ActualHeight + 1,
+                "The unavailable-rule explanation stays inside a narrow dialog");
+            var requestCount = fixture.Requests.Count;
+            open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(fixture.Requests.Count == requestCount && !Application.Current.Windows.OfType<RuleDialog>().Any(w => w.Owner == dialog && w.IsVisible),
+                "An empty rule identifier cannot open an unfiltered search");
+            dialog.Rules.SelectedIndex = 1; dialog.UpdateLayout();
+            check(open.IsEnabled && reason.Visibility == Visibility.Collapsed && string.IsNullOrEmpty(AutomationProperties.GetHelpText(open)),
+                "Selecting an identified rule enables the existing full-text action");
+            var found = false; var tick = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+            timer.Tick += (_, _) =>
+            {
+                var child = Application.Current.Windows.OfType<RuleDialog>().FirstOrDefault(w => w.Owner == dialog && w.IsVisible);
+                if (child is not null && fixture.Requests.Any(p => p.Contains("q=specific-rule-id", StringComparison.Ordinal)))
+                { found = true; timer.Stop(); child.Close(); }
+                else if (++tick >= 250)
+                { timer.Stop(); foreach (var childWindow in dialog.OwnedWindows.Cast<Window>().Where(w => w.IsVisible).ToArray()) childWindow.Close(); }
+            };
+            timer.Start();
+            try { open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+            finally { timer.Stop(); }
+            check(found, "The identified applied rule opens a search for its actual identifier");
+            await api.LogoutAsync();
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (open.IsEnabled && DateTime.UtcNow < deadline) await Task.Delay(25);
+            check(!open.IsEnabled && reason.Text.Contains("로그인", StringComparison.Ordinal) && ReferenceEquals(dialog.Rules.SelectedItem, withId),
+                "An open applied-rule dialog disables its action after sign-out without changing its selection");
+            requestCount = fixture.Requests.Count;
+            open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(fixture.Requests.Count == requestCount && !Application.Current.Windows.OfType<RuleDialog>().Any(w => w.Owner == dialog && w.IsVisible),
+                "A rule action cannot open a search if authentication expires while the dialog is open");
+            await api.LoginAsync("fixture", "fixture");
+            deadline = DateTime.UtcNow.AddSeconds(2);
+            while (!open.IsEnabled && DateTime.UtcNow < deadline) await Task.Delay(25);
+            check(open.IsEnabled && ReferenceEquals(dialog.Rules.SelectedItem, withId),
+                "Signing in again restores the action for the still-selected identified rule");
+            dialog.Rules.SelectedIndex = -1; dialog.UpdateLayout();
+            check(!open.IsEnabled && reason.Text.Contains("선택", StringComparison.Ordinal),
+                "Clearing the applied-rule selection disables full-text access with an explanation");
+        }
+        finally { dialog.Close(); }
+
+        var closedDialog = new AppliedRulesDialog(api, [withId], false);
+        closedDialog.Show();
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        var closedOpen = Descendants(closedDialog).OfType<Button>().Single(b => Equals(b.Content, "규정 전문 열기"));
+        closedDialog.Close();
+        await api.LogoutAsync(); await Task.Delay(350);
+        check(closedOpen.IsEnabled, "A closed applied-rule dialog stops checking account state");
+        await api.LoginAsync("fixture", "fixture");
+
+        var signedOutApi = new SemojumApiClient(http);
+        var signedOut = new AppliedRulesDialog(signedOutApi, [withId], false);
+        signedOut.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var open = Descendants(signedOut).OfType<Button>().Single(b => Equals(b.Content, "규정 전문 열기"));
+            var reason = Descendants(signedOut).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "AppliedRulesOpenUnavailableReason");
+            check(!open.IsEnabled && reason.IsVisible && reason.Text.Contains("로그인", StringComparison.Ordinal)
+                && AutomationProperties.GetHelpText(open) == reason.Text,
+                "Signed-out users receive an accessible explanation instead of an enabled rule action");
+            var requestCount = fixture.Requests.Count;
+            open.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(fixture.Requests.Count == requestCount && !Application.Current.Windows.OfType<RuleDialog>().Any(w => w.Owner == signedOut && w.IsVisible),
+                "The signed-out action cannot open a rule search");
+        }
+        finally { signedOut.Close(); }
     }
 
     private static void CheckIcon(DependencyObject root, string name, Action<bool, string> check)

@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Automation;
 using Microsoft.Win32;
 using Semojum.Core.Integration;
 using SharpVectors.Converters;
@@ -48,7 +49,30 @@ internal static class BoardDesign
         var surface = new FrameworkElementFactory(typeof(Border)); surface.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
         var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); content.SetValue(FrameworkElement.MarginProperty, new Thickness(16, 0, 0, 0)); surface.AppendChild(content);
         button.Template = new ControlTemplate(typeof(Button)) { VisualTree = surface };
+        SetNavigationSelected(button, selected);
         if (action is null) { button.IsEnabled = false; button.ToolTip = "현재 서버에서 이 목록을 제공하지 않습니다."; ToolTipService.SetShowOnDisabled(button, true); } else button.Click += (_, _) => action(); return button;
+    }
+    internal static void SetNavigationSelected(Button button, bool selected)
+    {
+        button.Background = Brush(selected ? "#EFF6FC" : "#F9F9F9");
+        button.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
+        AutomationProperties.SetItemStatus(button, selected ? "선택됨" : "선택 안 됨");
+    }
+    internal static Grid InputWithHint(TextBox input, string hintText, string name, string hintId, Thickness margin, bool multiline = false)
+    {
+        var host = new Grid { Margin = margin };
+        input.Margin = new Thickness(0);
+        AutomationProperties.SetName(input, name);
+        host.Children.Add(input);
+        var hint = new TextBlock { Text = hintText, FontSize = 12, Foreground = Brush("#8A8A8A"), IsHitTestVisible = false,
+            Margin = multiline ? new Thickness(8, 8, 8, 0) : new Thickness(8, 0, 8, 0),
+            VerticalAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
+        AutomationProperties.SetAutomationId(hint, hintId);
+        host.Children.Add(hint);
+        void UpdateHint() => hint.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        input.TextChanged += (_, _) => UpdateHint();
+        UpdateHint();
+        return host;
     }
     internal static Border Card(UIElement child, Thickness padding) => new() { Child = child, Padding = padding, Background = Brushes.White, BorderBrush = Brush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8) };
     internal static Style CheckStyle()
@@ -108,7 +132,7 @@ public sealed class BoardDialog : CompactDialog
                 total = data.TotalCount; grid.ItemsSource = data.Notices.Concat(data.Items).ToArray();
                 count.Text = $"{total}건";
                 ((TextBlock)title.Children[0]).Text = mine ? "내 글" : "전체 글";
-                if (sidebar.Children.Count >= 3) { ((Button)sidebar.Children[0]).Background = BoardDesign.Brush(mine ? "#F9F9F9" : "#EFF6FC"); ((Button)sidebar.Children[2]).Background = BoardDesign.Brush(mine ? "#EFF6FC" : "#F9F9F9"); }
+                if (sidebar.Children.Count >= 3) { BoardDesign.SetNavigationSelected((Button)sidebar.Children[0], !mine); BoardDesign.SetNavigationSelected((Button)sidebar.Children[2], mine); }
                 RenderPages();
             }
             finally { loadingList = false; }
@@ -119,6 +143,13 @@ public sealed class BoardDialog : CompactDialog
             var oldPage = page; page = target;
             try { await LoadAsync(); }
             catch { page = oldPage; RenderPages(); throw; }
+        }
+        async Task SwitchListAsync(bool targetMine)
+        {
+            var oldMine = mine; var oldPage = page;
+            mine = targetMine; page = 1;
+            try { await LoadAsync(); }
+            catch { mine = oldMine; page = oldPage; RenderPages(); throw; }
         }
         void RenderPages()
         {
@@ -147,21 +178,21 @@ public sealed class BoardDialog : CompactDialog
             await LoadAsync();
         }
         grid.MouseDoubleClick += async (_, _) => await RunAsync(OpenAsync);
-        Action("검색", async () => { page = 1; await LoadAsync(); });
-        var mineButton = Action("내 글 보기", async () => { mine = !mine; page = 1; await LoadAsync(); }); mineButton.Width = 94; mineButton.Margin = new(0);
+        Action("검색", async () => await GoPageAsync(1));
+        var mineButton = Action("내 글 보기", async () => await SwitchListAsync(!mine)); mineButton.Width = 94; mineButton.Margin = new(0);
         var notifications = Action("알림", () => new NotificationsDialog(client, workInfo) { Owner = this }.ShowDialog());
         notifications.Margin = new(8, 0, 0, 0);
-        var write = Action("글쓰기", async () => { var d = new PostEditorDialog(client, null, workInfo) { Owner = this }; if (d.ShowDialog() == true) { page = 1; await LoadAsync(); } }, true); write.Margin = new(16, 0, 0, 0);
+        var write = Action("글쓰기", async () => { var d = new PostEditorDialog(client, null, workInfo) { Owner = this }; if (d.ShowDialog() == true) await GoPageAsync(1); }, true); write.Margin = new(16, 0, 0, 0);
         foreach (var button in new[] { mineButton, notifications, write }) { Actions.Children.Remove(button); PublicDialogDesign.StyleAction(button, button == write); button.IsDefault = false; headerButtons.Children.Add(button); }
-        sidebar.Children.Add(BoardDesign.Navigation("전체 글", !initiallyMine, async () => await RunAsync(async () => { mine = false; page = 1; ((TextBlock)title.Children[0]).Text = "전체 글"; await LoadAsync(); })));
+        sidebar.Children.Add(BoardDesign.Navigation("전체 글", !initiallyMine, async () => await RunAsync(() => SwitchListAsync(false))));
         sidebar.Children.Add(BoardDesign.Navigation("공지", false));
-        sidebar.Children.Add(BoardDesign.Navigation("내 글", initiallyMine, async () => await RunAsync(async () => { mine = true; page = 1; ((TextBlock)title.Children[0]).Text = "내 글"; await LoadAsync(); })));
+        sidebar.Children.Add(BoardDesign.Navigation("내 글", initiallyMine, async () => await RunAsync(() => SwitchListAsync(true))));
         sidebar.Children.Add(BoardDesign.Navigation("답변 받은 글", false));
         // Paging and notifications remain accessible when the window is resized.
         var navigation = new StackPanel { Orientation = Orientation.Horizontal }; var pageMenu = new ContextMenu(); pageMenu.Items.Add(new MenuItem { Header = navigation, StaysOpenOnClick = true }); grid.ContextMenu = pageMenu;
         count.ToolTip = "이전·다음 쪽: 목록에서 마우스 오른쪽 단추 또는 PageUp·PageDown";
-        navigation.Children.Add(Button("이전", async () => await RunAsync(async () => { if (page > 1) { page--; await LoadAsync(); } })));
-        navigation.Children.Add(Button("다음", async () => await RunAsync(async () => { if (page < TotalPages()) { page++; await LoadAsync(); } })));
+        navigation.Children.Add(Button("이전", async () => await RunAsync(async () => { if (page > 1) await GoPageAsync(page - 1); })));
+        navigation.Children.Add(Button("다음", async () => await RunAsync(async () => { if (page < TotalPages()) await GoPageAsync(page + 1); })));
         previous = Button("이전", async () => await RunAsync(() => GoPageAsync(page - 1)));
         previous.Content = BoardDesign.Icon("chevron-left"); previous.ToolTip = "이전 쪽"; System.Windows.Automation.AutomationProperties.SetName(previous, "이전 쪽"); PublicDialogDesign.StyleAction(previous); previous.Width = 24; previous.MinWidth = 0; previous.Height = 24; previous.MinHeight = 0; previous.Padding = new(0); previous.Margin = new(0, 0, 4, 0);
         next = Button("다음", async () => await RunAsync(() => GoPageAsync(page + 1)));
@@ -190,7 +221,7 @@ public sealed class BoardDialog : CompactDialog
         {
             if (e.Key == System.Windows.Input.Key.Enter) { e.Handled = true; await RunAsync(OpenAsync); }
             else if (e.Key is System.Windows.Input.Key.PageDown or System.Windows.Input.Key.PageUp)
-            { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && page < TotalPages()) page++; else if (e.Key == System.Windows.Input.Key.PageUp && page > 1) page--; await LoadAsync(); }); }
+            { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && page < TotalPages()) await GoPageAsync(page + 1); else if (e.Key == System.Windows.Input.Key.PageUp && page > 1) await GoPageAsync(page - 1); }); }
         };
         OnLoad(LoadAsync);
     }
@@ -213,9 +244,11 @@ public sealed class PostEditorDialog : CompactDialog
         category.Margin = new(0, 2, 0, 10); category.IsEnabled = false; category.ToolTip = "현재 서버는 게시글 분류를 제공하지 않습니다.";
         ToolTipService.SetShowOnDisabled(category, true); System.Windows.Automation.AutomationProperties.SetName(category, "게시글 분류");
         System.Windows.Automation.AutomationProperties.SetHelpText(category, "현재 서버는 게시글 분류를 제공하지 않습니다."); panel.Children.Add(category);
-        var title = new TextBox { Text = post?.Title ?? "", MaxLength = 100, Height = 32, Margin = new(0, 6, 0, 0) }; panel.Children.Add(new TextBlock { Text = "제목", Height = 16, Foreground = (Brush)FindResource("Muted") }); panel.Children.Add(title);
-        var content = new TextBox { Text = post?.Content ?? "", MaxLength = 10000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 220, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new(0, 2, 0, 12) };
-        panel.Children.Add(new TextBlock { Text = "본문", Height = 16, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 12, 0, 0) }); panel.Children.Add(content);
+        var title = new TextBox { Text = post?.Title ?? "", MaxLength = 100, Height = 32 }; panel.Children.Add(new TextBlock { Text = "제목", Height = 16, Foreground = (Brush)FindResource("Muted") });
+        panel.Children.Add(BoardDesign.InputWithHint(title, "한 줄로 무엇이 문제인지 적는다", "게시글 제목", "BoardTitlePlaceholder", new Thickness(0, 6, 0, 0)));
+        var content = new TextBox { Text = post?.Content ?? "", MaxLength = 10000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 220, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        panel.Children.Add(new TextBlock { Text = "본문", Height = 16, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 12, 0, 0) });
+        panel.Children.Add(BoardDesign.InputWithHint(content, "12쪽 7줄에서 괄호가 한 칸 밀려 나옵니다. 묵자에는 붙어 있는데…", "게시글 본문", "BoardContentPlaceholder", new Thickness(0, 2, 0, 12), multiline: true));
         var flags = new StackPanel { Orientation = Orientation.Horizontal, Height = 24 };
         var checkStyle = BoardDesign.CheckStyle();
         var secret = new CheckBox { Content = "비밀글", IsChecked = post?.Secret == true, Width = 140, Height = 20, VerticalAlignment = VerticalAlignment.Center, Padding = new(0), FontSize = 14, Style = checkStyle };

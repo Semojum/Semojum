@@ -89,6 +89,17 @@ internal static class WindowsCommonDesignChecks
                 "The source document renders with its bundled fonts and the braille grid retains its 22-pixel geometry");
             check(Descendants(editor).OfType<SvgViewbox>().Any(i => i.Source?.ToString().EndsWith("/common-rulebook.svg", StringComparison.Ordinal) == true && i.Drawings is { Bounds.IsEmpty: false }),
                 "Rule search renders its original Figma icon");
+            var separators = Descendants(editor.EditorToolbar).OfType<Border>().Where(b => b.Width == 1 && b.Height == 18 && b.Background is SolidColorBrush brush && brush.Color == Color.FromRgb(234, 234, 234)).ToArray();
+            var searchFrame = Descendants(editor.EditorToolbar).OfType<Border>().Single(b => b.Width == 240 && b.Height == 32 && b.Child is not null && Descendants(b).Contains(editor.RuleSearch));
+            var hint = Descendants(searchFrame).OfType<TextBlock>().Single(t => t.Text == "점역 규정 검색...");
+            check(editor.EditorToolbar.Background is SolidColorBrush toolbarBrush && toolbarBrush.Color == Color.FromRgb(243, 243, 243) && separators.Length == 4,
+                "The main toolbar uses the Figma background and four 18px separators");
+            check(searchFrame.BorderBrush is SolidColorBrush searchStroke && searchStroke.Color == Color.FromRgb(209, 209, 209) && searchFrame.CornerRadius == new CornerRadius(4) &&
+                  hint.Foreground is SolidColorBrush hintInk && hintInk.Color == Color.FromRgb(138, 138, 138) && hint.IsVisible && !hint.IsHitTestVisible,
+                "The rule-search field uses the Figma outline and a non-intercepting hint");
+            editor.RuleSearch.Text = "점자"; await Dispatcher.Yield(DispatcherPriority.DataBind);
+            check(hint.Visibility == Visibility.Collapsed && editor.RuleSearch.Text == "점자", "Typing in rule search hides only the hint");
+            editor.RuleSearch.Text = "";
             if (Environment.GetEnvironmentVariable("COMMON_EDITOR_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(editor, capture);
             editor.Width = 480; editor.Height = 360; editor.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             var toolbar = (ScrollViewer)editor.FindName("EditorToolbarScroll");
