@@ -21,6 +21,10 @@ public partial class MainWindow
     internal Func<AppVersionInfo, IProgress<string>, CancellationToken, Task>? UpdateDownloadForChecks { get; set; }
     internal Func<string, MessageBoxResult>? UpdateConfirmationForChecks { get; set; }
     internal Action<string>? UpdateRequiredNoticeForChecks { get; set; }
+    internal Func<Version, Version, Task<bool>>? UpdateReadyForChecks { get; set; }
+    internal Func<Version, string[], Task<bool>>? UpdateActivateForChecks { get; set; }
+    internal Func<Version, string[], Task<Func<bool>?>>? UpdatePrepareForChecks { get; set; }
+    private UpdateReadyDialog? updateReadyDialog;
     private readonly CancellationTokenSource appLifetime = new();
     private string updateStatus = "";
     private async Task DownloadUpdateAsync()
@@ -28,10 +32,65 @@ public partial class MainWindow
         if ((smoke && UpdateDownloadForChecks is null) || availableVersion is null || downloadingUpdate) return;
         if (availableVersion.DownloadUrl is null) { updateStatus = "업데이트 다운로드 주소가 아직 등록되지 않았습니다. 관리자에게 문의해 주세요."; return; }
         downloadingUpdate = true;
-        try { await (UpdateDownloadForChecks ?? AppUpdates.DownloadAsync)(availableVersion, new Progress<string>(s => { updateStatus = s; session.Status = s; }), appLifetime.Token); }
+        try
+        {
+            var version = availableVersion;
+            await (UpdateDownloadForChecks ?? AppUpdates.DownloadAsync)(version, new Progress<string>(s => { updateStatus = s; session.Status = s; }), appLifetime.Token);
+            if (!version.Required(CurrentVersion) && (!smoke || UpdateReadyForChecks is not null)
+                && await (UpdateReadyForChecks ?? AppUpdates.IsReadyAsync)(CurrentVersion, version.Latest)
+                && !resourcesReleased && !appLifetime.IsCancellationRequested)
+                ShowUpdateReady();
+        }
         catch (OperationCanceledException) { }
         catch (Exception ex) { updateStatus = "업데이트를 준비하지 못했습니다: " + ex.Message; session.Status = updateStatus; }
         finally { downloadingUpdate = false; }
+    }
+    private void ShowUpdateReady()
+    {
+        if (updateReadyDialog is { IsVisible: true }) { updateReadyDialog.Activate(); return; }
+        var dialog = new UpdateReadyDialog(RestartIntoUpdateAsync) { Owner = this };
+        updateReadyDialog = dialog; dialog.Closed += (_, _) => { if (ReferenceEquals(updateReadyDialog, dialog)) updateReadyDialog = null; };
+        dialog.Show();
+    }
+    private async Task<bool> RestartIntoUpdateAsync()
+    {
+        if (!IsEnabled || resourcesReleased) return false;
+        CompleteSourceInput();
+        var locked = new[] { this }.Concat(OwnedWindows.Cast<Window>().Where(w => w != updateReadyDialog))
+            .Select(w => (Window: w, WasEnabled: w.IsEnabled)).ToArray();
+        foreach (var item in locked) item.Window.IsEnabled = false;
+        try
+        {
+            var previous = openDocument;
+            var confirmed = new List<(OpenDocument Context, long Version)>();
+            foreach (var context in openDocuments.ToArray())
+            {
+                SetSession(context.Model, context.Path, context.ShowOriginal);
+                if (!await ConfirmDiscardAsync()) return false;
+                confirmed.Add((context, context.Model.ChangeVersion));
+            }
+            if (previous is not null && openDocuments.Contains(previous)) SetSession(previous.Model, previous.Path, previous.ShowOriginal);
+            var args = Environment.GetCommandLineArgs().Skip(1).ToArray();
+            Func<bool>? launch;
+            if (UpdatePrepareForChecks is not null) launch = await UpdatePrepareForChecks(CurrentVersion, args);
+            else if (UpdateActivateForChecks is not null)
+            {
+                var result = await UpdateActivateForChecks(CurrentVersion, args);
+                launch = result ? () => true : null;
+            }
+            else launch = await AppUpdates.PrepareActivationAsync(CurrentVersion, args);
+            if (launch is null)
+            { session.Status = "준비된 업데이트를 확인할 수 없습니다. 버전 정보에서 다시 확인해 주세요."; return false; }
+            if (resourcesReleased || openDocuments.Count != confirmed.Count || confirmed.Any(c => !openDocuments.Contains(c.Context) || c.Context.Model.ChangeVersion != c.Version))
+            { session.Status = "업데이트를 확인하는 동안 문서가 바뀌었습니다. 변경 내용을 확인한 뒤 다시 시작해 주세요."; return false; }
+            if (!launch())
+            { session.Status = "업데이트를 시작하지 못했습니다. 버전 정보에서 다시 확인해 주세요."; return false; }
+            allowClose = true; Close(); return true;
+        }
+        finally
+        {
+            if (!resourcesReleased) foreach (var item in locked) item.Window.IsEnabled = item.WasEnabled;
+        }
     }
     internal static Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new(1, 0, 0);
     private async Task StartAccountAsync()
@@ -58,7 +117,7 @@ public partial class MainWindow
                 allowClose = true; Close(); return;
             }
             await TryAutomaticLoginAsync();
-            if (!EnsureAccount()) { allowClose = true; Close(); return; }
+            if (!EnsureAccount(allowInstitution: true)) { allowClose = true; Close(); return; }
             LoadAccountPreferences();
             if (preferences.WorkFolder is not null) await OpenWorkFolderAsync(false);
             await RestoreActiveJobAsync();
@@ -93,22 +152,56 @@ public partial class MainWindow
         availableVersion = AppVersionInfo.Read(await api.GetPublicAsync("/api/public/app-version", timeout.Token));
         ShowVersion();
     }
+    internal Func<Task>? LogoutForChecks { get; set; }
+    internal Action<string>? LogoutCredentialErrorForChecks { get; set; }
     private async Task LogoutAccountAsync()
     {
-        if (!await ConfirmAllDocumentsAsync()) return;
+        if (!IsEnabled || resourcesReleased) return;
+        CompleteSourceInput();
+        var locked = new[] { this }.Concat(OwnedWindows.Cast<Window>())
+            .Select(w => (Window: w, WasEnabled: w.IsEnabled)).ToArray();
+        foreach (var item in locked) item.Window.IsEnabled = false;
         try
         {
-            if (smoke) await api.LogoutAsync();
-            else await AutomaticLogin.LogoutAsync(api, accountCredentials);
+            var previous = openDocument;
+            var confirmed = new List<(OpenDocument Context, long Version)>();
+            foreach (var context in openDocuments.ToArray())
+            {
+                SetSession(context.Model, context.Path, context.ShowOriginal);
+                if (!await ConfirmDiscardAsync()) return;
+                confirmed.Add((context, context.Model.ChangeVersion));
+            }
+            bool DocumentsUnchanged() => openDocuments.Count == confirmed.Count
+                && confirmed.All(c => openDocuments.Contains(c.Context) && c.Context.Model.ChangeVersion == c.Version);
+            if (!DocumentsUnchanged())
+            { session.Status = "로그아웃 확인 중 문서가 바뀌었습니다. 내용을 확인한 뒤 다시 시도해 주세요."; return; }
+            if (previous is not null && openDocuments.Contains(previous)) SetSession(previous.Model, previous.Path, previous.ShowOriginal);
+            try
+            {
+                if (LogoutForChecks is not null) await LogoutForChecks();
+                else if (smoke) await api.LogoutAsync();
+                else await AutomaticLogin.LogoutAsync(api, accountCredentials);
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
+            {
+                var message = "저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message;
+                if (LogoutCredentialErrorForChecks is { } report) report(message); else MessageBox.Show(this, message, "로그아웃");
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or SemojumApiException) { } // Local credentials are already cleared, even if remote revocation is unavailable.
+            finally { RefreshAccount(); }
+            if (resourcesReleased) return;
+            if (!DocumentsUnchanged())
+            { session.Status = "로그아웃 중 문서가 바뀌어 열어 둔 내용을 유지했습니다. 저장하려면 다시 로그인해 주세요."; return; }
+            foreach (var d in openDocuments.ToArray()) RemoveDocument(d);
+            SetSession(BlankDocument(), null, false);
+            if (!EnsureAccount(allowInstitution: true)) { allowClose = true; Close(); return; }
+            LoadAccountPreferences();
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
-        { MessageBox.Show(this, "저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message, "로그아웃"); return; }
-        catch (Exception ex) when (ex is HttpRequestException or SemojumApiException) { } // Local credentials are already cleared, even if remote revocation is unavailable.
-        finally { RefreshAccount(); }
-        foreach (var d in openDocuments.ToArray()) RemoveDocument(d);
-        SetSession(BlankDocument(), null, false);
-        if (!EnsureAccount()) { allowClose = true; Close(); return; }
-        LoadAccountPreferences();
+        finally
+        {
+            if (!resourcesReleased) foreach (var item in locked) item.Window.IsEnabled = item.WasEnabled;
+        }
     }
     private async Task NewTextDocumentAsync(string text = "", string title = "제목 없음.smj")
     {

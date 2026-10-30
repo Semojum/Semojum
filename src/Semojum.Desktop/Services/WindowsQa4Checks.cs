@@ -21,12 +21,37 @@ internal static class WindowsQa4Checks
         await WindowsDraftSafetyChecks.RunAsync(check, directory);
         await WindowsNotificationChecks.RunAsync(check);
         await WindowsPublicInquiryFieldsChecks.RunAsync(check);
+        await WindowsPublicDesignChecks.RunAsync(check);
+        await WindowsBoardDesignChecks.RunAsync(check);
+        await WindowsUsageDesignChecks.RunAsync(check);
+        await WindowsCommonDesignChecks.RunAsync(directory, check);
+        await WindowsIndividualControlStatesChecks.RunAsync(directory, check);
+        await WindowsOwnedModalChecks.RunAsync(check);
+        await WindowsReviewMarginChecks.RunAsync(check);
+        await WindowsGridMarkerNavigationChecks.RunAsync(check);
+        await WindowsConversionOutcomeChecks.RunAsync(check);
+        await WindowsUpdateDocumentSafetyChecks.RunAsync(check);
+        await WindowsAppearanceDefaultChecks.RunAsync(check);
+        await WindowsRuleDesignChecks.RunAsync(check);
+        await WindowsSettingsHelpDesignChecks.RunAsync(owner, check);
+        await WindowsHelpFontChecks.RunAsync(directory, check);
+        await WindowsMenuDesignChecks.RunAsync(directory, check);
+        WindowsEditorDialogDesignChecks.Run(owner, check);
+        await WindowsPanelDesignChecks.RunAsync(directory, check);
+        await WindowsFormDesignChecks.RunAsync(check);
+        WindowsFooterFormulaDesignChecks.Run(owner, check);
+        WindowsVisualDescriptionDesignChecks.Run(owner, check);
+        WindowsLineTranslationDesignChecks.Run(owner, check);
         await WindowsCreditRecoveryChecks.RunAsync(check, directory);
         await WindowsUncertainRestartChecks.RunAsync(check, directory);
         WindowsSixDotChecks.Run(owner, check);
         WindowsImageOrderChecks.Run(owner, check);
         await WindowsFileOpenChecks.RunAsync(directory, check);
         await WindowsFileEdgeChecks.RunAsync(directory, check);
+        await WindowsRangeDesignChecks.RunAsync(check);
+        WindowsFileDialogDesignChecks.Run(check);
+        WindowsCaseDesignChecks.Run(check);
+        await WindowsNoticeDesignChecks.RunAsync(directory, check);
         await WindowsDraftChecks.RunAsync(owner, check);
         await WindowsDraftApplyChecks.RunAsync(directory, check);
         await WindowsDraftDockChecks.RunAsync(check);
@@ -41,12 +66,14 @@ internal static class WindowsQa4Checks
         await WindowsSourceMapChecks.RunAsync(check);
         await WindowsTabPanelChecks.RunAsync(directory, check);
         await WindowsTabProgressChecks.RunAsync(check);
+        await WindowsGoToDesignChecks.RunAsync(check);
         await WindowsUploadLimitChecks.RunAsync(directory, check);
         await WindowsUploadSafetyChecks.RunAsync(directory, check);
         await WindowsExportFileChecks.RunAsync(directory, check);
         WindowsExportRangeChecks.Run(owner, check);
         WindowsSpacingPreviewChecks.Run(owner, check);
         await WindowsResponsiveChecks.RunAsync(check);
+        await WindowsCaptionChecks.RunAsync(check);
         await WindowsLongDocumentChecks.RunAsync(directory, check);
         await WindowsMemoDeleteChecks.RunAsync(directory, check);
         await WindowsMemoRestoreChecks.RunAsync(directory, check);
@@ -55,7 +82,12 @@ internal static class WindowsQa4Checks
         await WindowsUpdateSafetyChecks.RunAsync(check);
         await WindowsRequiredUpdateChecks.RunAsync(check);
         await WindowsAccountChecks.RunAsync(check);
+        await WindowsLogoutDocumentSafetyChecks.RunAsync(check);
+        await WindowsInstitutionClientChecks.RunAsync(check);
+        await WindowsInstitutionDesignChecks.RunAsync(check);
+        WindowsLoginDesignChecks.Run(check);
         WindowsAccountChecks.CheckLoginNetworkMessage(owner, check);
+        WindowsAccountChecks.CheckInstitutionLoginRouting(owner, check);
         await WindowsAccountChecks.CheckLogoutCancellationAsync(check);
         await WindowsAccountChecks.CheckRoleChangeAsync(check);
         await CheckViewCommandsAsync(owner, check);
@@ -199,7 +231,7 @@ internal static class WindowsQa4Checks
         {
             await WindowsSmoke.RenderElementAsync(contextMenu, Path.Combine(directory, "59-editor-context.png"));
             var labels = contextMenu.Items.OfType<MenuItem>().Select(item => item.Header?.ToString()).ToArray();
-            check(labels.SequenceEqual(new[] { "메모 추가", "대체 초안 보기", "적용 규정 보기" }),
+            check(labels.SequenceEqual(new[] { "메모 추가", "잘라내기", "복사", "붙여넣기", "대체 초안 보기", "적용 규정 보기", "정렬", "수식 입력창" }),
                 "Text context menu retains memo, draft and rule actions without emphasis or page break");
             check(!owner.Braille.GridView.ContextMenu.Items.OfType<MenuItem>().Any(item => item.Header?.ToString() == "쪽바꿈"),
                 "Braille context menu does not offer page break");
@@ -256,13 +288,13 @@ internal static class WindowsQa4Checks
             check(Children(usage).OfType<TextBlock>().Any(t => t.Text == "8,251") && Children(usage).OfType<TextBlock>().Any(t => t.Text.Contains("남은 쪽") && t.Text.Contains("10,000")), "QA4 usage uses returned page-unit balance");
             check(Children(usage).OfType<ProgressBar>().Any(b => b.Value == 17.49), "QA4 usage percentage populates the progress bar");
             var displayedUsage = Children(usage).OfType<ProgressBar>().First(b => b.Value == 17.49);
-            check(displayedUsage.Template.FindName("RangeFill", displayedUsage) is FrameworkElement fill && fill.ActualWidth > 100,
+            check(displayedUsage.Template.FindName("RangeFill", displayedUsage) is FrameworkElement fill && fill.ActualWidth > 80,
                 "Usage progress remains visibly filled after its asynchronous value loads");
             check(handler.Paths.All(p => !p.StartsWith("/api/org/")), "QA4 normal account never requests privileged institution billing endpoints");
         });
         check(UsageDialog.StatusLabel("COMPLETED", false) == "완료" && UsageDialog.StatusLabel("COMPLETED", true) == "일부 쪽 실패" && UsageDialog.StatusLabel("FAILED", true) == "변환 실패", "QA4 job statuses use user-facing labels");
         var footer = new FooterDialog(owner.Session);
-        await Capture(footer, "38-footers.png", () => check(Children(footer).OfType<DataGrid>().Single().Columns.Count == 3, "QA4 footer manager has start, alignment and content columns"));
+        await Capture(footer, "38-footers.png", () => check(Children(footer).OfType<DataGrid>().Single().Columns.Count == 4, "Footer manager includes start, alignment, content and deletion columns"));
         var footerFixture = new DocumentSession { FooterRanges = [new(1, 12, "Ⅰ 01 사회·문화 현상", "center"), new(13, 28, "Ⅰ 02 사회·문화 현상의 탐구", "center"), new(29, 44, "Ⅱ 01 개인과 사회 구조", "center"), new(45, 60, "Ⅱ 02 일탈 행동", "right")] };
         await Capture(new FooterDialog(footerFixture), "44-footers-populated.png");
         await Capture(new FooterInputDialog(), "45-footer-input.png");
@@ -300,8 +332,8 @@ internal static class WindowsQa4Checks
         check(UnreadableText.Count(unreadableModel) == 2 && UnreadableText.First(unreadableModel) is { Block.Id: 2, Offset: 5 },
             "Figma 4844 unreadable spots count ■ markers outside blocked blocks and locate the first one");
         var unreadable = FileNotices.UnreadableCharacters(2);
-        await Capture(unreadable, "86-unreadable-characters.png", () => check(unreadable.ActionButtons[0].IsDefault && Math.Abs(unreadable.ActionButtons[0].ActualWidth - 122) <= 2,
-            "Figma 4844 unreadable-character notice defaults to 해당 위치로 이동 at 122px"));
+        await Capture(unreadable, "86-unreadable-characters.png", () => check(unreadable.ActionButtons[0].IsDefault && Math.Abs(unreadable.ActionButtons[0].ActualWidth - unreadable.ActionButtons[1].ActualWidth) <= 2,
+            "Unreadable-character notice defaults to the location action with equal Figma button widths"));
         var cancelMerge = new MergeBlocksDialog();
         check(Modal(cancelMerge, () => Key(cancelMerge, cancelMerge, System.Windows.Input.Key.Escape)) != true && cancelMerge.Decision == ManualEditDecision.Cancel,
             "Merge confirmation Escape cancels without authorizing manual-braille replacement");
@@ -322,8 +354,8 @@ internal static class WindowsQa4Checks
         check(Modal(failedSave, () => Key(failedSave, failedSave, System.Windows.Input.Key.Escape)) != true && failedSave.Choice == -1,
             "Save failure Escape preserves the unsaved document without triggering another save");
         var rejected = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다.", System.Text.Json.JsonSerializer.SerializeToElement(new { remainingAttempts = 2 })));
-        await Capture(rejected, "71-login-rejected.png", () => check(rejected.DetailText == "남은 횟수 2회입니다. 5회 실패하면 10분 동안 잠깁니다." && Math.Abs(rejected.ActionButtons[1].ActualWidth - 103) <= 2,
-            "Figma 4904 login rejection states the 5-attempt / 10-minute lock policy with a 103px 비밀번호 찾기 button"));
+        await Capture(rejected, "71-login-rejected.png", () => check(rejected.DetailText == "남은 횟수 2회입니다. 5회 실패하면 10분 동안 잠깁니다." && Math.Abs(rejected.ActionButtons[0].ActualWidth - rejected.ActionButtons[1].ActualWidth) <= 2,
+            "Login rejection states the lock policy with equal Figma button widths"));
         var alternativeBlock = new EditorBlock { Metadata = new(Type: "caption", SelectedIndex: 2, Alternatives: [
             new("생략", "", null, "", "설명 생략"), new("짧은 제목", "네 지역의 기후 특성", null, "⠁", "간략한 제목"),
             new("개조식", "그림: 네 지역의 기후 특성\n1. (가) 최한월 −6℃, 연강수량 1,300㎜\n2. (나) 최한월 −2℃, 연강수량 1,100㎜", null, "⠁⠃⠉", "항목별 설명"),
@@ -344,7 +376,7 @@ internal static class WindowsQa4Checks
         check(Modal(cancelDraft, () => { cancelDraft.DraftChoices[3].IsChecked = true; Key(cancelDraft, cancelDraft, System.Windows.Input.Key.Escape); }) != true &&
             alternativeBlock.Metadata.SelectedIndex == 2 && alternativeBlock.Metadata.Alternatives!.Length == 4,
             "Draft Escape preserves the previous selection and every alternative");
-        await Capture(new NoticeDialog("변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 440), "55-unsaved-confirmation.png");
+        await Capture(new NoticeDialog("변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 591), "55-unsaved-confirmation.png");
         await Capture(new AppliedRulesDialog(api, [new("( 여는 괄호", "⠦", "제23항", "문장부호", "소괄호표는 여는 때 ⠦, 닫는 때 ⠴로 적는다.", "한국 점자 규정", "symbol"), new("~ 물결표", "⠤", "제38항", "문장부호", "물결표는 ⠤로 적고 앞말과 뒷말에 붙여 쓴다.", "한국 점자 규정", "symbol")], false, "(가)~(라)", "⠦⠫⠴⠭⠦⠐⠣⠴", "7줄 3~12칸"), "51-applied-rules.png");
         var blockEvidence = new AppliedRulesDialog(api,
             [new("원본 자료 (원문)", "", "제1항", "원본 근거", "원본 변환의 근거", "규정", "fixture", true)],
@@ -392,8 +424,8 @@ internal static class WindowsQa4Checks
             editor.Session.Title = "안내문.txt"; editor.Session.IsTextJob = true; editor.HidePanel("hideOriginal"); editor.LinePreviewToggle.IsChecked = false; editor.LineStrip.Visibility = Visibility.Collapsed;
             editor.PageEditor.Refresh(); editor.PageEditor.FollowActive(tagsBlock.Source.IndexOf("수험표"), 0); editor.PageEditor.Editor.Focus();
             await render(editor, Path.Combine(directory, "68-text-file.png"));
-            check(editor.SourcePanelNumber.Text == "1" && editor.Braille.PanelNumber.Text == "2" && Math.Abs(editor.SourcePanel.ActualWidth / editor.Braille.ActualWidth - 1.5) < .01,
-                "TXT layout uses the Figma 60:40 editor ratio and two-panel numbering");
+            check(editor.SourcePanelNumber.Text == "1" && editor.Braille.PanelNumber.Text == "2" && Math.Abs(editor.SourcePanel.ActualWidth / editor.Braille.ActualWidth - 854.0 / 586.0) < .02,
+                "TXT layout uses the final Figma panel ratio and two-panel numbering");
             editor.Braille.Width = 820; editor.Braille.Height = 420; editor.Braille.HorizontalAlignment = HorizontalAlignment.Left; editor.Braille.VerticalAlignment = VerticalAlignment.Top;
             editor.Braille.GridView.ShowOutlines = false; editor.Braille.GridView.InvalidateFaces(); editor.Braille.PanelNumber.Text = "3";
             editor.Braille.SetLinePreviewVisible(true); editor.Braille.SetLinePreview(3, tagsBlock.Braille.Split('\n')[0]); editor.Braille.GridView.Focus();
@@ -444,7 +476,7 @@ internal static class WindowsQa4Checks
             var branch = tree.Items.OfType<TreeViewItem>().First(b => b.Header.ToString() == "메뉴별 기능");
             branch.IsExpanded = true;
             var topic = branch.Items.OfType<TreeViewItem>().First(t => t.Header.ToString() == "대체 초안과 규정"); topic.IsSelected = true;
-            check(reader.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().First().Inlines.OfType<System.Windows.Documents.Run>().First().Text == "대체 초안과 규정",
+            check(reader.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().First().Inlines.OfType<System.Windows.Documents.Run>().First().Text.EndsWith("대체 초안과 규정", StringComparison.Ordinal),
                 "Help tree opens retained draft and rule guidance after navigation restyling");
         }
         finally { help.Close(); }

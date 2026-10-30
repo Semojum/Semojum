@@ -1,15 +1,16 @@
-<UserControl x:Class="Semojum.Desktop.Controls.BraillePane" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit" xmlns:local="clr-namespace:Semojum.Desktop.Controls">
+<UserControl x:Class="Semojum.Desktop.Controls.BraillePane" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit" xmlns:svg="http://sharpvectors.codeplex.com/svgc/" xmlns:local="clr-namespace:Semojum.Desktop.Controls">
   <DockPanel Background="White">
-    <Border x:Name="Header" DockPanel.Dock="Top" Style="{StaticResource PanelHeader}" Height="32"><DockPanel>
+    <Border x:Name="Header" DockPanel.Dock="Top" Background="#F9F9F9" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1" Padding="12,0,8,0" Height="36"><DockPanel>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
         <TextBlock x:Name="LayoutLabel" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,8,0" ToolTip="{Binding Text, ElementName=StateLabel}"/>
-        <Button x:Name="DetachButton" Content="⧉" ToolTip="점자 창 분리 / 합치기" Click="Detach_Click" Style="{StaticResource PanelButton}"/>
-        <Button Content="×" ToolTip="점자 패널 숨기기" Click="Hide_Click" Style="{StaticResource PanelButton}"/>
+        <Button x:Name="DetachButton" Content="⧉" ToolTip="점자 창 분리 / 합치기" AutomationProperties.Name="점자 창 분리 또는 합치기" Click="Detach_Click" Style="{StaticResource IconButton}"/>
+        <Button ToolTip="점자 패널 숨기기" AutomationProperties.Name="점자 패널 숨기기" Click="Hide_Click" Style="{StaticResource IconButton}"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/panel-braille-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
       </StackPanel>
-      <Border DockPanel.Dock="Left" Style="{StaticResource PanelNumber}"><TextBlock x:Name="PanelNumber" Text="3" Foreground="White" FontSize="12" HorizontalAlignment="Center"/></Border>
-      <TextBlock x:Name="PanelTitle" Text="점자" FontSize="12"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock x:Name="PanelTitle" Text="점자" FontSize="14" Foreground="#5F5F5F" VerticalAlignment="Center"/>
+        <Border Width="18" Height="18" CornerRadius="9" Background="#EAEAEA" Margin="8,0,0,0"><TextBlock x:Name="PanelNumber" Text="3" Foreground="#5F5F5F" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></StackPanel>
     </DockPanel></Border>
     <local:LineTranslation x:Name="PreviewStrip" DockPanel.Dock="Bottom" Height="90" Visibility="Collapsed"/>
+    <local:PanelPageBar x:Name="FacePageBar" DockPanel.Dock="Bottom"/>
     <TextBlock x:Name="StateLabel" Visibility="Collapsed"/>
     <Grid>
       <Grid.RowDefinitions><RowDefinition Height="0"/><RowDefinition x:Name="GridHeight" Height="*"/><RowDefinition Height="0"/><RowDefinition Height="0"/></Grid.RowDefinitions>

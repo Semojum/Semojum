@@ -20,7 +20,7 @@ public sealed class MathDialog : CompactDialog
     private int revision;
     private bool manuallyEdited, settingBraille;
     private readonly bool inlinePreview;
-    public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 462)
+    public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 510)
     {
         this.translate = translate; this.inlinePreview = inlinePreview;
         Input.FontFamily = (FontFamily)FindResource("MonoFont");
@@ -55,13 +55,13 @@ public sealed class MathDialog : CompactDialog
         toolbox.ContextMenu = extra; toolbox.ToolTip = "다른 수식 기호: 마우스 오른쪽 단추";
         var panes = new Grid(); panes.ColumnDefinitions.Add(new() { Width = new(628) }); panes.ColumnDefinitions.Add(new() { Width = new(8) }); panes.ColumnDefinitions.Add(new() { Width = new(300) }); panes.ColumnDefinitions.Add(new());
         body.Children.Add(panes); var left = new StackPanel(); panes.Children.Add(left);
-        var preview = new FormulaControl { FontSize = 26, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var preview = new FormulaControl { FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var formula = new Grid(); formula.Children.Add(preview);
         formula.Children.Add(new TextBlock { Text = "묵자 수식", Foreground = (Brush)FindResource("Muted"), Margin = new(7, 3, 0, 0), VerticalAlignment = VerticalAlignment.Top });
         left.Children.Add(new Border { Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Height = 160, Child = formula });
-        Input.Height = 92; Input.Padding = new(7, 20, 7, 7); Input.FontSize = 12; Input.VerticalContentAlignment = VerticalAlignment.Top;
+        Input.Height = 92; Input.Padding = new(7, 20, 7, 7); Input.FontSize = 12; Input.VerticalContentAlignment = VerticalAlignment.Top; EditorModalDesign.Input(Input);
         var latexHost = new Grid { Margin = new(0, 8, 0, 0) }; latexHost.Children.Add(Input);
-        latexHost.Children.Add(new TextBlock { Text = "LaTeX", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 4, 16, 0), IsHitTestVisible = false });
+        latexHost.Children.Add(new TextBlock { Text = "LaTeX", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new(7, 4, 0, 0), IsHitTestVisible = false });
         left.Children.Add(latexHost);
         BrailleInput.Height = 252; BrailleInput.Padding = new(6, 20, 6, 6); BrailleInput.VerticalContentAlignment = VerticalAlignment.Top; BrailleInput.BorderThickness = new(2); BrailleInput.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 95, 184));
         var brailleHost = new Grid { VerticalAlignment = VerticalAlignment.Top }; brailleHost.Children.Add(BrailleInput);
@@ -96,6 +96,7 @@ public sealed class MathDialog : CompactDialog
             try { preview.Formula = Input.Text; } catch { /* The engine reports invalid expressions below. */ }
             await RefreshAsync(true);
         };
+        Action("취소", () => DialogResult = false);
         Action("넣기", async () =>
         {
             if (Latex.Length == 0) throw new ArgumentException("수식을 입력해 주세요.");
@@ -104,7 +105,8 @@ public sealed class MathDialog : CompactDialog
             if (!DocumentSearch.IsBrailleText(BrailleInput.Text) || string.IsNullOrWhiteSpace(BrailleInput.Text)) throw new ArgumentException("점자 수식에는 점자와 공백만 입력할 수 있습니다.");
             DialogResult = true;
         }, true);
-        Action("취소", () => DialogResult = false);
+        EditorModalDesign.Frame(this, Root, Actions);
+        if (Root.Children.OfType<Border>().FirstOrDefault() is { } footer) { footer.BorderThickness = new Thickness(0, 1, 0, 0); footer.BorderBrush = EditorModalDesign.Color("#EAEAEA"); }
         Loaded += async (_, _) => { preview.Formula = Input.Text; await RefreshAsync(); };
     }
     internal async Task RefreshAsync(bool delay = false)

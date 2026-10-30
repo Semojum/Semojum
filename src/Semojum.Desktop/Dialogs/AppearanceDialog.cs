@@ -8,6 +8,7 @@ namespace Semojum.Desktop.Dialogs;
 
 public sealed class AppearanceDialog : CompactDialog
 {
+    internal const string DefaultCurrentLineColor = "#F2F6FB";
     public EditorAppearance Result { get; private set; }
     private readonly Dictionary<string, TextBox> inputs = [];
     private readonly Dictionary<string, CheckBox> flags = [];
@@ -31,7 +32,7 @@ public sealed class AppearanceDialog : CompactDialog
         palette.Children.Add(new TextBlock { Text = "점자 직접 수정 색 #B22222는 별도로 유지합니다.", TextWrapping = TextWrapping.Wrap });
         var speech = Page("점형 읽기"); Flag(speech, "SpeakDots", "커서 위치의 점형 번호를 음성으로 읽기", current.SpeakDots); Text(speech, "SpeechRate", "음성 속도 (-10–10)", current.SpeechRate);
         speech.Children.Add(new TextBlock { Text = "Windows에 설치된 음성을 사용합니다. 예: 1-2-5점. 음성이 없으면 Windows 음성 설정에서 설치해 주세요.", TextWrapping = TextWrapping.Wrap });
-        Action("기본값", () => { Result = new(); preview(Result); DialogResult = true; });
+        Action("기본값", () => { Result = new(CurrentLineColor: DefaultCurrentLineColor); preview(Result); DialogResult = true; });
         Action("적용", () => { Result = Read(); preview(Result); });
         Action("확인", () => { Result = Read(); preview(Result); DialogResult = true; }, true);
         Action("취소", () => { preview(current); DialogResult = false; });

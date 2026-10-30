@@ -1,0 +1,70 @@
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Semojum.Core;
+using Semojum.Desktop.Dialogs;
+using SharpVectors.Converters;
+
+namespace Semojum.Desktop.Services;
+
+internal static class WindowsCaseDesignChecks
+{
+    internal static void Run(Action<bool, string> check)
+    {
+        var invalid = FileNotices.UnsupportedFormat(); invalid.Show();
+        try
+        {
+            invalid.UpdateLayout(); Capture(invalid, "unsupported.png");
+            check(Math.Abs(invalid.Width - 471) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice follows the final Figma dimensions");
+            var icon = Descendants(invalid).OfType<SvgViewbox>().Single();
+            check(icon.Source?.ToString().EndsWith("case-error.svg", StringComparison.Ordinal) == true && icon.Drawings is { Bounds.IsEmpty: false } && icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16 && icon.ActualHeight > 0 && icon.ActualHeight <= 16,
+                "Error notice renders the original Figma warning in its 16px slot");
+            check(invalid.ActionButtons.Count == 2 && invalid.ActionButtons[0].IsDefault &&
+                  Math.Abs(invalid.ActionButtons[0].ActualWidth - invalid.ActionButtons[1].ActualWidth) < 2 && invalid.ActionButtons.All(b => Math.Abs(b.ActualHeight - 32) <= 1),
+                "Error notice uses equal-width Figma action buttons and preserves the default action");
+        }
+        finally { invalid.Close(); }
+        var manual = new ManualEditDialog(); manual.Show();
+        try
+        {
+            manual.UpdateLayout(); Capture(manual, "manual.png");
+            check(manual.ActionButtons.Count == 3 && manual.ActionButtons[1].Background is SolidColorBrush brush && brush.Color == Color.FromRgb(196, 43, 28),
+                "Manual braille overwrite is shown as the red destructive Figma action");
+        }
+        finally { manual.Close(); }
+        foreach (var index in new[] { 0, 1, 2 })
+        {
+            var dialog = new ManualEditDialog();
+            var timeout = false; Exception? failure = null;
+            var timer = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromSeconds(5) };
+            timer.Tick += (_, _) => { timeout = true; timer.Stop(); dialog.Close(); };
+            dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try { dialog.ActionButtons[index].RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+                catch (Exception ex) { failure = ex; dialog.Close(); }
+            }), DispatcherPriority.Normal);
+            timer.Start(); var result = dialog.ShowDialog(); timer.Stop();
+            var expected = index switch { 0 => ManualEditDecision.Keep, 1 => ManualEditDecision.Overwrite, _ => ManualEditDecision.Cancel };
+            check(!timeout && failure is null && dialog.Decision == expected && (index == 2 ? result != true : result == true),
+                $"Manual braille action {index} retains its original decision");
+        }
+    }
+    private static void Capture(Window window, string filename)
+    {
+        var directory = Environment.GetEnvironmentVariable("NOTICE_UI_CAPTURE_DIR");
+        if (string.IsNullOrWhiteSpace(directory)) return;
+        Directory.CreateDirectory(directory);
+        var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(window); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = File.Create(Path.Combine(directory, filename)); encoder.Save(stream);
+    }
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+    {
+        yield return parent;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, i))) yield return child;
+    }
+}

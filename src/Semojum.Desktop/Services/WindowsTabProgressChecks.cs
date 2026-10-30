@@ -11,6 +11,7 @@ using System.Net.Http;
 using System.Text;
 using Semojum.Core;
 using Semojum.Core.Integration;
+using SharpVectors.Converters;
 
 namespace Semojum.Desktop.Services;
 
@@ -25,6 +26,9 @@ internal static class WindowsTabProgressChecks
         window.Show();
         try
         {
+            window.UpdateLayout();
+            check(window.DocumentTabs.Items.Count == 1 && window.DocumentTabs.IsVisible && window.DocumentTabs.ActualHeight == 34,
+                "A single open document keeps the Figma 34px document tab row visible");
             var first = window.Session;
             first.Title = "첫 문서.smj";
             first.JobId = "first-job"; first.JobStatus = "IN_PROGRESS";
@@ -34,13 +38,30 @@ internal static class WindowsTabProgressChecks
             var second = window.Session;
             second.JobId = "second-job"; second.JobStatus = "IN_PROGRESS";
             second.Progress = new ConversionProgress(10, 2, 0, 1, "남은 시간 계산 중");
+            await Dispatcher.Yield(DispatcherPriority.ContextIdle);
             window.UpdateLayout();
             var firstTab = (TabItem)window.DocumentTabs.Items[0];
             var secondTab = (TabItem)window.DocumentTabs.Items[1];
+            var activeLine = secondTab.Template.FindName("ActiveLine", secondTab) as FrameworkElement;
+            var inactiveLine = firstTab.Template.FindName("ActiveLine", firstTab) as FrameworkElement;
+            check(activeLine is { Visibility: Visibility.Visible, Height: 2 } && inactiveLine?.Visibility == Visibility.Collapsed
+                && secondTab.FontWeight == FontWeights.Bold && firstTab.FontWeight != FontWeights.Bold,
+                "The selected document tab has the Figma blue stripe and stronger title");
             Button? ProgressButton(TabItem tab) => Descendants((DependencyObject)tab.Header).OfType<Button>()
                 .FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == "TabConversionProgress");
             var firstButton = ProgressButton(firstTab);
             var secondButton = ProgressButton(secondTab);
+            var closeButton = Descendants((DependencyObject)secondTab.Header).OfType<Button>()
+                .FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == "DocumentTabClose");
+            // The SVG uses a 16×16 viewBox with a 9.6×9.6 painted cross. Stretch=None
+            // sizes SharpVectors' view to the painted bounds; DPI rounding can shift it by a pixel.
+            var iconMatches = closeButton?.Content is SvgViewbox { Width: 16, Height: 16, Drawings.Bounds.IsEmpty: false } inspected
+                && Math.Abs(inspected.Drawings.Bounds.Width - 9.6) < .05 && Math.Abs(inspected.Drawings.Bounds.Height - 9.6) < .05
+                && Math.Abs(inspected.ActualWidth - 9.6) < 1 && Math.Abs(inspected.ActualHeight - 9.6) < 1;
+            check(iconMatches && closeButton!.IsVisible && AutomationProperties.GetName(closeButton).Contains(second.Title, StringComparison.Ordinal),
+                "Each document tab exposes the Figma close icon with its document name to assistive technology");
+            if (Environment.GetEnvironmentVariable("TAB_HEADER_CAPTURE") is { Length: > 0 } headerCapture)
+                await WindowsSmoke.RenderElementAsync(closeButton!, headerCapture);
             check(firstButton is { IsVisible: true } && secondButton is { IsVisible: true },
                 "Every converting document shows progress in its own tab, including an inactive tab");
             if (firstButton is null || secondButton is null) return;
@@ -68,6 +89,13 @@ internal static class WindowsTabProgressChecks
             first.Progress = null;
             check(firstButton.Visibility == Visibility.Collapsed && secondButton.Visibility == Visibility.Visible,
                 "Finishing one job removes only that tab's progress indicator");
+            if (closeButton is not null)
+            {
+                closeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                check(window.DocumentTabs.Items.Count == 1 && ReferenceEquals(window.Session, first),
+                    "The tab close icon closes the chosen document and selects the remaining tab");
+            }
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }

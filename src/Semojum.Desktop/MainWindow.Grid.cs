@@ -3,6 +3,8 @@ using Semojum.Core.Integration;
 using Semojum.Desktop.Controls;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows;
+using Semojum.Desktop.Dialogs;
 
 namespace Semojum.Desktop;
 
@@ -16,17 +18,47 @@ public partial class MainWindow
         + (ids.Length > 10 ? $" 외 {ids.Length - 10}개" : "");
     private void ConnectGrid(BraillePane pane)
     {
+        pane.GridView.ShowMemos = MemoToggle.IsChecked; pane.GridView.ShowReviews = ReviewToggle.IsChecked;
+        async Task<bool> NavigateMarkerAsync(EditorBlock block, int line, DocumentSession owner)
+        {
+            if (resourcesReleased || session != owner || !owner.Blocks.Contains(block)) return false;
+            var offsets = DocumentNavigation.LineOffsets(block.Braille);
+            if (line < 0 || line >= offsets.Length) return false;
+            var revision = block.BrailleRevision;
+            CompleteSourceInput();
+            await NavigateToAsync(new(block, SearchPanel.Braille, offsets[line]));
+            return !resourcesReleased && session == owner && owner.ActiveBlock == block
+                && owner.Blocks.Contains(block) && block.BrailleRevision == revision;
+        }
+        pane.GridView.MemoRequested = async (block, line) =>
+        {
+            var owner = session;
+            if (owner.IsReadOnly) return;
+            try
+            {
+                if (!await NavigateMarkerAsync(block, line, owner) || owner.IsReadOnly) return;
+                SetActiveEditor(pane.Editor); lastGrid = pane.GridView;
+                ShowLineMemos(SearchPanel.Braille, line);
+            }
+            catch (Exception ex) { if (!resourcesReleased && session == owner) ShowError(ex); }
+        };
+        pane.GridView.ReviewRequested = async block =>
+        {
+            var owner = session;
+            try
+            {
+                if (!await NavigateMarkerAsync(block, 0, owner)) return;
+                ShowLocalTranslationReview(block, Window.GetWindow(pane) ?? this);
+            }
+            catch (Exception ex) { if (!resourcesReleased && session == owner) ShowError(ex); }
+        };
         foreach (var (command, redo) in new[] { (ApplicationCommands.Undo, false), (ApplicationCommands.Redo, true) })
             pane.GridView.CommandBindings.Add(new CommandBinding(command,
                 (_, e) => { ReplayHistory(redo); e.Handled = true; },
                 (_, e) => { e.CanExecute = CanReplayHistory(redo); e.Handled = true; }));
         pane.GridRefreshed += () => { RefreshLinkedSource(); if (lastGrid == pane.GridView) RefreshEditorStatus(); };
-        var menu = new ContextMenu(); pane.GridView.ContextMenu = menu;
-        menu.Opened += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); };
-        foreach (var (label, action) in new[] { ("메모 추가·답글", "memo"), ("복사", "copy"), ("잘라내기", "cut"), ("붙여넣기", "paste"), ("현재 줄 지우기", "clearLine") })
-        {
-            var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
-        }
+        var menu = CreatePanelContextMenu(true); pane.GridView.ContextMenu = menu;
+        menu.Opened += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); UpdateDraftAvailability(); };
         pane.GridView.GotKeyboardFocus += (_, _) => { SetActiveEditor(pane.Editor); lastGrid = pane.GridView; RefreshEditorStatus(); };
         pane.NavigateGridAsync = async cell =>
         {
@@ -84,6 +116,11 @@ public partial class MainWindow
             });
         };
         pane.GridView.ReplayHistory = redo => ReplayHistory(redo);
+    }
+    private void ShowLocalTranslationReview(EditorBlock block, Window owner)
+    {
+        if (block.Translation is not { NeedsReview: true } result) return;
+        NoticeDialog.Choose(owner, "점역 검토 필요", MemoMargin.DescribeReview(result), ["확인"], error: true);
     }
 
     private void RefreshLinkedSource()

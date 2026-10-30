@@ -40,7 +40,7 @@ internal static class MemoAuthor
     internal static DockPanel Header(string? author)
     {
         var row = new DockPanel { Height = 20 }; var avatar = Avatar(author); avatar.Margin = new(0, 0, 8, 0); row.Children.Add(avatar);
-        row.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(author) ? "작성자 미상" : author, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(author) ? "작성자 미상" : author, FontSize = 14, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
         return row;
     }
 }

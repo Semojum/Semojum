@@ -32,7 +32,7 @@ internal static class WindowsSmoke
         Check(window.PageEditor.Editor.ActualWidth > 250 && window.Braille.ActualWidth > 250, "Three-panel layout has usable editor widths");
         Check(window.LineStrip.ActualHeight == 64 && Math.Abs(window.LineStrip.ActualWidth - window.PanelGrid.ActualWidth) < 2,
             "Figma line translation strip spans all panels at 64px");
-        Check(window.SourceHeader.ActualHeight == 32 && window.ZoomPicker.ActualHeight == 32,
+        Check(window.SourceHeader.ActualHeight == 36 && window.ZoomPicker.ActualHeight == 32,
             "Figma panel headers and toolbar controls retain compact geometry");
         Check(window.Braille.GridView.Items.Count > 0 && window.Braille.GridView.ActualHeight > 100,
             "Service plan braille grid renders editable block coordinates");
@@ -42,6 +42,30 @@ internal static class WindowsSmoke
             Check(icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16
                 && icon.ActualHeight > 0 && icon.ActualHeight <= 16 && icon.Drawings is { Bounds.IsEmpty: false },
                 $"Local Figma SVG loaded without scaling in its 16px slot: {icon.Name}");
+        }
+        var toolbarIcons = new (string Tag, string Asset)[]
+        {
+            ("new", "new"), ("open", "open"), ("save", "save"), ("cut", "cut"), ("copy", "copy"), ("paste", "paste"),
+            ("undo", "undo"), ("redo", "redo"), ("find", "find"), ("goto", "goto"), ("translate", "recon"), ("export", "export"),
+            ("tag:쪽바꿈", "pagebreak"), ("footer", "footer"), ("tag:가운데정렬", "align"), ("tag:강조", "emph"),
+            ("tag:밑줄빈칸", "blank"), ("table", "table"), ("memo", "note"), ("math", "math"), ("drafts", "draft"),
+            ("formatMarks", "mark"), ("lineNumbers", "lineno")
+        };
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            yield return parent;
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+                foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, i))) yield return child;
+        }
+        var toolbarButtons = Descendants(window.EditorToolbarScroll).Concat(Descendants(window.FormatToolbarScroll)).OfType<Button>().ToArray();
+        foreach (var (tag, asset) in toolbarIcons)
+        {
+            var button = toolbarButtons.Single(b => Equals(b.Tag, tag));
+            var svg = button.Content as SharpVectors.Converters.SvgViewbox;
+            Check(svg is { Width: 16, Height: 16, Drawings.Bounds.IsEmpty: false }
+                && svg.Source is { } iconSourceUri && iconSourceUri.ToString().EndsWith("/main-toolbar-" + asset + ".svg", StringComparison.Ordinal)
+                && svg.ActualWidth > 0 && svg.ActualWidth <= 16 && svg.ActualHeight > 0 && svg.ActualHeight <= 16,
+                $"Final Figma toolbar icon is rendered in its 16px slot: {tag}");
         }
         var initialVersion = window.Session.ChangeVersion;
         window.HidePanel("hideOriginal"); window.UpdateLayout();
@@ -226,9 +250,8 @@ internal static class WindowsSmoke
         await CaptureDialogAsync(new RangeSelectionDialog(() => window.Session.Blocks.Where(b => b.Page == window.Session.ActiveBlock!.Page).ToArray(), SearchPanel.Text, (_, _) => Task.CompletedTask) { Owner = window }, directory, "21-range-selection.png");
         window.Session.Progress = new(128, 47, 1, 2, "잔여 약 2분 (처리 속도 기준)");
         await RenderAsync(window, Path.Combine(directory, "22-conversion-progress.png"));
-        await CaptureComponentAsync(window.ConversionBanner, window, 420, 160, Path.Combine(directory, "65-loading.png"));
-        Check(window.ConversionBanner.IsVisible && window.Session.Progress.Finished == 48 && window.Session.Progress.Remaining == 80,
-            "Conversion progress exposes disjoint page counts and cancellation");
+        Check(!window.ConversionBanner.IsVisible && window.Session.Progress.Finished == 48 && window.Session.Progress.Remaining == 80,
+            "Conversion progress keeps disjoint page counts without a duplicate fixed panel");
         window.Session.Progress = null;
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
@@ -383,7 +406,7 @@ internal static class WindowsSmoke
         memoList.Close();
         IEnumerable<MenuItem> MenuItems(MenuItem root) => root.Items.OfType<MenuItem>().SelectMany(item => new[] { item }.Concat(MenuItems(item)));
         var tags = MenuItems(window.AllTagsMenu).Where(m => m.Tag is string tag && tag.StartsWith("tag:")).Select(m => ((string)m.Tag)[4..]).ToArray();
-        Check(window.RuleSearch.IsVisible && tags.Length == 25 && !tags.Any(t => t is "상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임"), "Figma insertion menu excludes automatic-only tags; page-number insertion remains in help tools");
+        Check(window.RuleSearch.IsVisible && tags.Length == 24 && MenuItems(window.AllTagsMenu).Any(m => Equals(m.Tag, "headerInsert")) && !tags.Any(t => t is "상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임"), "Insertion menu retains the dedicated header command and excludes automatic-only tags");
         Check(window.AllTagsMenu.Items.OfType<MenuItem>().Count(m => m.Items.Count > 0) == 5, "QA4 insertion tags have five named submenus");
         var margin = new Controls.MemoMargin(() => memoBlock, "TEXT", _ => { });
         Check(margin.Preview(0).Contains("미해결 회신") && margin.Preview(0).Contains("검수자") && !margin.Preview(0).Contains("해결된 메모"), "QA4 memo hover includes author, body and replies while hiding resolved items");

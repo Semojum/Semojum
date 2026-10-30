@@ -14,16 +14,24 @@ public partial class MainWindow
         if (editor is not null) lastEditor = editor;
         var selected = new LinearGradientBrush(new GradientStopCollection
         {
-            new(Color.FromRgb(0, 95, 184), 0), new(Color.FromRgb(0, 95, 184), 2d / 31),
-            new(Color.FromRgb(204, 228, 247), 2d / 31), new(Color.FromRgb(204, 228, 247), 1)
+            new(Color.FromRgb(0, 95, 184), 0), new(Color.FromRgb(0, 95, 184), 2d / 35),
+            new(Colors.White, 2d / 35), new(Colors.White, 1)
         }, new Point(0, 0), new Point(0, 1));
-        var neutral = (Brush)FindResource("PanelBlue");
+        var neutral = new SolidColorBrush(Color.FromRgb(249, 249, 249));
         SourceHeader.Background = (editor == SourceEditor || editor == PageEditor.Editor) ? selected : neutral;
         OriginalHeader.Background = editor is null ? selected : neutral;
         Braille.Header.Background = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? selected : neutral;
-        SourcePanelTitle.FontWeight = editor == SourceEditor || editor == PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
-        OriginalPanelTitle.FontWeight = editor is null ? FontWeights.SemiBold : FontWeights.Normal;
-        Braille.PanelTitle.FontWeight = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
+        var sourceActive = editor == SourceEditor || editor == PageEditor.Editor;
+        var originalActive = editor is null;
+        var brailleActive = !originalActive && !sourceActive;
+        SourcePanelTitle.FontWeight = sourceActive ? FontWeights.Bold : FontWeights.Normal;
+        OriginalPanelTitle.FontWeight = originalActive ? FontWeights.Bold : FontWeights.Normal;
+        Braille.PanelTitle.FontWeight = brailleActive ? FontWeights.Bold : FontWeights.Normal;
+        var ink = new SolidColorBrush(Color.FromRgb(26, 26, 26));
+        var muted = new SolidColorBrush(Color.FromRgb(95, 95, 95));
+        SourcePanelTitle.Foreground = sourceActive ? ink : muted;
+        OriginalPanelTitle.Foreground = originalActive ? ink : muted;
+        Braille.PanelTitle.Foreground = brailleActive ? ink : muted;
         if (detachedPane is not null) detachedPane.Header.Background = Braille.Header.Background;
         RefreshLinkedSource();
         RefreshEditorStatus();
@@ -52,7 +60,8 @@ public partial class MainWindow
             CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"}";
             StatusCell.Text = $"칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";
         }
-        OriginalPosition.Text = $"{block.Page}쪽 · 맞춤";
+        OriginalPosition.Text = session.OriginalPages.ContainsKey(block.Page) ? $"{block.Page}쪽 · 맞춤" : "";
+        RefreshPanelPageBars();
     }
 
     private void ZoomPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)

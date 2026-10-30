@@ -20,6 +20,7 @@ public partial class BraillePane : UserControl, IDisposable
     public Func<DocumentSession, Task<ComposedBraille>>? ComposeGridAsync { get; set; }
     public Func<BlockSpan[], string, Task>? ReplaceGridAsync { get; set; }
     private bool gridBusy, gridPending;
+    private int? selectedFace;
     private long gridVersion = -1;
     public Func<GridCell, Task>? NavigateGridAsync { get; set; }
     private readonly SixDotInput chord = new();
@@ -35,13 +36,18 @@ public partial class BraillePane : UserControl, IDisposable
     public BraillePane()
     {
         InitializeComponent();
+        FacePageBar.SetIcons("panel-face-prev.svg", "panel-face-next.svg");
+        FacePageBar.PageRequested += page => { if (GridView.GoToFace(page)) { selectedFace = page; RefreshFacePageBar(); } };
+        FacePageBar.InvalidPageRequested += () => { if (session is not null) session.Status = "이동할 수 있는 점자 면 번호를 입력해 주세요."; };
         gridTimer.Tick += (_, _) => { gridTimer.Stop(); RefreshGrid(); };
         GridView.CellSelected += async cell =>
         {
+            selectedFace = GridView.CaretCoordinates?.Face;
             if (NavigateGridAsync is not null) await NavigateGridAsync(cell);
             else if (session is not null) { session.ActiveBlock = cell.Block; Editor.CaretOffset = Math.Min(cell.Offset, Editor.Document.TextLength); }
             GridView.Focus();
             LayoutLabel.Text = GridView.DescribeCaret();
+            RefreshFacePageBar();
         };
         GridView.ReplaceAsync = async (spans, value) =>
         {
@@ -82,7 +88,7 @@ public partial class BraillePane : UserControl, IDisposable
     }
     public void Attach(DocumentSession model, EditorDocuments store)
     {
-        Dispose(); session = model; documents = store;
+        Dispose(); selectedFace = null; session = model; documents = store;
         session.PropertyChanged += SessionChanged;
         session.Blocks.CollectionChanged += GridBlocksChanged; ObserveGridBlocks(); RefreshGrid();
         SwitchBlock();
@@ -102,7 +108,7 @@ public partial class BraillePane : UserControl, IDisposable
     }
     private void GridBlockChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation) or nameof(EditorBlock.Source)) QueueGrid(); }
-    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); gridTimer.Stop(); gridTimer.Start(); }
+    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); RefreshFacePageBar(); gridTimer.Stop(); gridTimer.Start(); }
     public async void RefreshGrid()
     {
         if (session is null) return;
@@ -119,6 +125,8 @@ public partial class BraillePane : UserControl, IDisposable
                 : BrailleGrid.Project(owner.Blocks, owner.Layout);
             gridVersion = version; GridView.CoordinatesCurrent = true; GridView.IsReadOnly = owner.IsReadOnly;
             GridView.ActiveBlock = owner.ActiveBlock; GridView.CaretOffset = Editor.CaretOffset;
+            selectedFace = GridView.CaretCoordinates?.Face;
+            RefreshFacePageBar();
             if (GridView.IsKeyboardFocusWithin) LayoutLabel.Text = GridView.DescribeCaret();
             GridRefreshed?.Invoke();
         }
@@ -126,6 +134,7 @@ public partial class BraillePane : UserControl, IDisposable
         {
             if (owner != session) return;
             GridView.ItemsSource = null;
+            selectedFace = null; RefreshFacePageBar();
             owner.Status = "모눈 조판 실패: " + ex.Message;
         }
         finally
@@ -164,11 +173,18 @@ public partial class BraillePane : UserControl, IDisposable
         Editor.Options.ColumnRulerPosition = session.Layout.Columns;
         LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄 · {Editor.TextArea.Caret.Line}줄 {Editor.TextArea.Caret.Column}칸";
         GridView.ActiveBlock = active; GridView.CaretOffset = Editor.CaretOffset; GridView.InvalidateFaces();
+        if (GridView.CaretCoordinates?.Face is { } face) selectedFace = face;
+        RefreshFacePageBar();
         StateLabel.Text = active.State;
         var lineNumber = Math.Clamp(Editor.TextArea.Caret.Line, 1, Editor.Document.LineCount);
         var line = Editor.Document.GetLineByNumber(lineNumber);
         Editor.Foreground = active.HasManualBraille ? Brushes.Firebrick : NormalForeground;
         if (line.Length > session.Layout.Columns) StateLabel.Text += $" · 판면 초과 +{line.Length - session.Layout.Columns}칸";
+    }
+    private void RefreshFacePageBar()
+    {
+        var pages = Enumerable.Range(1, GridView.Items.Count).ToArray();
+        FacePageBar.SetPages(pages, GridView.CoordinatesCurrent ? pages : [], selectedFace);
     }
     public void SetLinePreview(int line, string cells) => PreviewStrip.SetPreview(line, cells);
     public void SetLinePreviewVisible(bool visible) => PreviewStrip.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;

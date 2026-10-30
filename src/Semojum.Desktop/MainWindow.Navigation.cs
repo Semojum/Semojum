@@ -31,16 +31,21 @@ public partial class MainWindow
     private async Task<string> NavigateToAsync(NavigationLocation destination)
     {
         var owner = session;
+        var navigationLifetime = documentLifetime.Token;
         var previous = owner.ActiveBlock;
-        if (previous is not null && previous != destination.Block && autoTranslate
+        if (previous is not null && previous != destination.Block && autoTranslate && !owner.IsReadOnly
             && translatedRevisions.GetValueOrDefault(previous, -1) != previous.SourceRevision)
         {
             var decision = ChooseTranslation(previous);
             if (decision == ManualEditDecision.Cancel) return "이동을 취소했습니다.";
             previewGeneration++; debounce?.Cancel(); pendingSourceTranslation = false;
             await TranslateAsync(previous, decision, interactive: false);
-            if (owner != session) return "문서가 바뀌어 이동을 취소했습니다.";
+            if (owner != session || navigationLifetime.IsCancellationRequested) return "문서가 바뀌어 이동을 취소했습니다.";
+            if (translatedRevisions.GetValueOrDefault(previous, -1) != previous.SourceRevision)
+                return owner.Status = "점역 중 내용이 바뀌거나 점역이 완료되지 않아 이동하지 않았습니다.";
         }
+        if (navigationLifetime.IsCancellationRequested || owner != session || !owner.Blocks.Contains(destination.Block))
+            return "이동할 블록이 변경되어 이동을 취소했습니다.";
         session.ActiveBlock = destination.Block;
         var editor = SearchEditor(destination.Panel);
         if (destination.Panel == SearchPanel.Text) SourceToggle.IsChecked = true;

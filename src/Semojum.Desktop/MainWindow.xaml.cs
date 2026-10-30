@@ -62,7 +62,7 @@ public partial class MainWindow : Window
     internal MainWindow(bool smoke = false, bool testWithoutAccount = false, bool startEmpty = false)
     {
         this.smoke = smoke;
-        api = new(http) { RefreshedIdentityAllowed = AutomaticLogin.IsEditorAllowed }; jobs = new(api);
+        api = new(http); api.RefreshedIdentityAllowed = account => AutomaticLogin.IsSameDesktopArea(api.Account, account); api.RefreshRequiresIdentity = account => account.Role == "ROLE_ORG_ADMIN"; jobs = new(api);
         if (smoke) engine = new MockTranslationEngine();
         else { sidecar = EngineRuntime.Create(); engine = new LocalBrailleEngine(sidecar, () => session.Options); }
         translator = new(engine);
@@ -309,11 +309,13 @@ public partial class MainWindow : Window
                 case "showReviews":
                     foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowReviews = ReviewToggle.IsChecked; margin.InvalidateVisual(); }
+                    foreach (var grid in new[] { Braille.GridView, detachedPane?.GridView }.OfType<BrailleGridView>()) { grid.ShowReviews = ReviewToggle.IsChecked; grid.InvalidateFaces(); }
                     break;
                 case "selectRange": SelectTextRange(); break;
                 case "showMemos":
                     foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowMemos = MemoToggle.IsChecked; margin.InvalidateVisual(); }
+                    foreach (var grid in new[] { Braille.GridView, detachedPane?.GridView }.OfType<BrailleGridView>()) { grid.ShowMemos = MemoToggle.IsChecked; grid.InvalidateFaces(); }
                     break;
                 case "showOutlines":
                     Braille.GridView.ShowOutlines = OutlineToggle.IsChecked; Braille.GridView.InvalidateFaces();
@@ -670,7 +672,7 @@ public partial class MainWindow : Window
     {
         if (fileBusy) return false;
         if (!session.IsDirty) return true;
-        return NoticeDialog.Choose(this, "변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 440) switch
+        return NoticeDialog.Choose(this, "변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 591) switch
         {
             0 => await SaveAsync(false),
             1 => true,

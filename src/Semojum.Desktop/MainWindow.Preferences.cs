@@ -15,10 +15,13 @@ public partial class MainWindow
     private EditorAppearance appearance = new();
     private readonly DotSpeech dotSpeech = new();
     private readonly Dictionary<TextEditor, WideCaret> wideCarets = [];
-    internal void ApplyAppearance(EditorAppearance value)
+    internal void ApplyAppearance(EditorAppearance value) => ApplyAppearance(value, explicitAppearance: false);
+    internal void ApplyAppearance(EditorAppearance value, bool explicitAppearance)
     {
         AccountPreferenceStore.Validate(new(Appearance: value)); appearance = value;
         Brush C(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        var customLine = explicitAppearance || accountPreferences.Appearance is not null || !value.CurrentLineColor.Equals(new EditorAppearance().CurrentLineColor, StringComparison.OrdinalIgnoreCase);
+        var gridLine = C(customLine ? value.CurrentLineColor : AppearanceDialog.DefaultCurrentLineColor);
         var foreground = value.HighContrast ? Brushes.White : C(value.TextColor);
         var background = value.HighContrast ? Brushes.Black : C(value.BackgroundColor);
         void Apply(TextEditor editor, bool braille)
@@ -35,7 +38,7 @@ public partial class MainWindow
             editor.TextArea.SelectionForeground = value.HighContrast ? Brushes.Black : C(value.SelectionTextColor);
             editor.TextArea.Caret.CaretBrush = foreground;
             var view = editor.TextArea.TextView;
-            view.CurrentLineBackground = value.HighContrast ? C("#202020") : C(value.CurrentLineColor);
+            view.CurrentLineBackground = value.HighContrast ? C("#202020") : gridLine;
             view.CurrentLineBorder = null;
             view.NonPrintableCharacterBrush = value.HighContrast ? Brushes.Cyan : C(value.MarkerColor);
             view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
@@ -66,8 +69,8 @@ public partial class MainWindow
         Braille.NormalForeground = value.HighContrast ? Brushes.White : C(value.BrailleColor);
         if (detachedPane is not null) detachedPane.NormalForeground = Braille.NormalForeground;
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
-        Braille.GridView.FontSize = value.BrailleSize; Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.ShowLineNumbers = value.ShowLineNumbers; Braille.GridView.InvalidateFaces();
-        if (detachedPane is not null) { detachedPane.GridView.FontSize = value.BrailleSize; detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.ShowLineNumbers = value.ShowLineNumbers; detachedPane.GridView.InvalidateFaces(); }
+        Braille.GridView.FontSize = value.BrailleSize; Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.CurrentLineBrush = gridLine; Braille.GridView.ShowLineNumbers = value.ShowLineNumbers; Braille.GridView.InvalidateFaces();
+        if (detachedPane is not null) { detachedPane.GridView.FontSize = value.BrailleSize; detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.CurrentLineBrush = gridLine; detachedPane.GridView.ShowLineNumbers = value.ShowLineNumbers; detachedPane.GridView.InvalidateFaces(); }
         LineNumbersToggle.IsChecked = value.ShowLineNumbers;
         FormattingToggle.IsChecked = value.ShowFormattingMarks;
         ToolbarToggle.IsChecked = value.ShowToolbar;
@@ -76,7 +79,9 @@ public partial class MainWindow
     }
     private async Task EditAppearanceAsync(bool colors)
     {
-        var dialog = new AppearanceDialog(appearance, ApplyAppearance, colors) { Owner = this };
+        var initial = accountPreferences.Appearance is null && appearance.CurrentLineColor.Equals(new EditorAppearance().CurrentLineColor, StringComparison.OrdinalIgnoreCase)
+            ? appearance with { CurrentLineColor = AppearanceDialog.DefaultCurrentLineColor } : appearance;
+        var dialog = new AppearanceDialog(initial, value => ApplyAppearance(value, !ReferenceEquals(value, initial)), colors) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         accountPreferences = accountPreferences with { Appearance = dialog.Result }; await PersistAccountPreferencesAsync();
     }

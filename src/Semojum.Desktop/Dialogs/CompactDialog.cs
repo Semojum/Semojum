@@ -7,6 +7,7 @@ namespace Semojum.Desktop.Dialogs;
 /// <summary>Shared compact desktop dialog geometry from the Figma D6/D7 and board screens.</summary>
 public class CompactDialog : Window
 {
+    public new bool? ShowDialog() => Services.OwnedModal.Show(this, base.ShowDialog);
     protected readonly DockPanel Root = new();
     protected readonly WrapPanel Actions = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(12, 7, 12, 8) };
     protected readonly TextBlock Status = new() { TextWrapping = TextWrapping.Wrap, Margin = new(16, 4, 16, 4), Foreground = Brushes.Firebrick };

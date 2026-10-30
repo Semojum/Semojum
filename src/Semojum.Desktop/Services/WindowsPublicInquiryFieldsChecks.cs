@@ -42,7 +42,7 @@ internal static class WindowsPublicInquiryFieldsChecks
                 var email = boxes.Single(b => b.MaxLength == 100);
                 var name = boxes.Single(b => b.MaxLength == 50);
                 var message = boxes.Single(b => b.AcceptsReturn);
-                var send = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "문의 보내기"));
+                var send = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
                 email.Text = "fixture@example.test"; name.Text = "홍길동"; organization.Text = "기관 A"; title.Text = "문의 제목"; message.Text = "본문";
                 send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var deadline = DateTime.UtcNow.AddSeconds(5);

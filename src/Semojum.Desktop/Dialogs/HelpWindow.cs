@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Automation;
 
 namespace Semojum.Desktop.Dialogs;
 
@@ -29,21 +30,69 @@ public sealed class HelpWindow : Window
     ];
     public HelpWindow(string context, Func<string, Task>? runCommand = null)
     {
-        Title = "세모점 도움말 - 세모점"; Width = 900; Height = 320; MinWidth = 600; MinHeight = 320; Background = Brushes.White;
+        Title = "세모점 도움말 - 세모점"; Width = 1100; Height = 700; MinWidth = 600; MinHeight = 320; Background = Brushes.White;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = new DockPanel(); Content = root;
         Services.WindowFrame.Apply(this, editor: true);
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(8, 3, 0, 4) };
-        var toolbarFrame = new Border { Height = 32, Background = new SolidColorBrush(Color.FromRgb(250, 250, 250)), BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = toolbar };
+        if (Content is Grid frame && frame.Children[0] is Border caption && caption.Child is DockPanel heading && heading.Children.OfType<StackPanel>().FirstOrDefault() is { } captionButtons)
+        {
+            captionButtons.Margin = new Thickness(0);
+            var assets = new[] { "help-min", "help-max", "help-close" };
+            foreach (var (button, asset) in captionButtons.Children.OfType<Button>().Zip(assets))
+            { button.Width = 46; button.Height = 32; button.Content = EditorModalDesign.Icon(asset); button.Background = Brushes.Transparent; button.BorderThickness = new Thickness(0); button.Template = EditorModalDesign.ButtonTemplate(typeof(Button)); }
+        }
+        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(12, 4, 0, 4) };
+        var toolbarLayout = new DockPanel { LastChildFill = false };
+        var toolbarFrame = new Border { Height = 40, Background = EditorModalDesign.Color("#F9F9F9"), BorderBrush = EditorModalDesign.Color("#EAEAEA"), BorderThickness = new(0, 0, 0, 1), Child = toolbarLayout };
         DockPanel.SetDock(toolbarFrame, Dock.Top); root.Children.Add(toolbarFrame);
-        var tabs = new TabControl { Width = 260, Style = (Style)FindResource("HelpTabs") }; DockPanel.SetDock(tabs, Dock.Left); root.Children.Add(tabs);
+        var search = new TextBox { Width = 300, Height = 32, MinHeight = 0, Padding = new Thickness(31, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center }; EditorModalDesign.Input(search); AutomationProperties.SetName(search, "도움말 검색");
+        var searchFrame = new Grid { Width = 300, Height = 32, Margin = new Thickness(0, 4, 20, 4) }; searchFrame.Children.Add(search);
+        var searchIcon = EditorModalDesign.Icon("help-search"); searchIcon.HorizontalAlignment = HorizontalAlignment.Left; searchIcon.Margin = new Thickness(7, 0, 0, 0); searchIcon.IsHitTestVisible = false; searchFrame.Children.Add(searchIcon);
+        var placeholder = new TextBlock { Text = "도움말 검색", Foreground = EditorModalDesign.Color("#8A8A8A"), Margin = new Thickness(31, 0, 0, 0), IsHitTestVisible = false };
+        searchFrame.Children.Add(placeholder); search.TextChanged += (_, _) => placeholder.Visibility = search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        DockPanel.SetDock(searchFrame, Dock.Right); toolbarLayout.Children.Add(searchFrame); toolbarLayout.Children.Add(toolbar);
+        var tabs = new TabControl { Width = 300, Background = EditorModalDesign.Color("#F9F9F9") };
+        var tabsPanel = new FrameworkElementFactory(typeof(DockPanel));
+        var tabStrip = new FrameworkElementFactory(typeof(System.Windows.Controls.Primitives.TabPanel)); tabStrip.SetValue(FrameworkElement.HeightProperty, 32d); tabStrip.SetValue(Panel.IsItemsHostProperty, true); tabStrip.SetValue(DockPanel.DockProperty, Dock.Top); tabsPanel.AppendChild(tabStrip);
+        var tabContent = new FrameworkElementFactory(typeof(ContentPresenter)); tabContent.SetValue(ContentPresenter.ContentSourceProperty, "SelectedContent"); tabsPanel.AppendChild(tabContent);
+        tabs.Template = new ControlTemplate(typeof(TabControl)) { VisualTree = tabsPanel };
+        var tabStyle = new Style(typeof(TabItem)); tabStyle.Setters.Add(new Setter(FrameworkElement.WidthProperty, 100d)); tabStyle.Setters.Add(new Setter(FrameworkElement.HeightProperty, 32d)); tabStyle.Setters.Add(new Setter(Control.BackgroundProperty, EditorModalDesign.Color("#F9F9F9"))); tabStyle.Setters.Add(new Setter(Control.ForegroundProperty, EditorModalDesign.Color("#5F5F5F")));
+        var tabSurface = new FrameworkElementFactory(typeof(Border), "Surface"); tabSurface.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding(nameof(Control.Background)) { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent }); tabSurface.SetValue(Border.BorderBrushProperty, EditorModalDesign.Color("#EAEAEA")); tabSurface.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 0, 1));
+        var tabGrid = new FrameworkElementFactory(typeof(Grid)); var tabLine = new FrameworkElementFactory(typeof(Border), "Line"); tabLine.SetValue(FrameworkElement.HeightProperty, 2d); tabLine.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Top); tabLine.SetValue(Border.BackgroundProperty, EditorModalDesign.Color("#005FB8")); tabLine.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed); tabGrid.AppendChild(tabLine);
+        var tabLabel = new FrameworkElementFactory(typeof(ContentPresenter)); tabLabel.SetValue(ContentPresenter.ContentSourceProperty, "Header"); tabLabel.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); tabLabel.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); tabGrid.AppendChild(tabLabel); tabSurface.AppendChild(tabGrid);
+        var tabTemplate = new ControlTemplate(typeof(TabItem)) { VisualTree = tabSurface }; var tabSelected = new Trigger { Property = System.Windows.Controls.Primitives.Selector.IsSelectedProperty, Value = true }; tabSelected.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "Line")); tabSelected.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.White)); tabSelected.Setters.Add(new Setter(Control.ForegroundProperty, EditorModalDesign.Color("#1A1A1A"))); tabSelected.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.Bold)); tabTemplate.Triggers.Add(tabSelected); tabStyle.Setters.Add(new Setter(Control.TemplateProperty, tabTemplate)); tabs.ItemContainerStyle = tabStyle;
+        DockPanel.SetDock(tabs, Dock.Left); root.Children.Add(tabs);
         var reader = new FlowDocumentScrollViewer { IsToolBarVisible = false, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; root.Children.Add(reader);
         var history = new List<Topic>(); var index = -1;
+        var topicNodes = new Dictionary<string, TreeViewItem>();
+        var treeNavigationChanged = false;
         void Render(Topic topic)
         {
-            var doc = new FlowDocument { FontFamily = (FontFamily)FindResource("InterfaceFont"), FontSize = 14, TextAlignment = TextAlignment.Left, PagePadding = new(24, 22, 24, 20) };
-            doc.Blocks.Add(new Paragraph(new Run(topic.Title)) { FontSize = 20, FontWeight = FontWeights.SemiBold, LineHeight = 28, Margin = new(0, 0, 0, 11) });
-            doc.Blocks.Add(new Paragraph(new Run(topic.Body)) { LineHeight = 22, Margin = new(0) });
+            var doc = new FlowDocument { FontFamily = (FontFamily)FindResource("UiFont"), FontSize = 14, TextAlignment = TextAlignment.Left, PagePadding = new(40, 22, 40, 20) };
+            doc.Blocks.Add(new Paragraph(new Run(topic.Group + "  ›  " + topic.Title)) { Foreground = EditorModalDesign.Color("#8A8A8A"), FontSize = 12, Margin = new(0, 0, 0, 6) });
+            doc.Blocks.Add(new Paragraph(new Run(topic.Title)) { FontSize = 28, FontWeight = FontWeights.Bold, LineHeight = 36, Margin = new(0, 0, 0, 20) });
+            if (topic.Title == "점자 직접 고치기")
+            {
+                doc.Blocks.Add(new Paragraph(new Run("점자 패널에서 칸을 직접 쳐서 고치는 방법입니다.")) { FontSize = 18, LineHeight = 26, Margin = new Thickness(0, 0, 0, 14) });
+                doc.Blocks.Add(new BlockUIContainer(new Border { Height = 1, Background = EditorModalDesign.Color("#EAEAEA") }) { Margin = new Thickness(0, 0, 0, 18) });
+                doc.Blocks.Add(new Paragraph(new Run("차례대로 하기")) { FontSize = 14, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 8) });
+                var steps = new[] { "점자 패널에서 고칠 칸을 선택합니다.", "6점 입력을 켜고 설정한 키를 함께 누른 뒤 모두 놓습니다.", "직접 고친 점자는 별도 색으로 표시합니다.", "되돌리려면 Ctrl+Z를 누릅니다." };
+                for (var i = 0; i < steps.Length; i++)
+                {
+                    var badge = new Grid { Width = 20, Height = 20 }; badge.Children.Add(EditorModalDesign.Icon("help-step-badge", 20, 20)); badge.Children.Add(new TextBlock { Text = (i + 1).ToString(), Foreground = EditorModalDesign.Color("#005FB8"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 12 });
+                    var paragraph = new Paragraph { LineHeight = 24, Margin = new Thickness(0, 0, 0, 4) }; paragraph.Inlines.Add(new InlineUIContainer(badge)); paragraph.Inlines.Add(new Run("  " + steps[i])); doc.Blocks.Add(paragraph);
+                }
+                var note = new StackPanel(); var noteHeading = new StackPanel { Orientation = Orientation.Horizontal }; noteHeading.Children.Add(EditorModalDesign.Icon("help-info")); noteHeading.Children.Add(new TextBlock { Text = "알아 두기", FontWeight = FontWeights.Bold, Margin = new Thickness(8, 0, 0, 0) }); note.Children.Add(noteHeading);
+                note.Children.Add(new TextBlock { Text = "점자를 직접 고쳐도 텍스트 패널은 그대로 둡니다. 다시 점역할 때 유지 여부를 선택합니다.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+                doc.Blocks.Add(new BlockUIContainer(new Border { Background = EditorModalDesign.Color("#F9F9F9"), BorderBrush = EditorModalDesign.Color("#005FB8"), BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12), Child = note }) { Margin = new Thickness(0, 16, 0, 20) });
+                doc.Blocks.Add(new Paragraph(new Run("함께 보기")) { FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
+                foreach (var relatedTitle in new[] { "설정과 6점키", "단축키 목록" })
+                {
+                    var related = Topics.First(t => t.Title == relatedTitle); var link = new Hyperlink(new Run(relatedTitle)) { Foreground = EditorModalDesign.Color("#005FB8") }; link.Click += (_, _) => Visit(related);
+                    var paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 4) }; paragraph.Inlines.Add(new InlineUIContainer(EditorModalDesign.Icon("help-related"))); paragraph.Inlines.Add(link); doc.Blocks.Add(paragraph);
+                }
+            }
+            else doc.Blocks.Add(new Paragraph(new Run(topic.Body)) { LineHeight = 22, Margin = new(0) });
             if (topic.Title == "추가 도구")
             {
                 var command = runCommand ?? (Owner is MainWindow main ? main.ExecuteAsync : null);
@@ -63,31 +112,51 @@ public sealed class HelpWindow : Window
             reader.Document = doc;
         }
         void Visit(Topic topic) { if (index >= 0 && history[index] == topic) return; history.RemoveRange(index + 1, history.Count - index - 1); history.Add(topic); index++; Render(topic); }
-        toolbar.Children.Add(CompactDialog.Button("◀", () => { if (index > 0) Render(history[--index]); return Task.CompletedTask; }));
-        toolbar.Children.Add(CompactDialog.Button("▶", () => { if (index + 1 < history.Count) Render(history[++index]); return Task.CompletedTask; }));
+        toolbar.Children.Add(CompactDialog.Button("이전", () => { if (index > 0) Render(history[--index]); return Task.CompletedTask; }));
+        toolbar.Children.Add(CompactDialog.Button("다음", () => { if (index + 1 < history.Count) Render(history[++index]); return Task.CompletedTask; }));
         toolbar.Children.Add(CompactDialog.Button("인쇄", () => { var print = new PrintDialog(); if (print.ShowDialog() == true) print.PrintDocument(((IDocumentPaginatorSource)reader.Document).DocumentPaginator, "세모점 도움말"); return Task.CompletedTask; }));
-        foreach (Button button in toolbar.Children) { button.MinWidth = button.Width = 24; button.Height = 24; button.Margin = new(0); button.Padding = new(0); button.Style = (Style)FindResource("ToolButton"); }
-        var printButton = (Button)toolbar.Children[2]; printButton.Content = new ContentControl { Content = FindResource("Icon.print"), IsHitTestVisible = false }; printButton.ToolTip = "인쇄"; printButton.Margin = new(10, 0, 0, 0);
+        var toolbarNames = new[] { "이전", "다음", "인쇄" }; var toolbarAssets = new[] { "help-prev", "help-next", "help-print" };
+        for (var i = 0; i < toolbar.Children.Count; i++)
+        {
+            var button = (Button)toolbar.Children[i]; button.MinWidth = button.Width = 32; button.Height = 32; button.Margin = i == 2 ? new Thickness(8, 0, 0, 0) : new Thickness(0); button.Padding = new Thickness(0); button.Style = (Style)FindResource("ToolButton"); button.Content = EditorModalDesign.Icon(toolbarAssets[i]); button.ToolTip = toolbarNames[i]; AutomationProperties.SetName(button, toolbarNames[i]);
+        }
         foreach (var mode in new[] { "내용", "색인", "검색" })
         {
             if (mode == "내용")
             {
                 var tree = new TreeView { BorderThickness = new(0), Padding = new(0), Margin = new(0, 2, 0, 0), Background = Brushes.Transparent, FontSize = 12, FontWeight = FontWeights.Normal };
                 ScrollViewer.SetVerticalScrollBarVisibility(tree, ScrollBarVisibility.Hidden);
-                tree.Resources[typeof(TreeViewItem)] = FindResource("HelpTreeItem");
+                var itemStyle = new Style(typeof(TreeViewItem)); var stack = new FrameworkElementFactory(typeof(StackPanel));
+                var surface = new FrameworkElementFactory(typeof(Border), "TopicSurface"); surface.SetValue(FrameworkElement.HeightProperty, 32d); surface.SetValue(Border.BackgroundProperty, Brushes.Transparent);
+                var row = new FrameworkElementFactory(typeof(DockPanel)); var icon = new FrameworkElementFactory(typeof(SharpVectors.Converters.SvgViewbox), "Arrow"); icon.SetValue(FrameworkElement.WidthProperty, 16d); icon.SetValue(FrameworkElement.HeightProperty, 16d); icon.SetValue(FrameworkElement.MarginProperty, new Thickness(12, 0, 4, 0)); icon.SetValue(System.Windows.Controls.Viewbox.StretchProperty, Stretch.None); icon.SetValue(SharpVectors.Converters.SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Mockup;component/Assets/Figma/help-tree-right.svg")); icon.SetValue(UIElement.VisibilityProperty, Visibility.Hidden); icon.SetValue(DockPanel.DockProperty, Dock.Left); row.AppendChild(icon);
+                var header = new FrameworkElementFactory(typeof(ContentPresenter), "TopicHeader"); header.SetValue(ContentPresenter.ContentSourceProperty, "Header"); header.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); row.AppendChild(header); surface.AppendChild(row); stack.AppendChild(surface);
+                var children = new FrameworkElementFactory(typeof(ItemsPresenter), "TopicChildren"); children.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed); stack.AppendChild(children);
+                var itemTemplate = new ControlTemplate(typeof(TreeViewItem)) { VisualTree = stack };
+                var hasItems = new Trigger { Property = ItemsControl.HasItemsProperty, Value = true }; hasItems.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "Arrow")); itemTemplate.Triggers.Add(hasItems);
+                var leaf = new Trigger { Property = ItemsControl.HasItemsProperty, Value = false }; leaf.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(20, 0, 0, 0), "TopicHeader")); itemTemplate.Triggers.Add(leaf);
+                var expanded = new Trigger { Property = TreeViewItem.IsExpandedProperty, Value = true }; expanded.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "TopicChildren")); expanded.Setters.Add(new Setter(SharpVectors.Converters.SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Mockup;component/Assets/Figma/help-tree-down.svg"), "Arrow")); itemTemplate.Triggers.Add(expanded);
+                var chosen = new Trigger { Property = TreeViewItem.IsSelectedProperty, Value = true }; chosen.Setters.Add(new Setter(Border.BackgroundProperty, EditorModalDesign.Color("#EFF6FC"), "TopicSurface")); chosen.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.SemiBold)); itemTemplate.Triggers.Add(chosen);
+                itemStyle.Setters.Add(new Setter(Control.TemplateProperty, itemTemplate)); tree.Resources[typeof(TreeViewItem)] = itemStyle;
+                TreeViewItem? defaultBranch = null;
                 foreach (var group in Topics.GroupBy(t => t.Group))
                 {
                     var branch = new TreeViewItem { Header = group.Key, IsExpanded = group.Key == "결과 편집", IsSelected = group.Key == "결과 편집" };
+                    if (group.Key == "결과 편집") defaultBranch = branch;
                     var items = group.Key == "결과 편집" ? group.OrderBy(t => t.Title == "3패널 보기" ? 0 : t.Title == "텍스트 고치기" ? 1 : 2) : group.AsEnumerable();
                     branch.PreviewMouseLeftButtonDown += (_, e) =>
                     {
-                        if (e.GetPosition(branch).Y >= 24) return;
+                        if (e.GetPosition(branch).Y >= 32) return;
                         branch.IsExpanded = !branch.IsExpanded; branch.IsSelected = true; branch.Focus(); e.Handled = true;
                     };
-                    foreach (var topic in items) branch.Items.Add(new TreeViewItem { Header = topic.Title, Tag = topic });
+                    foreach (var topic in items) { var item = new TreeViewItem { Header = topic.Title, Tag = topic }; topicNodes[topic.Title] = item; branch.Items.Add(item); }
                     tree.Items.Add(branch);
                 }
-                tree.SelectedItemChanged += (_, _) => { if (tree.SelectedItem is TreeViewItem { Tag: Topic topic }) Visit(topic); };
+                tree.SelectedItemChanged += (_, e) =>
+                {
+                    // The preselected default branch can be realized after this handler is attached.
+                    if (e.OldValue is not null || !ReferenceEquals(e.NewValue, defaultBranch)) treeNavigationChanged = true;
+                    if (tree.SelectedItem is TreeViewItem { Tag: Topic topic }) Visit(topic);
+                };
                 tabs.Items.Add(new TabItem { Header = "내용", Content = tree, Tag = "separator" }); continue;
             }
             var panel = new DockPanel(); var list = new ListBox { DisplayMemberPath = "Title" };
@@ -95,6 +164,8 @@ public sealed class HelpWindow : Window
             {
                 var input = new TextBox { Margin = new(8), MinHeight = 28 }; DockPanel.SetDock(input, Dock.Top); panel.Children.Add(input);
                 input.TextChanged += (_, _) => list.ItemsSource = Topics.Where(t => (t.Title + t.Body).Contains(input.Text, StringComparison.CurrentCultureIgnoreCase)).ToArray();
+                search.TextChanged += (_, _) => { input.Text = search.Text; if (search.Text.Length > 0) tabs.SelectedIndex = 2; };
+                input.TextChanged += (_, _) => { if (search.Text != input.Text) search.Text = input.Text; };
             }
             list.ItemsSource = mode == "색인" ? Topics.OrderBy(t => t.Title).ToArray() : Topics;
             list.SelectionChanged += (_, _) => { if (list.SelectedItem is Topic topic) Visit(topic); };
@@ -116,6 +187,14 @@ public sealed class HelpWindow : Window
             matched = Topics.First(t => t.Title == title);
         }
         Visit(matched);
+        if (topicNodes.TryGetValue(matched.Title, out var selectedTopic))
+            Loaded += (_, _) => Dispatcher.BeginInvoke(() =>
+            {
+                // A real navigation choice can arrive before this deferred initial selection.
+                if (treeNavigationChanged || index < 0 || history[index] != matched) return;
+                if (selectedTopic.Parent is TreeViewItem parent) parent.IsExpanded = true;
+                selectedTopic.IsSelected = true;
+            });
         Loaded += (_, _) => Services.WindowBounds.Fit(this);
     }
 }

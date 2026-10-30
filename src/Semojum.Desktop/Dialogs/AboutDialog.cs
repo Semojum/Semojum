@@ -6,7 +6,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class AboutDialog : CompactDialog
 {
     internal TextBlock EngineVersion { get; } = new() { Text = "확인 중…" };
-    public AboutDialog(string version, Func<Task<string>> engineVersion) : base("세모점 정보", 440, 230)
+    public AboutDialog(string version, Func<Task<string>> engineVersion) : base("세모점 정보", 440, 278)
     {
         var body = new StackPanel { Margin = new(16, 7, 16, 0) }; Body(body);
         void Info(string label, FrameworkElement value)
@@ -28,5 +28,6 @@ public sealed class AboutDialog : CompactDialog
             catch { EngineVersion.Text = "확인 불가 · 엔진 연결을 확인해 주세요."; }
         });
         Action("확인", Close, true);
+        EditorModalDesign.Frame(this, Root, Actions);
     }
 }

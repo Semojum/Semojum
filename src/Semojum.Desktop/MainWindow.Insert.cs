@@ -84,7 +84,8 @@ public partial class MainWindow
         DependencyObject? parent = DraftIcon;
         while (parent is not null && parent is not Button) parent = VisualTreeHelper.GetParent(parent);
         if (parent is Button button) button.IsEnabled = enabled;
-        foreach (var menu in new[] { SourceEditor.ContextMenu, PageEditor.Editor.ContextMenu, Braille.Editor.ContextMenu })
+        foreach (var menu in new[] { SourceEditor.ContextMenu, PageEditor.Editor.ContextMenu, Braille.Editor.ContextMenu,
+                     Braille.GridView.ContextMenu, detachedPane?.Editor.ContextMenu, detachedPane?.GridView.ContextMenu })
             if (menu is not null)
                 foreach (var item in menu.Items.OfType<MenuItem>().Where(item => Equals(item.Header, "대체 초안 보기"))) item.IsEnabled = enabled;
     }
@@ -341,7 +342,10 @@ public partial class MainWindow
     private async void ShowLineMemos(SearchPanel panel, int? requestedLine = null, bool showResolved = false)
     {
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
-        var editor = SearchEditor(panel); var line = requestedLine ?? editor.TextArea.Caret.Line - 1;
+        var editor = SearchEditor(panel);
+        var resolved = panel == SearchPanel.Text && lastEditor == PageEditor.Editor
+            ? PageEditor.ResolveLine(PageEditor.Editor.TextArea.Caret.Line - 1) : (Block: (EditorBlock?)null, Line: 0);
+        var line = requestedLine ?? (resolved.Block == block ? resolved.Line : editor.TextArea.Caret.Line - 1);
         if (line < 0 || line >= editor.Document.LineCount) return;
         var text = editor.Document.GetText(editor.Document.GetLineByNumber(line + 1));
         var code = panel == SearchPanel.Text ? "TEXT" : "BRAILLE";
@@ -374,6 +378,20 @@ public partial class MainWindow
         var dialog = new FooterInputDialog(lastPreviewPage) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Result is { } range)
             session.FooterRanges = FooterRange.Insert(session.FooterRanges, range);
+    }
+    private void ShowHeaderInsert()
+    {
+        if (resourcesReleased || accountStarting || session.IsReadOnly || SourceEditor.IsReadOnly) return;
+        CompleteSourceInput();
+        var target = PageEditor.Visibility == System.Windows.Visibility.Visible ? PageEditor.Editor : SourceEditor;
+        var owner = session; var document = target.Document; var version = owner.ChangeVersion;
+        var start = target.SelectionStart; var length = target.SelectionLength;
+        var dialog = new HeaderInputDialog(target.SelectedText) { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        if (!ReferenceEquals(owner, session) || !ReferenceEquals(document, target.Document) || owner.IsReadOnly || SourceEditor.IsReadOnly || owner.ChangeVersion != version)
+        { owner.Status = "머리말 편집 중 문서가 바뀌어 적용하지 않았습니다."; return; }
+        target.Select(start, length); target.SelectedText = BrailleTags.Get("머리말").Insert(dialog.Result);
+        target.Select(start + BrailleTags.Get("머리말").Open.Length, dialog.Result.Length); target.Focus();
     }
     private async Task EditTableAsync()
     {
@@ -413,13 +431,25 @@ public partial class MainWindow
         var existing = AllTagsMenu.Items.Cast<object>().ToArray();
         AllTagsMenu.Items.Clear();
         AllTagsMenu.Items.Add(Item("쪽바꿈")); AllTagsMenu.Items.Add(Item("장바꿈")); AllTagsMenu.Items.Add(new Separator());
-        AllTagsMenu.Items.Add(Item("머리말"));
+        var header = new MenuItem { Header = "머리말", Tag = "headerInsert" }; header.Click += (_, _) => ShowHeaderInsert(); AllTagsMenu.Items.Add(header);
         foreach (var entry in existing.OfType<MenuItem>().Where(m => m.Tag is "footerInsert" or "footer")) AllTagsMenu.Items.Add(entry);
         AllTagsMenu.Items.Add(new Separator());
         foreach (var group in groups)
         {
             var menu = new MenuItem { Header = group.Name };
-            foreach (var tag in group.Tags) menu.Items.Add(Item(tag));
+            foreach (var tag in group.Tags)
+            {
+                var child = Item(tag); child.Style = (Style)FindResource("FinalDesktopNestedItem");
+                child.Header = tag switch
+                {
+                    "왼쪽정렬" => "왼쪽", "가운데정렬" => "가운데", "오른쪽정렬" => "오른쪽",
+                    "상단줄" => "상단 줄", "중단줄" => "중단 줄", "하단줄" => "하단 줄",
+                    "상단굵은줄" => "상단 굵은 줄", "하단굵은줄" => "하단 굵은 줄",
+                    "표시작" => "표 시작 테두리 선", "표중앙" => "표 중앙 테두리 선", "표끝" => "표 끝 테두리 선", "표구분선" => "표 구분선",
+                    "강조" => "밑줄", "굵은" => "굵게", "색강조" => "색상 또는 모양", _ => tag
+                };
+                menu.Items.Add(child);
+            }
             AllTagsMenu.Items.Add(menu);
         }
         var note = Item("주"); note.Header = "점역자 주"; AllTagsMenu.Items.Add(note);

@@ -34,10 +34,10 @@ public partial class MainWindow
             if (resolved.Block is null) return;
             session.ActiveBlock = resolved.Block;
             ShowLineMemos(SearchPanel.Text, resolved.Line);
-        }) { ResolveLine = PageEditor.ResolveLine, ReviewRequested = async line =>
+        }) { ResolveLine = PageEditor.ResolveLine, ReviewRequested = line =>
         {
-            if (PageEditor.ResolveLine(line).Block is { } block) session.ActiveBlock = block;
-            await ExecuteAsync("pageStatus");
+            if (PageEditor.ResolveLine(line).Block is not { } block) return;
+            session.ActiveBlock = block; ShowLocalTranslationReview(block, this);
         } });
         PageEditor.Replay = redo => ReplayHistory(redo);
         PageEditor.InsertPageBreak = () => InsertTag("쪽바꿈");
@@ -74,13 +74,7 @@ public partial class MainWindow
     }
     private ContextMenu CreateEditorContextMenu()
     {
-        var menu = new ContextMenu { Style = (Style)FindResource("EditorContextMenu") };
-        foreach (var (label, action) in new[] { ("메모 추가", "memo"), ("", ""), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules") })
-        {
-            if (label.Length == 0) { menu.Items.Add(new Separator { Style = (Style)menu.Style.Resources[typeof(Separator)], Height = 9, Margin = new(0) }); continue; }
-            var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
-        }
-        return menu;
+        return CreatePanelContextMenu(false);
     }
     private SearchPanel selectionPanel;
     private bool selectedWholeBlock;

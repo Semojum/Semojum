@@ -26,7 +26,7 @@ public partial class MainWindow
         var selected = SearchEditor(panel).SelectedText;
         if (selected.Length is > 0 and < 1000) searchQuery = selected;
         new FindDialog(panel, searchQuery, replace, (query, target) => FindNextAsync(query, target),
-            (query, replacement, target, all) => ReplaceMatchesAsync(query, replacement, target, all)) { Owner = this }.ShowDialog();
+            (query, replacement, target, all) => ReplaceMatchesAsync(query, replacement, target, all), sixDotKeys) { Owner = this }.ShowDialog();
     }
 
     internal async Task<string> FindNextAsync(string query, SearchPanel panel)

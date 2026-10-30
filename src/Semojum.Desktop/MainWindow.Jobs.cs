@@ -19,7 +19,7 @@ public partial class MainWindow
         && (openDocuments.Any(other => !ReferenceEquals(other, context) && other.Model.JobId == id) || HasClosedJobRecovery(context));
     // The same window and commands can be exercised against an isolated HTTP service in Windows smoke checks.
     internal MainWindow(SemojumApiClient service) : this(smoke: true, testWithoutAccount: true)
-    { api = service; api.RefreshedIdentityAllowed = AutomaticLogin.IsEditorAllowed; jobs = new(service); }
+    { api = service; api.RefreshedIdentityAllowed = account => AutomaticLogin.IsSameDesktopArea(api.Account, account); api.RefreshRequiresIdentity = account => account.Role == "ROLE_ORG_ADMIN"; jobs = new(service); }
 
     private void CreditNotice_Close(object sender, RoutedEventArgs e) => session.CreditNotice = "";
     private async Task TranslateImportedTextAsync(OpenDocument context)
@@ -46,12 +46,43 @@ public partial class MainWindow
         catch (Exception ex) { model.ErrorNotice = model.Status = "TXT 점역 실패 · 원문은 유지됩니다: " + ex.Message; }
     }
     private void RefreshAccount() => AccountLabel.Text = api.Account is { } account ? account.LoginId : "로그인 안 됨";
-    private bool EnsureAccount()
+    private bool EnsureAccount(bool allowInstitution = false)
     {
-        if (api.Account is not null) return true;
-        var result = new AccountDialog(api, smoke ? null : accountCredentials, automaticLoginMessage) { Owner = this }.ShowDialog() == true;
-        automaticLoginMessage = null;
-        RefreshAccount(); return result;
+        while (true)
+        {
+            if (api.Account is null)
+            {
+                var signedIn = new AccountDialog(api, smoke ? null : accountCredentials, automaticLoginMessage, allowInstitution) { Owner = this }.ShowDialog() == true;
+                automaticLoginMessage = null;
+                if (!signedIn) { RefreshAccount(); return false; }
+            }
+            if (api.Account is { Role: "ROLE_ORG_ADMIN" })
+            {
+                if (!allowInstitution) return false;
+                var institution = new InstitutionWindow(api, LogoutInstitutionAsync) { Owner = this };
+                institution.ShowDialog();
+                if (institution.LogoutRequested) continue;
+                return false;
+            }
+            RefreshAccount();
+            return api.Account is { } account && AutomaticLogin.IsEditorAllowed(account);
+        }
+    }
+
+    private async Task<bool> LogoutInstitutionAsync()
+    {
+        try
+        {
+            if (smoke) await api.LogoutAsync();
+            else await AutomaticLogin.LogoutAsync(api, accountCredentials);
+            RefreshAccount();
+            return true;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show("저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message, "로그아웃");
+            return false;
+        }
     }
 
     private async Task OpenServerAsync()
@@ -288,7 +319,7 @@ public partial class MainWindow
         finally { ReleaseSync(); model.Progress = null; }
     }
 
-    private async Task ShowJobOutcomeAsync(DocumentSession model, JobStatus status)
+    internal async Task ShowJobOutcomeAsync(DocumentSession model, JobStatus status)
     {
         if (resourcesReleased || session != model || status.OverallStatus is "CANCELLED" or "CANCELED") return;
         NoticeDialog? notice = status.CreditExhausted ? FileNotices.NoCredits() :
@@ -302,11 +333,11 @@ public partial class MainWindow
         {
             if (notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
-        else if (status.FailedPages > 0)
+        else if (status.FailedPages > 0 && status.SucceededPages > 0)
         {
             if (notice.Choice == 0) await RestartJobAsync(model, retry: true);
         }
-        else if (status.SucceededPages == 0)
+        else if (status.OverallStatus == "FAILED")
         {
             if (notice.Choice == 0) await UploadAsync(openDocument?.UploadPaths);
             else if (notice.Choice == 1 && EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();

@@ -39,6 +39,7 @@ public sealed class SemojumApiClient
     public AccountIdentity? Account => Volatile.Read(ref session)?.Account;
     /// <summary>Optional application policy evaluated before retrying a request with a refreshed identity.</summary>
     public Func<AccountIdentity, bool>? RefreshedIdentityAllowed { get; set; }
+    public Func<AccountIdentity, bool>? RefreshRequiresIdentity { get; set; }
 
     public SessionCredential? GetSessionCredential()
     {
@@ -181,6 +182,11 @@ public sealed class SemojumApiClient
                 var tokens = result.Deserialize<RefreshResult>(Json) ?? throw InvalidResponse();
                 if (string.IsNullOrWhiteSpace(tokens.AccessToken)) throw InvalidResponse();
                 var identity = current.Account;
+                if (tokens.LoginId is null && tokens.Role is null && RefreshRequiresIdentity?.Invoke(current.Account) == true)
+                {
+                    ClearIfCurrent(current);
+                    throw new SemojumApiException(HttpStatusCode.Forbidden, "AUTH_DESKTOP_ROLE", "현재 계정 권한을 다시 확인해야 합니다. 다시 로그인해 주세요.");
+                }
                 if (tokens.LoginId is not null || tokens.Role is not null)
                 {
                     if (tokens.LoginId != current.Account.LoginId || tokens.Role is not ("ROLE_USER" or "ROLE_ADMIN" or "ROLE_ORG_ADMIN")) throw InvalidResponse();

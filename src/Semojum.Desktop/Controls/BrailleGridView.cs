@@ -15,7 +15,77 @@ public sealed partial class BrailleGridView : ListBox
     public int CaretOffset { get; set; }
     public bool ShowOutlines { get; set; } = true;
     public bool HighContrast { get; set; }
+    public Brush CurrentLineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(242, 246, 251));
     public bool ShowLineNumbers { get; set; } = true;
+    private bool showMemos = true, showReviews = true;
+    public bool ShowMemos { get => showMemos; set { if (showMemos != value) { showMemos = value; InvalidateMarkerCache(); InvalidateFaces(); } } }
+    public bool ShowReviews { get => showReviews; set { if (showReviews != value) { showReviews = value; InvalidateMarkerCache(); InvalidateFaces(); } } }
+    public Action<EditorBlock, int>? MemoRequested { get; set; }
+    public Action<EditorBlock>? ReviewRequested { get; set; }
+    internal sealed record RowMarker(EditorBlock Block, int Line, bool Memo, bool Review, string Description);
+    private Dictionary<BrailleGridFace, Dictionary<int, RowMarker>>? markerCache;
+    internal int MarkerCacheBuildCount { get; private set; }
+    private void InvalidateMarkerCache() => markerCache = null;
+    private void MarkerMemosChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) { InvalidateMarkerCache(); InvalidateFaces(); }
+    private void MarkerBlockChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.Translation)) { InvalidateMarkerCache(); InvalidateFaces(); }
+    }
+    protected override void OnItemsChanged(System.Collections.Specialized.NotifyCollectionChangedEventArgs e) { InvalidateMarkerCache(); base.OnItemsChanged(e); }
+    internal bool ActivateMarker(BrailleGridFace face, int row, double x)
+    {
+        if (!CoordinatesCurrent || x < 40 || !MarkersFor(face).TryGetValue(row, out var marker)) return false;
+        var width = (marker.Memo && marker.Review) ? 32 : 16;
+        if (x >= 40 + width) return false;
+        if (marker.Review && (!marker.Memo || x >= 56)) ReviewRequested?.Invoke(marker.Block);
+        else if (marker.Memo) MemoRequested?.Invoke(marker.Block, marker.Line);
+        return true;
+    }
+    internal IReadOnlyDictionary<int, RowMarker> MarkersFor(BrailleGridFace face)
+    {
+        if (!CoordinatesCurrent) return new Dictionary<int, RowMarker>();
+        if (markerCache is null)
+        {
+            MarkerCacheBuildCount++;
+            markerCache = new();
+            var offsets = new Dictionary<EditorBlock, Dictionary<int, int>>();
+            var seen = new HashSet<(EditorBlock, int)>();
+            foreach (var page in Items.OfType<BrailleGridFace>())
+            {
+                var markers = new Dictionary<int, RowMarker>(); markerCache[page] = markers;
+                for (var row = 0; row < page.Rows.Length; row++)
+                {
+                    var candidates = new List<RowMarker>();
+                    foreach (var cell in page.Rows[row].OfType<GridCell>().Where(c => IsRealLineCell(c, page, row)))
+                    {
+                        if (!offsets.TryGetValue(cell.Block, out var lines))
+                            offsets[cell.Block] = lines = DocumentNavigation.LineOffsets(cell.Block.Braille).Select((offset, line) => (offset, line)).ToDictionary(x => x.offset, x => x.line);
+                        if (!lines.TryGetValue(cell.Offset, out var line) || !seen.Add((cell.Block, line))) continue;
+                        var memos = cell.Block.Memos.Where(m => m.Panel == "BRAILLE" && m.LineIndex == line && !m.Resolved).ToArray();
+                        var memo = ShowMemos && memos.Length > 0;
+                        var review = ShowReviews && line == 0 && cell.Block.Translation?.NeedsReview == true;
+                        if (!memo && !review) continue;
+                        var result = cell.Block.Translation;
+                        var warning = review && result is not null ? MemoMargin.DescribeReview(result) : "";
+                        var description = string.Join("\n\n", new[] { memo ? "메모\n" + string.Join("\n", memos.Select(m => $"{m.Author ?? "작성자 미상"}: {m.Body}")) : "", warning }.Where(s => s.Length > 0));
+                        candidates.Add(new(cell.Block, line, memo, review, description));
+                    }
+                    // A shared visual row cannot faithfully identify two different logical lines.
+                    if (candidates.Count == 1) markers[row] = candidates[0];
+                }
+            }
+        }
+        return markerCache.TryGetValue(face, out var found) ? found : new Dictionary<int, RowMarker>();
+    }
+    private static bool IsRealLineCell(GridCell cell, BrailleGridFace page, int row)
+    {
+        var text = cell.Block.Braille;
+        if (cell.Offset < 0 || cell.Offset > text.Length) return false;
+        if (!cell.IsInsertion) return cell.Offset < text.Length;
+        if (cell.Prefix.Length != 0 || page.Kinds is { } kinds && row < kinds.Length && kinds[row] == "padding") return false;
+        return cell.Offset < text.Length ? text[cell.Offset] is '\r' or '\n'
+            : text.Length > 0 && text[^1] is '\r' or '\n';
+    }
     public BrailleGridView()
     {
         Background = Brushes.White; BorderThickness = new(0); Padding = new(0); FontSize = 22;
@@ -40,13 +110,17 @@ public sealed partial class BrailleGridView : ListBox
         AutomationPropertiesName();
         InstallEditing();
     }
-    private void AutomationPropertiesName() => System.Windows.Automation.AutomationProperties.SetName(this, "점자 모눈 편집 좌표");
+    private void AutomationPropertiesName()
+    {
+        System.Windows.Automation.AutomationProperties.SetName(this, "점자 모눈 편집 좌표");
+        System.Windows.Automation.AutomationProperties.SetHelpText(this, "점자 줄의 메모는 메모 메뉴에서도 확인할 수 있습니다. 점역 검토가 필요한 항목은 쪽별 변환 상태에서 확인할 수 있습니다.");
+    }
     public void InvalidateFaces()
     {
         for (var i = 0; i < Items.Count; i++)
             if (ItemContainerGenerator.ContainerFromIndex(i) is ListBoxItem item) { item.InvalidateMeasure(); item.InvalidateVisual(); Redraw(item); }
         static void Redraw(DependencyObject root)
-        { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); if (child is Face f) { f.InvalidateMeasure(); f.InvalidateVisual(); } else Redraw(child); } }
+        { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); if (child is Face f) { f.ToolTip = null; f.InvalidateMeasure(); f.InvalidateVisual(); } else Redraw(child); } }
     }
     private sealed class Face : FrameworkElement
     {
@@ -59,7 +133,7 @@ public sealed partial class BrailleGridView : ListBox
         private EditorBlock? dragBlock;
         private Point dragStart;
         public Face() { AllowDrop = true; }
-        private const double TextLeft = 52;
+        private double TextLeft => 40 + Math.Max(12, (Owner is { } owner && Data is { } face ? owner.MarkersFor(face).Values.Select(m => (m.Memo ? 1 : 0) + (m.Review ? 1 : 0)).DefaultIfEmpty(0).Max() : 0) * 16);
         private double CellWidth => (Owner?.FontSize ?? 22) * 16 / 22;
         private double CellHeight => (Owner?.FontSize ?? 22) * 28 / 22;
         protected override Size MeasureOverride(Size availableSize) => new(Math.Max(120, TextLeft + (Data?.Rows[0].Length ?? 32) * CellWidth + 1), (Data?.Rows.Length ?? 26) * CellHeight + 1);
@@ -77,11 +151,15 @@ public sealed partial class BrailleGridView : ListBox
                     dc.DrawText(new FormattedText((y + 1).ToString(), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                         new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
                         12, Brushes.Gray, VisualTreeHelper.GetDpi(this).PixelsPerDip), new(12, 14 + y * ch));
-                if (face.Rows[y].FirstOrDefault(c => c is not null) is { } first &&
-                    !face.Rows.Take(y).SelectMany(r => r).Any(c => c?.Block == first.Block))
-                    ToolTip = "드래그·Shift 선택 · 6점 입력 · Ctrl+Z · 줄 번호 옆에서 블록 이동";
                 if (owner is not null && face.Rows[y].Any(c => c is not null && owner.IsCaret(c)))
-                    dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : new SolidColorBrush(Color.FromRgb(255, 245, 163)), null, new Rect(40, y * ch, Math.Max(0, RenderSize.Width - 40), ch));
+                    dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : owner.CurrentLineBrush, null, new Rect(40, y * ch, Math.Max(0, RenderSize.Width - 40), ch));
+                if (owner is not null && owner.MarkersFor(face).TryGetValue(y, out var marker))
+                {
+                    var top = y * ch + (ch - 16) / 2;
+                    void Icon(Drawing drawing, double x) { dc.PushTransform(new TranslateTransform(x, top)); dc.DrawDrawing(drawing); dc.Pop(); }
+                    if (marker.Memo) Icon(MemoMargin.MemoDrawing, 40);
+                    if (marker.Review) Icon(MemoMargin.WarningDrawing, marker.Memo ? 56 : 40);
+                }
                 for (var x = 0; x < cols; x++)
                 {
                     var box = new Rect(TextLeft + x * cw, y * ch, cw, ch); var cell = face.Rows[y][x];
@@ -113,6 +191,10 @@ public sealed partial class BrailleGridView : ListBox
         {
             if (Owner?.CoordinatesCurrent != true) return;
             var p = e.GetPosition(this);
+            if (Owner is { } markerOwner && Data is { } markerFace && markerOwner.ActivateMarker(markerFace, (int)Math.Floor(p.Y / CellHeight), p.X))
+            {
+                e.Handled = true; return;
+            }
             if (p.X is >= 26 and < 40 && Data is not null)
             {
                 var row = (int)Math.Floor(p.Y / CellHeight);
@@ -123,8 +205,14 @@ public sealed partial class BrailleGridView : ListBox
             owner.Point(cell, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
             owner.dragSelecting = true; owner.Focus(); e.Handled = true;
         }
+        private void UpdateMarkerToolTip(Point point)
+        {
+            ToolTip = Owner is { } markerOwner && Data is { } markerFace && point.X >= 40 && point.X < TextLeft && markerOwner.MarkersFor(markerFace).TryGetValue((int)Math.Floor(point.Y / CellHeight), out var marker)
+                ? marker.Description : point.X is >= 26 and < 40 ? "드래그·Shift 선택 · 6점 입력 · Ctrl+Z · 줄 번호 옆에서 블록 이동" : null;
+        }
         protected override void OnMouseMove(MouseEventArgs e)
         {
+            UpdateMarkerToolTip(e.GetPosition(this));
             if (dragBlock is not null && e.LeftButton == MouseButtonState.Pressed && (e.GetPosition(this) - dragStart).Length > 6)
             {
                 var block = dragBlock; dragBlock = null;

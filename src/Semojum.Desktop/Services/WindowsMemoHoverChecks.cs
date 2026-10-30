@@ -32,6 +32,10 @@ internal static class WindowsMemoHoverChecks
                 check(root.All(b => b.Opacity == 0) && reply.All(b => b.Opacity == 0), "Actions are hidden until hover or keyboard focus");
             check(rows.All(r => r.Children.OfType<StackPanel>().Count() == 1 && r.Children.Count == r.Children.OfType<Button>().Count() + 1), "Author and message are shown without an avatar");
             check(root.Concat(reply).All(b => UIElementAutomationPeer.CreatePeerForElement(b)?.GetName() == AutomationProperties.GetName(b) && !string.IsNullOrEmpty(AutomationProperties.GetName(b))), "Every action has a screen-reader name");
+            var heading = (StackPanel)rows[0].Children.OfType<StackPanel>().Single().Children[0];
+            var author = (TextBlock)heading.Children[0];
+            check(rows.All(row => row.ActualHeight >= 66) && author.FontSize == 14 && author.FontWeight == FontWeights.Bold,
+                "Memo rows keep the Figma minimum height and author typography");
 
             if (Environment.GetEnvironmentVariable("MEMO_INTERACTIVE_CHECKS") == "1")
             {
@@ -56,6 +60,30 @@ internal static class WindowsMemoHoverChecks
             view.CanEdit = false; window.UpdateLayout();
             rows = ((StackPanel)view.Content).Children.OfType<DockPanel>().ToArray();
             check(rows.SelectMany(r => r.Children.OfType<Button>()).All(b => !b.IsEnabled), "Read-only mode keeps row actions disabled");
+            var longText = string.Join(" ", Enumerable.Repeat("긴 메모 내용", 80));
+            view.DataContext = memo with { Body = longText };
+            window.UpdateLayout();
+            var longRow = ((StackPanel)view.Content).Children.OfType<DockPanel>().First();
+            var longLines = longRow.Children.OfType<StackPanel>().Single();
+            var longMessage = (TextBlock)longLines.Children[1];
+            check(longRow.DesiredSize.Height > 66 && longMessage.Text == longText,
+                "A long memo expands its row instead of truncating its text");
+
+            var model = new DocumentSession();
+            var block = new EditorBlock { Id = 1, Page = 1, Source = "본문" };
+            model.Add(block); block.Memos.Add(memo);
+            var dialog = new MemoThreadDialog(block, "TEXT", 0, "본문", action => action(), model);
+            try
+            {
+                dialog.Show(); await Task.Delay(100); dialog.UpdateLayout();
+                var y = dialog.MemoItems.TransformToAncestor(dialog).Transform(new Point()).Y;
+                check(y < 15, "The memo content starts at the top of the Figma popover without a separate toolbar");
+                var menu = ((FrameworkElement)dialog.MemoItems.Parent).ContextMenu!;
+                var labels = menu.Items.OfType<MenuItem>().Select(item => item.Header as string).ToArray();
+                check(labels.Contains("이전 메모") && labels.Contains("다음 메모"),
+                    "Memo navigation remains available from the context menu");
+            }
+            finally { dialog.Close(); }
         }
         finally { window.Close(); }
     }

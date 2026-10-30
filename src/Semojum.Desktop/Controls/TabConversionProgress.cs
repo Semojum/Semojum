@@ -28,7 +28,7 @@ internal sealed class TabConversionProgress : Grid, IDisposable
     public TabConversionProgress(DocumentSession model, Func<Task> cancelJob)
     {
         this.model = model;
-        trigger = new Button { Content = "◌", FontSize = 16, Width = 20, Height = 20, MinHeight = 20,
+        trigger = new Button { Content = "변환 중", FontSize = 11, Width = 48, Height = 20, MinHeight = 20,
             Padding = new(0), BorderThickness = new(0), Background = Brushes.Transparent,
             Foreground = (Brush)Application.Current.FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(trigger, "TabConversionProgress");
@@ -50,6 +50,7 @@ internal sealed class TabConversionProgress : Grid, IDisposable
         card = new Border { Width = 320, Height = 108, Padding = new(15, 11, 15, 0), CornerRadius = new(8),
             Background = new SolidColorBrush(Color.FromRgb(251, 251, 251)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(234, 234, 234)), BorderThickness = new(1), Child = content };
+        System.Windows.Documents.TextElement.SetFontWeight(card, FontWeights.Normal);
         popup = new Popup { Placement = PlacementMode.Bottom, PlacementTarget = trigger, AllowsTransparency = true,
             StaysOpen = true, Child = card };
         Children.Add(trigger); Children.Add(popup);

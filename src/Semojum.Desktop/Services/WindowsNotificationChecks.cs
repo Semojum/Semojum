@@ -120,8 +120,8 @@ internal static class WindowsNotificationChecks
         closePublic.Start();
         try
         {
-            Descendants(account).OfType<Button>().Single(b => Equals(b.Content, "공지사항")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Descendants(account).OfType<Button>().Single(b => Equals(b.Content, "문의하기")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Descendants(account).OfType<Button>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "공지사항").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Descendants(account).OfType<Button>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "문의하기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(sawNotices && sawInquiry && unsignedApi.Account is null && fixture.PublicWasAnonymous,
                 "Login opens public notices and inquiry without creating a session");
         }
@@ -133,7 +133,7 @@ internal static class WindowsNotificationChecks
             var message = Descendants(inquiry).OfType<TextBox>().Single(t => t.AcceptsReturn && t.MaxLength == 2000);
             var organization = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "기관명");
             var title = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "제목");
-            var submit = Descendants(inquiry).OfType<Button>().Single(b => Equals(b.Content, "문의 보내기"));
+            var submit = Descendants(inquiry).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
             email.Text = "invalid"; message.Text = "작성한 문의"; organization.Text = "테스트 기관"; title.Text = "문의 제목";
             submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(50);
             check(fixture.InquiryPosts == 0 && message.Text == "작성한 문의", "Invalid inquiry is not sent and keeps the typed message");
