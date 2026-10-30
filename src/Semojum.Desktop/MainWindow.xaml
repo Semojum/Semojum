@@ -251,8 +251,8 @@
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock x:Name="OriginalPanelTitle" Text="원본" FontSize="14" Foreground="#5F5F5F" VerticalAlignment="Center"/>
             <Border Width="18" Height="18" CornerRadius="9" Background="#F0F0F0" Margin="8,0,0,0"><TextBlock Text="1" FontFamily="Segoe UI Symbol" Foreground="#5F5F5F" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></StackPanel>
         </DockPanel></Border>
-        <local:OriginalPreview x:Name="Original" Grid.Row="1"/>
-        <Border Grid.Row="1" x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer HorizontalScrollBarVisibility="Disabled"><StackPanel><Viewbox Stretch="Uniform"><Grid x:Name="OriginalImageGrid" MouseLeftButtonDown="OriginalImage_MouseDown"><Image x:Name="OriginalImage" Stretch="Fill"/><Canvas><Rectangle x:Name="OriginalSelection" Stroke="#D5AC00" Fill="#60FFF5A3" StrokeThickness="3" Visibility="Collapsed"/></Canvas></Grid></Viewbox><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
+        <local:OriginalPreview x:Name="Original" Grid.Row="1" PreviewMouseWheel="OriginalPreview_MouseWheel"/>
+        <Border Grid.Row="1" x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8"><Grid><ScrollViewer x:Name="OriginalScroll" HorizontalScrollBarVisibility="Disabled" PreviewMouseWheel="OriginalScroll_MouseWheel"><StackPanel><Viewbox Stretch="Uniform"><Grid x:Name="OriginalImageGrid" MouseLeftButtonDown="OriginalImage_MouseDown"><Image x:Name="OriginalImage" Stretch="Fill"/><Canvas><Rectangle x:Name="OriginalSelection" Stroke="#D5AC00" Fill="#60FFF5A3" StrokeThickness="3" Visibility="Collapsed"/></Canvas></Grid></Viewbox><TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16"/></StackPanel></ScrollViewer></Grid></Border>
         <local:PanelPageBar x:Name="OriginalPageBar" Grid.Row="2" Loaded="OriginalPageBar_Loaded"/>
       </Grid></Border>
       <GridSplitter Grid.Column="1" ResizeBehavior="PreviousAndNext"/>

@@ -58,6 +58,57 @@ internal static class WindowsCreditRecoveryChecks
         await CheckClosedPendingTabAsync(directory, check);
         await CheckInitialArrivalOrderAsync(check);
         await CheckStaleReviewRecoveryAsync(directory, check);
+        await CheckCreditInquiryRoutesAsync(check);
+    }
+
+    private static async Task CheckCreditInquiryRoutesAsync(Action<bool, string> check)
+    {
+        var fixture = new HeldResumeFixture(); using var http = new HttpClient(fixture);
+        var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
+        var window = new MainWindow(api); window.Show();
+        try
+        {
+            for (var choice = 0; choice < 3; choice++)
+            {
+                var selected = choice; var ticks = 0; var openedNotice = false; var openedInquiry = false;
+                string? inquiryTitle = null; Exception? error = null;
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+                timer.Tick += (_, _) =>
+                {
+                    try
+                    {
+                        if (!openedNotice && Application.Current.Windows.OfType<NoticeDialog>()
+                            .FirstOrDefault(d => d.Owner == window && d.IsVisible && d.MessageText.Contains("크레딧이 모두", StringComparison.Ordinal)) is { } notice)
+                        {
+                            openedNotice = true;
+                            notice.ActionButtons[selected].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        }
+                        else if (openedNotice && !openedInquiry && Application.Current.Windows.OfType<PublicInquiryDialog>()
+                            .FirstOrDefault(d => d.Owner == window && d.IsVisible) is { } inquiry)
+                        {
+                            openedInquiry = true;
+                            inquiryTitle = Descendants(inquiry).OfType<TextBox>().Single(t =>
+                                System.Windows.Automation.AutomationProperties.GetName(t) == "제목").Text;
+                            inquiry.Close();
+                        }
+                        if (++ticks >= 400) throw new TimeoutException("Credit inquiry route did not close");
+                    }
+                    catch (Exception ex)
+                    {
+                        error = ex; timer.Stop();
+                        foreach (var owned in window.OwnedWindows.Cast<Window>().Where(w => w.IsVisible).ToArray()) owned.Close();
+                    }
+                };
+                timer.Start();
+                try { await window.ShowJobOutcomeAsync(window.Session, new JobStatus("fixture", 1, 0, "FAILED", new() { [1] = "BLOCKED" }, true)); }
+                finally { timer.Stop(); }
+                check(error is null && openedNotice && openedInquiry == (choice != 2)
+                    && (choice == 0 ? inquiryTitle == "크레딧 구매 문의" : choice == 1 ? inquiryTitle == "" : inquiryTitle is null),
+                    $"Credit notice action {choice} opens its intended inquiry or closes without sending");
+            }
+            check(fixture.InquiryRequests == 0, "Opening or cancelling credit inquiry actions never submits a message");
+        }
+        finally { fixture.Cancel(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }
 
     private static async Task CheckStaleReviewRecoveryAsync(string directory, Action<bool, string> check)
@@ -412,6 +463,10 @@ internal static class WindowsCreditRecoveryChecks
                 deadline = DateTime.UtcNow.AddSeconds(5);
                 while (!fixture.StatusStarted && DateTime.UtcNow < deadline) await Task.Delay(25);
                 check(fixture.StatusStarted && window.Session.PendingRestart is { Unconfirmed: false }, "The accepted resume retains its confirmed target pages");
+                check(window.Session.Status.Contains("1쪽 (2)", StringComparison.Ordinal)
+                    && window.Session.Status.Contains("마이페이지 사용량", StringComparison.Ordinal)
+                    && !window.Session.Status.Contains("성공한 쪽만", StringComparison.Ordinal),
+                    "The accepted resume reports its actual page and directs users to usage without promising a charge rule");
             }
             await window.ExecuteAsync("save");
             await window.OpenAsync(path2);
@@ -516,6 +571,7 @@ internal static class WindowsCreditRecoveryChecks
         public bool ResumeStarted { get; private set; }
         public bool StatusStarted { get; private set; }
         public int SaveRequests { get; private set; }
+        public int InquiryRequests { get; private set; }
         public void AcceptResume() => resume.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK)
         { Content = new StringContent("{\"isSuccess\":true,\"result\":{\"jobId\":\"held-job\",\"status\":\"IN_PROGRESS\",\"totalPages\":2,\"resumedPages\":[2]}}", Encoding.UTF8, "application/json") });
         public void Cancel() { resume.TrySetCanceled(); status.TrySetCanceled(); }
@@ -525,6 +581,7 @@ internal static class WindowsCreditRecoveryChecks
             if (path.EndsWith("/login")) return Reply("{\"isSuccess\":true,\"result\":{\"accessToken\":\"fixture\",\"refreshToken\":\"fixture\",\"role\":\"ROLE_USER\"}}");
             if (path.EndsWith("/resume")) { ResumeStarted = true; return resume.Task; }
             if (path.EndsWith("/status")) { StatusStarted = true; return status.Task; }
+            if (path.EndsWith("/public/inquiries")) { InquiryRequests++; return Reply("{\"isSuccess\":true,\"result\":{}}"); }
             if (path.EndsWith("/save")) { SaveRequests++; return HoldSave ? heldSave.Task : Reply("{\"isSuccess\":true,\"result\":{\"savedPages\":1,\"failedPages\":[]}}"); }
             throw new InvalidOperationException("Unexpected fixture path: " + path);
         }

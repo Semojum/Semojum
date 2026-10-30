@@ -12,7 +12,7 @@ public partial class MainWindow
         new GoToDialog(panel, (target, value) => NavigateAsync(target, value, panel)) { Owner = this }.ShowDialog();
     }
 
-    internal async Task<string> NavigateAsync(NavigationTarget target, string input, SearchPanel panel)
+    internal async Task<string> NavigateAsync(NavigationTarget target, string input, SearchPanel panel, bool preserveSourceVisibility = false)
     {
         if (target == NavigationTarget.BraillePage)
         {
@@ -25,10 +25,10 @@ public partial class MainWindow
         if (session.ActiveBlock is not { } active) return "열린 작업 블록이 없습니다.";
         var editor = SearchEditor(panel);
         var destination = DocumentNavigation.Resolve(session.Blocks, active, panel, editor.CaretOffset, target, input);
-        return await NavigateToAsync(destination);
+        return await NavigateToAsync(destination, preserveSourceVisibility);
     }
 
-    private async Task<string> NavigateToAsync(NavigationLocation destination)
+    private async Task<string> NavigateToAsync(NavigationLocation destination, bool preserveSourceVisibility = false)
     {
         var owner = session;
         var navigationLifetime = documentLifetime.Token;
@@ -48,7 +48,10 @@ public partial class MainWindow
             return "이동할 블록이 변경되어 이동을 취소했습니다.";
         session.ActiveBlock = destination.Block;
         var editor = SearchEditor(destination.Panel);
-        if (destination.Panel == SearchPanel.Text) SourceToggle.IsChecked = true;
+        if (destination.Panel == SearchPanel.Text)
+        {
+            if (!preserveSourceVisibility) SourceToggle.IsChecked = true;
+        }
         else BrailleToggle.IsChecked = true;
         UpdatePanelLayout();
         editor.Select(Math.Clamp(destination.Offset, 0, editor.Document.TextLength), 0);

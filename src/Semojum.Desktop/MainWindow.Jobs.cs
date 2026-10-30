@@ -339,7 +339,7 @@ public partial class MainWindow
         notice.Owner = this; notice.ShowDialog();
         if (status.CreditExhausted)
         {
-            if (notice.Choice == 0) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+            ShowCreditInquiry(notice);
         }
         else if (status.FailedPages > 0 && status.SucceededPages > 0)
         {
@@ -383,7 +383,7 @@ public partial class MainWindow
             }
             model.PendingRestart = new PendingRestart(false, restart.Pages);
             model.CreditNotice = "";
-            model.Status = $"{(retry ? "실패한 쪽 다시 변환" : "이어서 처리")} 요청 · {restart.Pages.Length}쪽 ({string.Join(", ", restart.Pages)}) · 성공한 쪽만 크레딧이 차감됩니다.";
+            model.Status = $"{(retry ? "실패한 쪽 다시 변환" : "이어서 처리")} 요청 · {restart.Pages.Length}쪽 ({string.Join(", ", restart.Pages)}) · 차감 내역은 마이페이지 사용량에서 확인해 주세요.";
             var status = await jobs.StatusAsync(model.JobId, ct);
             _ = MonitorJobAsync(context, status, null, replacePages: restart.Pages.ToHashSet());
         }
@@ -395,13 +395,19 @@ public partial class MainWindow
             var notice = ex.Code == "CREDIT4001" ? FileNotices.NoCredits()
                 : new NoticeDialog(retry ? "실패한 쪽을 다시 변환하지 못했습니다." : "이어서 처리하지 못했습니다.", $"{ex.Message} ({ex.Code})", ["닫기"], error: true);
             notice.Owner = this; notice.ShowDialog();
-            if (ex.Code == "CREDIT4001" && notice.Choice == 0) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+            if (ex.Code == "CREDIT4001") ShowCreditInquiry(notice);
         }
         catch (HttpRequestException)
         { model.ErrorNotice = model.PendingRestart is { Unconfirmed: true } ? UnconfirmedRestartNotice : "재개 상태를 확인하지 못했습니다. 확인 전에는 서버 저장을 할 수 없습니다."; }
         catch (Exception ex)
         { model.ErrorNotice = model.PendingRestart is { Unconfirmed: true } ? UnconfirmedRestartNotice : "재개 상태를 확인하지 못했습니다. 확인 전에는 서버 저장을 할 수 없습니다: " + ex.Message; }
         finally { context.PageSyncInProgress--; }
+    }
+
+    private void ShowCreditInquiry(NoticeDialog notice)
+    {
+        if (notice.Choice is 0 or 1)
+            new PublicInquiryDialog(api, notice.Choice == 0 ? "크레딧 구매 문의" : null) { Owner = this }.ShowDialog();
     }
 
     private async void ReviewPendingServerPages_Click(object sender, RoutedEventArgs e)

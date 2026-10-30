@@ -11,7 +11,7 @@ internal static class FileNotices
     internal static NoticeDialog PartialConversion(int total, int succeeded, int[] failed)
     {
         // BE 2026-10-27 POST /retry re-queues AI-failed pages only; canceled or credit-exhausted pages are reported back as "no pages".
-        return new NoticeDialog($"{total}쪽 중 {failed.Length}쪽을 변환하지 못했습니다.", $"{string.Join(" · ", failed)}쪽입니다. 나머지 {succeeded}쪽은 사용할 수 있습니다.", ["실패한 쪽 다시 변환", "그대로 열기"]);
+        return new NoticeDialog($"{total}쪽 중 {failed.Length}쪽을 변환하지 못했습니다.", $"{string.Join(" · ", failed)}쪽입니다. 나머지 {succeeded}쪽은 사용할 수 있습니다.\n재변환 시 차감과 중복 차감 방지 여부는 확인되지 않았습니다. 마이페이지 사용량을 확인해 주세요.", ["실패한 쪽 다시 변환", "그대로 열기"], height: 236);
     }
     internal static NoticeDialog UnreadableCharacters(int count) => new($"원본에서 글을 읽지 못한 자리가 {count}군데 있습니다.", "■ 로 표시했습니다. 원본 이미지를 보고 직접 입력하십시오.", ["해당 위치로 이동", "확인"]);
     internal static NoticeDialog ConversionFailed() => new("변환하지 못했습니다.", "같은 파일로 다시 시도하거나 변환 설정을 바꾸십시오.", ["다시 시도", "변환 설정", "문의하기"], error: true, height: 206);
@@ -21,7 +21,7 @@ internal static class FileNotices
         return new NoticeDialog("서버와 연결이 끊겼습니다.", $"수신한 {completed}쪽의 내용은 현재 문서에 남아 있습니다. Ctrl+S로 저장해 주세요.", ["이어서 변환", "닫기"]);
     }
     internal static NoticeDialog Offline(string detail) => new("서버에 연결하지 못했습니다.", "저장과 편집은 가능합니다. 변환과 게시판은 연결이 복구된 뒤에 사용할 수 있습니다.", ["다시 시도", "오프라인으로 계속"], error: true, width: 641) { ToolTip = detail };
-    internal static NoticeDialog NoCredits() => new("크레딧이 모두 소모되어 변환을 멈췄습니다.", "완료한 쪽은 편집할 수 있습니다. 크레딧 충전 후 상단 알림의 이어서 처리로 계속할 수 있습니다.", ["구매 문의", "닫기"], width: 613, height: 226);
+    internal static NoticeDialog NoCredits() => new("크레딧이 모두 소모되어 변환을 멈췄습니다.", "구매 문의로 충전 방법을 확인한 뒤 상단 알림에서 이어서 처리할 수 있습니다.\n재개 시 차감·중복 차감 방지 여부는 확인되지 않았습니다. 마이페이지 사용량을 확인해 주세요.", ["구매 문의", "문의하기", "닫기"], width: 613, height: 226);
     // Server policy (LoginAttemptService.MAX_FAILURES = 5, LOCK_DURATION = 10 minutes) behind AUTH4001 remainingAttempts / AUTH4006 unlockAt.
     private const string LoginLockPolicy = "5회 실패하면 10분 동안 잠깁니다.";
     internal static NoticeDialog LoginRejected(Semojum.Core.Integration.SemojumApiException error)

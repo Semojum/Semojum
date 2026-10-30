@@ -163,7 +163,7 @@ public sealed class PublicNoticesDialog : CompactDialog
 }
 public sealed class PublicInquiryDialog : CompactDialog
 {
-    public PublicInquiryDialog(SemojumApiClient api) : base("문의하기", 540, 528, popover: true)
+    public PublicInquiryDialog(SemojumApiClient api, string? initialTitle = null) : base("문의하기", 540, 528, popover: true)
     {
         var layout = PublicDialogDesign.Frame(this, "문의하기", "public-inquiry-close.svg", "PublicInquiryClose", out var actions); Body(layout);
         var panel = new StackPanel { Margin = new(16, 12, 16, 0) };
@@ -172,7 +172,7 @@ public sealed class PublicInquiryDialog : CompactDialog
         panel.Children.Add(new TextBlock { Text = "로그인 없이도 보낼 수 있습니다. 적어 주신 메일 주소로 회신해드립니다.", Foreground = Brush("#5F5F5F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
         var type = Choices(["도입 문의", "오류 신고", "기타"], "기타"); var name = new TextBox { MaxLength = 50 }; var email = new TextBox { MaxLength = 100 };
         var initialType = type.SelectedItem;
-        var organization = new TextBox { MaxLength = 2000 }; var title = new TextBox { MaxLength = 2000 };
+        var organization = new TextBox { MaxLength = 2000 }; var title = new TextBox { MaxLength = 2000, Text = initialTitle ?? "" };
         var message = new TextBox { MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 92, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         void AddLabel(string label) => panel.Children.Add(new TextBlock { Text = label, Foreground = Brush("#5F5F5F"), FontSize = 12 });
         void AddField(string label, TextBox field, string hint)
@@ -218,7 +218,7 @@ public sealed class PublicInquiryDialog : CompactDialog
         Closing += (_, e) =>
         {
             if (e.Cancel || submitted || discardConfirmed || Equals(type.SelectedItem, initialType) && string.IsNullOrWhiteSpace(name.Text) && string.IsNullOrWhiteSpace(email.Text)
-                && string.IsNullOrWhiteSpace(organization.Text) && string.IsNullOrWhiteSpace(title.Text) && string.IsNullOrWhiteSpace(message.Text)) return;
+                && string.IsNullOrWhiteSpace(organization.Text) && string.Equals(title.Text.Trim(), (initialTitle ?? "").Trim(), StringComparison.Ordinal) && string.IsNullOrWhiteSpace(message.Text)) return;
             var choice = NoticeDialog.Choose(this, "작성 중인 문의를 닫으시겠습니까?", "계속 작성하면 입력한 내용을 유지합니다.", ["계속 작성", "닫기"], width: 440);
             if (choice != 1) e.Cancel = true; else discardConfirmed = true;
         };

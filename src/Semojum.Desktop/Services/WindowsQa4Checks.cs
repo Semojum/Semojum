@@ -43,6 +43,7 @@ internal static class WindowsQa4Checks
         await WindowsMenuDesignChecks.RunAsync(directory, check);
         WindowsEditorDialogDesignChecks.Run(owner, check);
         await WindowsPanelDesignChecks.RunAsync(directory, check);
+        await WindowsOriginalWheelChecks.RunAsync(check);
         await WindowsPanelPositionChecks.RunAsync(check);
         await WindowsStatusZoomChecks.RunAsync(directory, check);
         await WindowsToolbarAccountChecks.RunAsync(check);

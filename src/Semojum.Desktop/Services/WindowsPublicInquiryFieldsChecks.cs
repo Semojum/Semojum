@@ -144,6 +144,41 @@ internal static class WindowsPublicInquiryFieldsChecks
         finally { confirmation.Stop(); if (choiceOnly.IsVisible) { type.SelectedIndex = 2; choiceOnly.Close(); } }
         var untouched = new PublicInquiryDialog(api); untouched.Show(); untouched.Close();
         check(!untouched.IsVisible && fixture.Bodies.Count == 1, "An untouched inquiry closes without confirmation or a request");
+        var untouchedPurchase = new PublicInquiryDialog(api, "크레딧 구매 문의"); untouchedPurchase.Show();
+        var initialPurchaseTitle = Descendants(untouchedPurchase).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "제목");
+        check(initialPurchaseTitle.Text == "크레딧 구매 문의", "A purchase inquiry starts with an editable, explicit inquiry title");
+        untouchedPurchase.Close();
+        check(!untouchedPurchase.IsVisible && fixture.Bodies.Count == 1, "Closing an untouched purchase inquiry requires no confirmation or request");
+
+        var purchase = new PublicInquiryDialog(api, "크레딧 구매 문의"); purchase.Show();
+        try
+        {
+            purchase.Width = 400; purchase.UpdateLayout();
+            var fields = Descendants(purchase).OfType<TextBox>().ToArray();
+            var purchaseTitle = fields.Single(t => AutomationProperties.GetName(t) == "제목");
+            var purchaseEmail = fields.Single(t => t.MaxLength == 100);
+            var purchaseMessage = fields.Single(t => t.AcceptsReturn);
+            var titleBounds = purchaseTitle.TransformToAncestor(purchase).TransformBounds(new Rect(0, 0, purchaseTitle.ActualWidth, purchaseTitle.ActualHeight));
+            check(purchaseTitle.IsVisible && titleBounds.Left >= 0 && titleBounds.Right <= purchase.ActualWidth + 1,
+                "Purchase inquiry title remains visible inside a narrow window");
+            purchaseEmail.Text = "fixture@example.test"; purchaseMessage.Text = "크레딧 충전 방법을 알려 주세요.";
+            Descendants(purchase).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent").IsChecked = true;
+            Descendants(purchase).OfType<Button>().Single(b => Equals(b.Content, "보내기")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var purchaseDeadline = DateTime.UtcNow.AddSeconds(5);
+            while (fixture.Bodies.Count < 2 && DateTime.UtcNow < purchaseDeadline) await Task.Delay(25);
+            await Task.Delay(100);
+            var purchaseBodyIncludesTitle = false;
+            if (fixture.Bodies.Count == 2)
+            {
+                using var sent = JsonDocument.Parse(fixture.Bodies[1]);
+                purchaseBodyIncludesTitle = sent.RootElement.GetProperty("message").GetString()?.Contains("제목: 크레딧 구매 문의", StringComparison.Ordinal) == true;
+            }
+            check(fixture.Bodies.Count == 2 && purchase.IsVisible && purchaseMessage.Text.Contains("충전 방법", StringComparison.Ordinal)
+                && purchaseBodyIncludesTitle,
+                "Only an explicitly submitted purchase inquiry includes its title and retains input on server failure");
+            purchaseEmail.Clear(); purchaseMessage.Clear();
+        }
+        finally { if (purchase.IsVisible) purchase.Close(); }
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {

@@ -35,13 +35,26 @@ internal static class WindowsCaseDesignChecks
         try
         {
             credit.UpdateLayout(); Capture(credit, "no-credits.png");
-            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["구매 문의", "닫기"]),
-                "Credit notice describes the available purchase inquiry and does not duplicate the same inquiry action");
+            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["구매 문의", "문의하기", "닫기"]),
+                "Credit notice offers separate purchase inquiry, general inquiry and close actions");
+            check(credit.DetailText.Contains("구매 문의", StringComparison.Ordinal) && credit.DetailText.Contains("확인되지 않았습니다", StringComparison.Ordinal)
+                && credit.DetailText.Contains("마이페이지 사용량", StringComparison.Ordinal),
+                "Credit notice identifies the purchase inquiry and unverified resumed-charge policy");
         }
         finally { credit.Close(); }
+        var partial = FileNotices.PartialConversion(10, 8, [2, 4]); partial.Show();
+        try
+        {
+            partial.UpdateLayout(); Capture(partial, "partial-credit.png");
+            check(partial.DetailText.Contains("2 · 4쪽", StringComparison.Ordinal) && partial.DetailText.Contains("8쪽", StringComparison.Ordinal)
+                && partial.DetailText.Contains("중복 차감 방지 여부는 확인되지 않았습니다", StringComparison.Ordinal)
+                && partial.DetailText.Contains("마이페이지 사용량", StringComparison.Ordinal),
+                "Partial conversion reports actual pages and the unverified retry-charge policy before retry");
+        }
+        finally { partial.Close(); }
         var login = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다."));
         check(login.ActionButtons[1].Content as string == "비밀번호 문의", "Login notice describes its inquiry action accurately");
-        foreach (var index in new[] { 0, 1 })
+        foreach (var index in new[] { 0, 1, 2 })
         {
             var dialog = FileNotices.NoCredits();
             var timeout = false;
