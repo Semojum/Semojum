@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Runtime.InteropServices;
 using ICSharpCode.AvalonEdit;
 using Semojum.Core;
@@ -45,23 +46,26 @@ internal static class WindowsReviewMarginChecks
             {
                 try
                 {
-                    var validCoordinates = true;
+                    var validCoordinates = true; var inputFailure = false;
                     window.Activate(); await Task.Delay(100);
                     var line = source.TextArea.TextView.VisualLines.First();
                     var y = line.VisualTop - source.TextArea.TextView.VerticalOffset + line.Height / 2;
                     async Task ClickSlot(double x)
                     {
                         var position = margin.PointToScreen(new Point(x, y));
-                        if (!SetCursorPos((int)Math.Round(position.X), (int)Math.Round(position.Y))) throw new InvalidOperationException("Pointer positioning failed");
+                        if (!SetCursorPos((int)Math.Round(position.X), (int)Math.Round(position.Y))) { validCoordinates = false; return; }
                         await Task.Delay(100); Mouse.Synchronize();
-                        var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonDownEvent };
-                        check(true, $"Source click requested x={x}; WPF pointer={args.GetPosition(margin)}; over={Mouse.DirectlyOver?.GetType().Name}; active={window.IsActive}");
-                        validCoordinates &= Math.Abs(args.GetPosition(margin).X - x) < 2 && Math.Abs(args.GetPosition(margin).Y - y) < 2;
-                        margin.RaiseEvent(args);
+                        var positionInMargin = Mouse.GetPosition(margin); GetCursorPos(out var actual);
+                        var nativeReady = window.IsActive && Math.Abs(actual.X - position.X) < 2 && Math.Abs(actual.Y - position.Y) < 2
+                            && GetAncestor(WindowFromPoint(actual), 2) == new WindowInteropHelper(window).Handle;
+                        if (!nativeReady) { validCoordinates = false; Console.WriteLine($"SOURCE POINTER DIAGNOSTIC: requested={position}, cursor={actual.X},{actual.Y}, target={new WindowInteropHelper(window).Handle}, hit={GetAncestor(WindowFromPoint(actual), 2)}, active={window.IsActive}"); return; }
+                        var wpfReady = margin.IsMouseOver && Math.Abs(positionInMargin.X - x) < 2 && Math.Abs(positionInMargin.Y - y) < 2;
+                        if (!wpfReady) { inputFailure = true; validCoordinates = false; check(false, $"Source margin misses pointer input even though the active test window is under the cursor (WPF={positionInMargin}, hover={margin.IsMouseOver})"); return; }
+                        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); await Task.Delay(100);
                     }
                     await ClickSlot(8); await ClickSlot(24);
-                    if (validCoordinates) check(memoClicks == 1 && reviewClicks == 1, $"Actual WPF mouse-down event routing invokes the memo and review callbacks separately (memo={memoClicks}, review={reviewClicks})");
-                    else Console.WriteLine("SKIP: source WPF mouse routing requires a desktop that reports the moved pointer coordinates.");
+                    if (validCoordinates) check(memoClicks == 1 && reviewClicks == 1, $"Actual pointer clicks invoke source memo and review callbacks separately (memo={memoClicks}, review={reviewClicks})");
+                    else if (!inputFailure) Console.WriteLine("SKIP: source WPF mouse routing requires a desktop that reports the moved pointer coordinates.");
                 }
                 finally { SetCursorPos(originalPointer.X, originalPointer.Y); }
             }
@@ -132,20 +136,23 @@ internal static class WindowsReviewMarginChecks
             {
                 try
                 {
-                    var validCoordinates = true;
+                    var validCoordinates = true; var inputFailure = false;
                     gridWindow.Activate(); await Task.Delay(100);
                     foreach (var x in new[] { 48d, 64d })
                     {
                         var pos = faceVisual.PointToScreen(new Point(x, 14));
-                        if (!SetCursorPos((int)Math.Round(pos.X), (int)Math.Round(pos.Y))) throw new InvalidOperationException("Pointer positioning failed");
+                        if (!SetCursorPos((int)Math.Round(pos.X), (int)Math.Round(pos.Y))) { validCoordinates = false; continue; }
                         await Task.Delay(100); Mouse.Synchronize();
-                        var args = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonDownEvent };
-                        check(true, $"Grid click requested x={x}; WPF pointer={args.GetPosition(faceVisual)}; over={Mouse.DirectlyOver?.GetType().Name}; active={gridWindow.IsActive}");
-                        validCoordinates &= Math.Abs(args.GetPosition(faceVisual).X - x) < 2 && Math.Abs(args.GetPosition(faceVisual).Y - 14) < 2;
-                        faceVisual.RaiseEvent(args);
+                        var positionInFace = Mouse.GetPosition(faceVisual); GetCursorPos(out var actual);
+                        var nativeReady = gridWindow.IsActive && Math.Abs(actual.X - pos.X) < 2 && Math.Abs(actual.Y - pos.Y) < 2
+                            && GetAncestor(WindowFromPoint(actual), 2) == new WindowInteropHelper(gridWindow).Handle;
+                        if (!nativeReady) { validCoordinates = false; Console.WriteLine($"GRID POINTER DIAGNOSTIC: requested={pos}, cursor={actual.X},{actual.Y}, target={new WindowInteropHelper(gridWindow).Handle}, hit={GetAncestor(WindowFromPoint(actual), 2)}, active={gridWindow.IsActive}"); continue; }
+                        var wpfReady = faceVisual.IsMouseOver && Math.Abs(positionInFace.X - x) < 2 && Math.Abs(positionInFace.Y - 14) < 2;
+                        if (!wpfReady) { inputFailure = true; validCoordinates = false; check(false, $"Braille grid misses pointer input even though the active test window is under the cursor (WPF={positionInFace}, hover={faceVisual.IsMouseOver})"); continue; }
+                        mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); await Task.Delay(100);
                     }
-                    if (validCoordinates) check(gridMemoClicks == 1 && gridReviewClicks == 1, $"WPF grid mouse routing invokes the memo and review callbacks separately (memo={gridMemoClicks}, review={gridReviewClicks})");
-                    else Console.WriteLine("SKIP: grid WPF mouse routing requires a desktop that reports the moved pointer coordinates.");
+                    if (validCoordinates) check(gridMemoClicks == 1 && gridReviewClicks == 1, $"Actual pointer clicks invoke grid memo and review callbacks separately (memo={gridMemoClicks}, review={gridReviewClicks})");
+                    else if (!inputFailure) Console.WriteLine("SKIP: grid WPF mouse routing requires a desktop that reports the moved pointer coordinates.");
                 }
                 finally { SetCursorPos(savedPointer.X, savedPointer.Y); }
             }
@@ -218,5 +225,8 @@ internal static class WindowsReviewMarginChecks
     }
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { internal int X, Y; }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
 }

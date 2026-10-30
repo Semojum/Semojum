@@ -3,6 +3,8 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shell;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using SharpVectors.Converters;
 
 namespace Semojum.Desktop.Services;
@@ -48,9 +50,12 @@ internal static class WindowsCaptionChecks
                 try
                 {
                     baseline.Show(); baseline.Activate(); await Task.Delay(200);
+                    var baselineHandle = new WindowInteropHelper(baseline).Handle;
+                    SetForegroundWindow(baselineHandle); await Task.Delay(100);
+                    if (GetForegroundWindow() != baselineHandle) { Console.WriteLine("SKIP: caption commands require the standard test window to be the native foreground window."); return; }
                     SystemCommands.MinimizeWindow(baseline); await Task.Delay(300);
                     if (baseline.WindowState != WindowState.Minimized)
-                        throw new InvalidOperationException("Interactive caption checks unavailable: SystemCommands.MinimizeWindow also failed on a standard WPF window.");
+                    { Console.WriteLine("SKIP: caption commands unavailable; minimizing a standard test window failed."); return; }
                 }
                 finally { baseline.Close(); }
                 var framed = new Window { Width = 240, Height = 160, ShowInTaskbar = false, Content = new TextBlock { Text = "기존 편집기 프레임" } };
@@ -58,16 +63,39 @@ internal static class WindowsCaptionChecks
                 {
                     WindowFrame.Apply(framed, editor: true);
                     framed.Show(); framed.Activate(); await Task.Delay(200);
+                    var frameHandle = new WindowInteropHelper(framed).Handle;
+                    SetForegroundWindow(frameHandle); await Task.Delay(100);
+                    if (!framed.IsActive || GetForegroundWindow() != frameHandle) { Console.WriteLine("SKIP: caption commands require the test frame to be the native foreground window."); return; }
                     SystemCommands.MinimizeWindow(framed); await Task.Delay(300);
                     if (framed.WindowState != WindowState.Minimized)
-                        throw new InvalidOperationException("Interactive caption checks unavailable: direct SystemCommands also failed on the unchanged editor frame.");
+                    { check(false, "Direct minimize fails on the editor frame although the standard test window minimized"); return; }
                 }
                 finally { framed.Close(); }
                 window.Activate(); await Task.Delay(200);
-                if (!window.IsActive) throw new InvalidOperationException("Interactive caption checks require an active desktop window.");
-                SystemCommands.MinimizeWindow(window); await Task.Delay(300);
+                var handle = new WindowInteropHelper(window).Handle;
+                SetForegroundWindow(handle); await Task.Delay(100);
+                if (!window.IsActive || GetForegroundWindow() != handle) { Console.WriteLine("SKIP: caption commands require the test editor to be the native foreground window."); return; }
+                var events = new List<string>();
+                var source = HwndSource.FromHwnd(handle);
+                HwndSourceHook hook = (IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled) =>
+                {
+                    if (message is 0x0005 or 0x0024 or 0x0112 or 0x0006) events.Add($"0x{message:X}:{wParam.ToInt64():X}");
+                    return IntPtr.Zero;
+                };
+                source?.AddHook(hook);
+                SystemCommands.MinimizeWindow(window);
+                for (var i = 0; i < 15 && window.WindowState != WindowState.Minimized; i++) await Task.Delay(200);
                 if (window.WindowState != WindowState.Minimized)
-                    throw new InvalidOperationException("Direct SystemCommands.MinimizeWindow failed on the main window before testing its button.");
+                {
+                    Console.WriteLine($"CAPTION DIAGNOSTIC: direct minimize state={window.WindowState}, active={window.IsActive}, owner={window.Owner?.Title ?? "none"}, owned={window.OwnedWindows.Count}, visible={window.IsVisible}, hwnd={handle}, foreground={GetForegroundWindow()}, iconic={IsIconic(handle)}, style=0x{GetWindowLong(handle, -16):X}, messages={string.Join(',', events)}");
+                    buttons.Single(b => AutomationProperties.GetName(b) == "최소화").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(500);
+                    Console.WriteLine($"CAPTION DIAGNOSTIC: minimize button result={window.WindowState}, iconic={IsIconic(handle)}, messages={string.Join(',', events)}");
+                    window.WindowState = WindowState.Minimized; await Task.Delay(300);
+                    Console.WriteLine($"CAPTION DIAGNOSTIC: direct WindowState property result={window.WindowState}, active={window.IsActive}");
+                    if (source is not null) source.RemoveHook(hook);
+                    check(false, "Direct minimize fails on the active test editor although the standard window and editor frame minimized"); return;
+                }
+                if (source is not null) source.RemoveHook(hook);
                 window.WindowState = WindowState.Normal; window.Activate(); await Task.Delay(200);
                 var minimize = buttons.Single(b => AutomationProperties.GetName(b) == "최소화");
                 var maximize = buttons.Single(b => AutomationProperties.GetName(b) == "최대화 / 복원");
@@ -94,4 +122,8 @@ internal static class WindowsCaptionChecks
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
             foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, i))) yield return child;
     }
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr window, int index);
 }
