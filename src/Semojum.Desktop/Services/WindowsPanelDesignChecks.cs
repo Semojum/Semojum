@@ -37,8 +37,7 @@ internal static class WindowsPanelDesignChecks
             window.PanelScroll.ScrollToLeftEnd();
             window.Width = 1440; window.Height = 1000;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
-            check(Math.Abs(window.OriginalPanel.ActualWidth - 380) < 2 && Math.Abs(window.SourcePanel.ActualWidth - 474) < 2 && Math.Abs(window.Braille.ActualWidth - 586) < 2,
-                "Three panels use the final Figma proportions at 1440 pixels");
+            CheckDesignWidths(window, true, check);
             CheckHeader(window.OriginalHeader, window.OriginalPanelTitle, "1", "panel-original-close.svg", check);
             CheckHeader(window.SourceHeader, window.SourcePanelTitle, "2", "panel-source-close.svg", check);
             CheckHeader(window.Braille.Header, window.Braille.PanelTitle, "3", "panel-braille-close.svg", check);
@@ -78,6 +77,18 @@ internal static class WindowsPanelDesignChecks
             window.Width = 960; window.Height = 600; window.UpdateLayout();
             check(window.OriginalPanel.ActualWidth >= 260 && window.SourcePanel.ActualWidth >= 300 && window.Braille.ActualWidth >= 300,
                 "Three panels remain usable at 960 pixels");
+            window.Width = 480; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(window.PanelScroll.ScrollableWidth > 0 && window.OriginalPanel.ActualWidth >= 260 && window.SourcePanel.ActualWidth >= 300 && window.Braille.ActualWidth >= 300,
+                "A 480px editor scrolls horizontally while keeping all three panels usable");
+            foreach (var (header, name) in new[] { (window.OriginalHeader, "원본 패널 숨기기"), (window.SourceHeader, "텍스트 패널 숨기기"), (window.Braille.Header, "점자 패널 숨기기") })
+            {
+                var button = Descendants(header).OfType<Button>().Single(b => AutomationProperties.GetName(b) == name);
+                button.BringIntoView(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                var bounds = button.TransformToAncestor(window.PanelScroll).TransformBounds(new Rect(0, 0, button.ActualWidth, button.ActualHeight));
+                check(button.IsEnabled && button.Focusable && bounds.Left >= -1 && bounds.Right <= window.PanelScroll.ViewportWidth + 1,
+                    $"The 480px editor can scroll to {name}");
+            }
+            window.PanelScroll.ScrollToLeftEnd();
             var path = Path.Combine(directory, "panel-design.txt");
             await File.WriteAllTextAsync(path, "텍스트 파일 내용");
             await window.OpenAsync(path); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
@@ -86,8 +97,7 @@ internal static class WindowsPanelDesignChecks
             check(FigmaBadge(window.SourceHeader, "1") && FigmaBadge(window.Braille.Header, "2"),
                 "Two-panel TXT numbering retains the Figma badge color and typography");
             window.Width = 1440; window.Height = 1000; window.UpdateLayout();
-            check(Math.Abs(window.SourcePanel.ActualWidth - 854) < 2 && Math.Abs(window.Braille.ActualWidth - 586) < 2,
-                "TXT panels use the final Figma proportions at 1440 pixels");
+            CheckDesignWidths(window, false, check);
             if (Environment.GetEnvironmentVariable("PANEL_TWO_CAPTURE") is { Length: > 0 } twoCapture)
                 await WindowsSmoke.RenderElementAsync(window, twoCapture);
 
@@ -127,6 +137,27 @@ internal static class WindowsPanelDesignChecks
             check(grid.CaretCoordinates is { Face: 2 }, $"The braille page bar navigates to the real second face (face {grid.CaretCoordinates?.Face}; status {model.Status})");
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
+    }
+
+    private static void CheckDesignWidths(MainWindow window, bool hasOriginal, Action<bool, string> check)
+    {
+        // The operating system may cap an actual window to the small monitor's maximum
+        // size. Arrange the real panel grid at the Figma width without assuming that
+        // the containing window itself can grow to that size, then restore its width.
+        var naturalWidth = window.PanelGrid.Width;
+        try
+        {
+            window.PanelGrid.Width = 1440; window.UpdateLayout();
+            var original = window.OriginalPanel.ActualWidth;
+            var source = window.SourcePanel.ActualWidth;
+            var braille = window.Braille.ActualWidth;
+            check(Math.Abs(window.PanelGrid.ActualWidth - 1440) < 2 &&
+                  Math.Abs(source - (hasOriginal ? 474 : 854)) < 2 && Math.Abs(braille - 586) < 2 &&
+                  (!hasOriginal || Math.Abs(original - 380) < 2),
+                $"{(hasOriginal ? "Three panels" : "TXT panels")} use the Figma proportions when their real grid is 1440px wide " +
+                $"(window={window.ActualWidth:F1}, grid={window.PanelGrid.ActualWidth:F1}, original={original:F1}, source={source:F1}, braille={braille:F1})");
+        }
+        finally { window.PanelGrid.Width = naturalWidth; window.UpdateLayout(); }
     }
 
     private static void CheckHeader(Border header, TextBlock title, string number, string iconFile, Action<bool, string> check)
