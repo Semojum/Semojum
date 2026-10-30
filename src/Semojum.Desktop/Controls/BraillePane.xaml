@@ -7,7 +7,7 @@
         <Button ToolTip="점자 패널 숨기기" AutomationProperties.Name="점자 패널 숨기기" Click="Hide_Click" Style="{StaticResource IconButton}"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/panel-braille-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"><TextBlock x:Name="PanelTitle" Text="점자" FontSize="14" Foreground="#5F5F5F" VerticalAlignment="Center"/>
-        <Border Width="18" Height="18" CornerRadius="9" Background="#EAEAEA" Margin="8,0,0,0"><TextBlock x:Name="PanelNumber" Text="3" Foreground="#5F5F5F" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></StackPanel>
+        <Border Width="18" Height="18" CornerRadius="9" Background="#F0F0F0" Margin="8,0,0,0"><TextBlock x:Name="PanelNumber" Text="3" FontFamily="Segoe UI Symbol" Foreground="#5F5F5F" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></StackPanel>
     </DockPanel></Border>
     <local:LineTranslation x:Name="PreviewStrip" DockPanel.Dock="Bottom" Height="90" Visibility="Collapsed"/>
     <local:PanelPageBar x:Name="FacePageBar" DockPanel.Dock="Bottom"/>

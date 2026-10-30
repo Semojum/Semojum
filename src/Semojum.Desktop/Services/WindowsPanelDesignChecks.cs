@@ -35,6 +35,8 @@ internal static class WindowsPanelDesignChecks
             activate.Invoke(window, [window.Braille.Editor]);
             check(window.Braille.PanelTitle.FontWeight == FontWeights.Bold && window.SourcePanelTitle.FontWeight == FontWeights.Normal,
                 "Braille focus moves the active header without changing panel content");
+            check(FigmaBadge(window.OriginalHeader, "1") && FigmaBadge(window.SourceHeader, "2") && FigmaBadge(window.Braille.Header, "3"),
+                "All three Figma number badges retain their style when the active panel changes");
             activate.Invoke(window, [null]);
             check(window.OriginalPanelTitle.FontWeight == FontWeights.Bold && window.Braille.PanelTitle.FontWeight == FontWeights.Normal,
                 "Original selection marks the original header active");
@@ -67,6 +69,8 @@ internal static class WindowsPanelDesignChecks
             await window.OpenAsync(path); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
             check(!window.OriginalToggle.IsChecked && window.SourcePanelNumber.Text == "1" && window.Braille.PanelNumber.Text == "2",
                 "TXT uses two panels with Figma numbering");
+            check(FigmaBadge(window.SourceHeader, "1") && FigmaBadge(window.Braille.Header, "2"),
+                "Two-panel TXT numbering retains the Figma badge color and typography");
             window.Width = 1440; window.Height = 1000; window.UpdateLayout();
             check(Math.Abs(window.SourcePanel.ActualWidth - 854) < 2 && Math.Abs(window.Braille.ActualWidth - 586) < 2,
                 "TXT panels use the final Figma proportions at 1440 pixels");
@@ -115,13 +119,20 @@ internal static class WindowsPanelDesignChecks
     {
         var labels = Descendants(header).OfType<TextBlock>().ToArray();
         var badge = labels.FirstOrDefault(t => t.Text == number)?.Parent as Border;
-        check(title.FontSize == 14 && badge is { Width: 18, Height: 18, CornerRadius.TopLeft: 9 } &&
+        check(title.FontSize == 14 && FigmaBadge(header, number) && badge is not null &&
               title.TransformToAncestor(header).Transform(new Point()).X < badge.TransformToAncestor(header).Transform(new Point()).X,
             $"{title.Text} header displays its label before the circular Figma number");
         var icon = Descendants(header).OfType<SvgViewbox>().FirstOrDefault(i => i.Source?.ToString().EndsWith("/" + iconFile, StringComparison.Ordinal) == true);
         check(icon is { Width: 16, Height: 16, Drawings.Bounds.IsEmpty: false }, $"{title.Text} header renders its original Figma close icon");
         check(Descendants(header).OfType<Button>().Count(b => !string.IsNullOrWhiteSpace(System.Windows.Automation.AutomationProperties.GetName(b))) == 2,
             $"{title.Text} header controls have accessible names");
+    }
+
+    private static bool FigmaBadge(Border header, string number)
+    {
+        var text = Descendants(header).OfType<TextBlock>().FirstOrDefault(t => t.Text == number);
+        return text is { FontSize: 12, FontFamily.Source: "Segoe UI Symbol", Foreground: SolidColorBrush { Color: var ink }, Parent: Border { Width: 18, Height: 18, CornerRadius.TopLeft: 9, Background: SolidColorBrush { Color: var color } } }
+            && color == Color.FromRgb(240, 240, 240) && ink == Color.FromRgb(95, 95, 95);
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
