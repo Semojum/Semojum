@@ -37,13 +37,37 @@ internal static class PublicDialogDesign
     }
     internal static FrameworkElement TextField(TextBox input, string label, string hint)
     {
-        AutomationProperties.SetName(input, label); input.Background = Brush("#FBFBFB"); input.BorderBrush = Brush("#EAEAEA");
+        AutomationProperties.SetName(input, label); input.Background = Brushes.Transparent; input.BorderThickness = new(0);
         input.Padding = new(11, 5, 11, 5); input.FontSize = 12; input.VerticalContentAlignment = VerticalAlignment.Center;
         var holder = new Grid(); holder.Children.Add(input);
         var placeholder = new TextBlock { Text = hint, Foreground = Brush("#8A8A8A"), Margin = new(12, 0, 12, 0),
             VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false, TextTrimming = TextTrimming.CharacterEllipsis };
         void Update() => placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        input.TextChanged += (_, _) => Update(); Update(); holder.Children.Add(placeholder); return holder;
+        input.TextChanged += (_, _) => Update(); Update(); holder.Children.Add(placeholder);
+        var underline = new Border { Height = 1, Background = Brush("#D1D1D1"), VerticalAlignment = VerticalAlignment.Bottom, IsHitTestVisible = false };
+        holder.Children.Add(underline);
+        input.GotKeyboardFocus += (_, _) => { underline.Height = 2; underline.Background = Brush("#005FB8"); };
+        input.LostKeyboardFocus += (_, _) => { underline.Height = 1; underline.Background = Brush("#D1D1D1"); };
+        return new Border { Background = Brush("#FBFBFB"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(4), Child = holder };
+    }
+
+    internal static Style ConsentStyle()
+    {
+        var style = new Style(typeof(CheckBox), Application.Current.FindResource(typeof(CheckBox)) as Style);
+        var template = new ControlTemplate(typeof(CheckBox));
+        var panel = new FrameworkElementFactory(typeof(StackPanel)); panel.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+        var square = new FrameworkElementFactory(typeof(Border), "Square"); square.SetValue(FrameworkElement.WidthProperty, 20d); square.SetValue(FrameworkElement.HeightProperty, 20d);
+        square.SetValue(Border.CornerRadiusProperty, new CornerRadius(4)); square.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        square.SetValue(Border.BorderBrushProperty, Brush("#A0A0A0")); square.SetValue(Border.BackgroundProperty, Brushes.White);
+        var icon = new FrameworkElementFactory(typeof(SvgViewbox), "Tick"); icon.SetValue(SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Mockup;component/Assets/Figma/public-inquiry-check.svg"));
+        icon.SetValue(FrameworkElement.WidthProperty, 16d); icon.SetValue(FrameworkElement.HeightProperty, 16d); icon.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed); square.AppendChild(icon); panel.AppendChild(square);
+        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(FrameworkElement.MarginProperty, new Thickness(8, 0, 0, 0)); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); panel.AppendChild(content);
+        template.VisualTree = panel;
+        var selected = new Trigger { Property = CheckBox.IsCheckedProperty, Value = true };
+        selected.Setters.Add(new Setter(Border.BackgroundProperty, Brush("#005FB8"), "Square")); selected.Setters.Add(new Setter(Border.BorderBrushProperty, Brush("#005FB8"), "Square"));
+        selected.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "Tick")); template.Triggers.Add(selected);
+        var focus = new Trigger { Property = UIElement.IsKeyboardFocusedProperty, Value = true }; focus.Setters.Add(new Setter(Border.BorderThicknessProperty, new Thickness(2), "Square")); template.Triggers.Add(focus);
+        style.Setters.Add(new Setter(Control.TemplateProperty, template)); return style;
     }
 }
 
@@ -145,7 +169,7 @@ public sealed class PublicInquiryDialog : CompactDialog
         var panel = new StackPanel { Margin = new(16, 12, 16, 0) };
         var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(scroll, 1); layout.Children.Add(scroll);
-        panel.Children.Add(new TextBlock { Text = "로그인 없이도 보낼 수 있습니다. 적어 주신 메일 주소로 회신해드립니다.", Foreground = Brush("#5F5F5F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 12) });
+        panel.Children.Add(new TextBlock { Text = "로그인 없이도 보낼 수 있습니다. 적어 주신 메일 주소로 회신해드립니다.", Foreground = Brush("#5F5F5F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
         var type = Choices(["도입 문의", "오류 신고", "기타"], "기타"); var name = new TextBox { MaxLength = 50 }; var email = new TextBox { MaxLength = 100 };
         var initialType = type.SelectedItem;
         var organization = new TextBox { MaxLength = 2000 }; var title = new TextBox { MaxLength = 2000 };
@@ -154,16 +178,16 @@ public sealed class PublicInquiryDialog : CompactDialog
         void AddField(string label, TextBox field, string hint)
         {
             AddLabel(label); var element = PublicDialogDesign.TextField(field, label == "기관명 (선택)" ? "기관명" : label == "제목 (선택)" ? "제목" : label, hint);
-            element.Height = 32; element.Margin = new(0, 0, 0, 2); panel.Children.Add(element);
+            element.Height = 32; panel.Children.Add(element);
         }
         AddLabel("분류"); type.Height = type.MinHeight = 32; type.Padding = new(11, 0, 25, 0); AutomationProperties.SetName(type, "분류");
-        var typeField = new Grid { Height = 32, Margin = new(0, 0, 0, 2) }; typeField.Children.Add(type);
+        var typeField = new Grid { Height = 32 }; typeField.Children.Add(type);
         typeField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = Brush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
         var chevron = DesignIcon("public-inquiry-chevron.svg", 16, 16); chevron.HorizontalAlignment = HorizontalAlignment.Right; chevron.Margin = new(0, 0, 5, 0); chevron.IsHitTestVisible = false; typeField.Children.Add(chevron); panel.Children.Add(typeField);
         AddField("답 받을 주소", email, "name@example.com");
         // The legacy anonymous API still accepts an optional sender name. Keep it
         // alongside the organization field without displacing the remaining form.
-        var identity = new Grid { Margin = new(0, 0, 0, 2) };
+        var identity = new Grid();
         identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new(2, GridUnitType.Star) });
         identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new(1, GridUnitType.Star) });
         void IdentityField(int column, string label, string accessibleName, TextBox field, string hint)
@@ -186,6 +210,8 @@ public sealed class PublicInquiryDialog : CompactDialog
         ToolTipService.SetShowOnDisabled(attachment, true);
         AutomationProperties.SetAutomationId(attachment, "PublicInquiryAttachment"); AutomationProperties.SetName(attachment, "파일 첨부"); AutomationProperties.SetHelpText(attachment, "현재 공개 문의는 첨부 파일을 지원하지 않습니다.");
         attachmentRow.Children.Add(attachment); attachmentRow.Children.Add(new TextBlock { Text = "첨부 기능은 아직 지원되지 않습니다.", Foreground = Brush("#5F5F5F"), Margin = new(12, 0, 0, 0), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(attachmentRow);
+        var consent = new CheckBox { Content = "문의 답변을 위한 개인정보 수집·이용에 동의합니다", Style = PublicDialogDesign.ConsentStyle(), Margin = new(0, 4, 0, 0) };
+        AutomationProperties.SetAutomationId(consent, "PublicInquiryConsent"); AutomationProperties.SetName(consent, "문의 답변을 위한 개인정보 수집·이용에 동의합니다"); panel.Children.Add(consent);
         panel.Children.Add(new TextBlock { Text = "기관명과 제목은 문의 내용에 함께 전달됩니다. 이름·이메일·문의 내용은 운영자에게 전달됩니다.", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) });
         panel.Children.Add(new TextBlock { Text = "문의 이메일: contact@semo-jum.com", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
         var submitted = false; var discardConfirmed = false;
@@ -198,6 +224,7 @@ public sealed class PublicInquiryDialog : CompactDialog
         };
         async Task SubmitAsync()
         {
+            if (consent.IsChecked != true) throw new ArgumentException("문의 답변을 위한 개인정보 수집·이용에 동의해 주세요.");
             if (!MailAddress.TryCreate(email.Text.Trim(), out var address) || address.Address != email.Text.Trim() || string.IsNullOrWhiteSpace(message.Text)) throw new ArgumentException("이메일 주소와 문의 내용을 확인해 주세요.");
             var lines = new List<string>();
             if (!string.IsNullOrWhiteSpace(organization.Text)) lines.Add("기관명: " + organization.Text.Trim());

@@ -122,6 +122,25 @@ internal static class WindowsLoginDesignChecks
                             && System.Windows.Shell.WindowChrome.GetIsHitTestVisibleInChrome(caption),
                             $"Login title bar exposes its Windows command and accessible name: {label}");
                     }
+                    if (Math.Abs(dialog.ActualWidth - 1440) < 1 && Math.Abs(dialog.ActualHeight - 1000) < 1)
+                    {
+                        var card = children.OfType<Border>().Single(b => b.Width == 420);
+                        var noticeLink = children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "공지사항");
+                        var cardY = card.TransformToAncestor(dialog).Transform(new Point()).Y;
+                        var linkY = noticeLink.TransformToAncestor(dialog).Transform(new Point()).Y;
+                        check(Math.Abs(cardY - 260) < 3 && Math.Abs(linkY - 760) < 3,
+                            $"The 1440x1000 login card and public links match the final Figma vertical placement (card={cardY:F1}, link={linkY:F1})");
+                    }
+                    var originalWidth = dialog.Width; var originalHeight = dialog.Height;
+                    dialog.Width = 480; dialog.Height = 400; dialog.UpdateLayout();
+                    var scroll = children.OfType<ScrollViewer>().First(s => s.Content is StackPanel);
+                    scroll.ScrollToBottom();
+                    var scrollFrame = new DispatcherFrame();
+                    dialog.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() => scrollFrame.Continue = false));
+                    Dispatcher.PushFrame(scrollFrame); dialog.UpdateLayout();
+                    check(scroll.ScrollableHeight > 0 && scroll.VerticalOffset > 0 && scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible,
+                        "A small login window retains vertical scrolling to the public links");
+                    scroll.ScrollToTop(); dialog.Width = originalWidth; dialog.Height = originalHeight; dialog.UpdateLayout();
                 }
                 if (remember && Environment.GetEnvironmentVariable("LOGIN_CAPTURE") is { Length: > 0 } capture && dialog.Content is FrameworkElement surface)
                 {

@@ -63,6 +63,24 @@ internal static class WindowsPublicDesignChecks
                 && Descendants(inquiry).OfType<TextBox>().Any(b => AutomationProperties.GetName(b) == "제목"), "Organization and title fields remain available");
             check(!Descendants(inquiry).OfType<TextBlock>().Any(t => t.Text.Contains("1년 보관", StringComparison.Ordinal)),
                 "The inquiry does not claim an unconfirmed retention period");
+            var consent = Descendants(inquiry).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent");
+            check(consent.IsChecked != true && consent.IsEnabled && AutomationProperties.GetName(consent).Contains("동의", StringComparison.Ordinal),
+                "Inquiry consent starts unchecked and is available to assistive technology");
+            consent.IsChecked = true; inquiry.UpdateLayout();
+            check(HasIcon(consent, "public-inquiry-check.svg"), "The checked inquiry consent uses the original Figma 16px icon");
+            consent.IsChecked = false;
+            var inquiryScroll = Descendants(inquiry).OfType<ScrollViewer>().First(s => s.Content is StackPanel);
+            var consentTop = consent.TransformToAncestor(inquiryScroll).Transform(new Point()).Y;
+            check(consentTop >= 0 && consentTop + consent.ActualHeight <= inquiryScroll.ViewportHeight + 1,
+                $"Default inquiry window fully displays consent above the footer (top={consentTop:F1}, height={consent.ActualHeight:F1}, viewport={inquiryScroll.ViewportHeight:F1})");
+            inquiry.Width = 440; inquiry.Height = 400; inquiry.UpdateLayout(); inquiryScroll.ScrollToBottom();
+            await inquiry.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); inquiry.UpdateLayout();
+            consentTop = consent.TransformToAncestor(inquiryScroll).Transform(new Point()).Y;
+            var send = Descendants(inquiry).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
+            check(inquiryScroll.ScrollableHeight > 0 && consentTop >= 0 && consentTop + consent.ActualHeight <= inquiryScroll.ViewportHeight + 1 && send.IsVisible && send.IsEnabled,
+                "A smaller inquiry window can scroll to consent while the send button remains accessible");
+            inquiry.Width = 540; inquiry.Height = 528; inquiryScroll.ScrollToTop();
+            await inquiry.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle); inquiry.UpdateLayout();
             if (Environment.GetEnvironmentVariable("PUBLIC_INQUIRY_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(inquiry, capture);
         }
         finally { inquiry.Close(); }

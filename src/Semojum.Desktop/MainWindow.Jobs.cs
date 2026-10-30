@@ -331,7 +331,7 @@ public partial class MainWindow
         notice.Owner = this; notice.ShowDialog();
         if (status.CreditExhausted)
         {
-            if (notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+            if (notice.Choice == 0) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
         else if (status.FailedPages > 0 && status.SucceededPages > 0)
         {
@@ -387,7 +387,7 @@ public partial class MainWindow
             var notice = ex.Code == "CREDIT4001" ? FileNotices.NoCredits()
                 : new NoticeDialog(retry ? "실패한 쪽을 다시 변환하지 못했습니다." : "이어서 처리하지 못했습니다.", $"{ex.Message} ({ex.Code})", ["닫기"], error: true);
             notice.Owner = this; notice.ShowDialog();
-            if (ex.Code == "CREDIT4001" && notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+            if (ex.Code == "CREDIT4001" && notice.Choice == 0) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
         catch (HttpRequestException)
         { model.ErrorNotice = model.PendingRestart is { Unconfirmed: true } ? UnconfirmedRestartNotice : "재개 상태를 확인하지 못했습니다. 확인 전에는 서버 저장을 할 수 없습니다."; }

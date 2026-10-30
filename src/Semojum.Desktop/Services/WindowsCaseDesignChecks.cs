@@ -19,6 +19,8 @@ internal static class WindowsCaseDesignChecks
         {
             invalid.UpdateLayout(); Capture(invalid, "unsupported.png");
             check(Math.Abs(invalid.Width - 471) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice follows the final Figma dimensions");
+            check(invalid.DetailText.Contains("JPEG", StringComparison.Ordinal) && invalid.DetailText.Contains("SMJ", StringComparison.Ordinal),
+                "Unsupported file notice includes supported JPEG and local SMJ files");
             var icon = Descendants(invalid).OfType<SvgViewbox>().Single();
             check(icon.Source?.ToString().EndsWith("case-error.svg", StringComparison.Ordinal) == true && icon.Drawings is { Bounds.IsEmpty: false } && icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16 && icon.ActualHeight > 0 && icon.ActualHeight <= 16,
                 "Error notice renders the original Figma warning in its 16px slot");
@@ -27,6 +29,27 @@ internal static class WindowsCaseDesignChecks
                 "Error notice uses equal-width Figma action buttons and preserves the default action");
         }
         finally { invalid.Close(); }
+        var credit = FileNotices.NoCredits(); credit.Show();
+        try
+        {
+            credit.UpdateLayout(); Capture(credit, "no-credits.png");
+            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["구매 문의", "닫기"]),
+                "Credit notice describes the available purchase inquiry and does not duplicate the same inquiry action");
+        }
+        finally { credit.Close(); }
+        var login = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다."));
+        check(login.ActionButtons[1].Content as string == "비밀번호 문의", "Login notice describes its inquiry action accurately");
+        foreach (var index in new[] { 0, 1 })
+        {
+            var dialog = FileNotices.NoCredits();
+            var timeout = false;
+            var timer = new DispatcherTimer(DispatcherPriority.Normal) { Interval = TimeSpan.FromSeconds(5) };
+            timer.Tick += (_, _) => { timeout = true; timer.Stop(); dialog.Close(); };
+            dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(new Action(() =>
+                dialog.ActionButtons[index].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))), DispatcherPriority.Normal);
+            timer.Start(); dialog.ShowDialog(); timer.Stop();
+            check(!timeout && dialog.Choice == index, $"Credit notice action {index} returns its own choice");
+        }
         var manual = new ManualEditDialog(); manual.Show();
         try
         {

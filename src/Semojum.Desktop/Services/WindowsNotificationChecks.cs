@@ -134,6 +134,7 @@ internal static class WindowsNotificationChecks
             var organization = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "기관명");
             var title = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "제목");
             var submit = Descendants(inquiry).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
+            Descendants(inquiry).OfType<CheckBox>().Single(c => System.Windows.Automation.AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent").IsChecked = true;
             email.Text = "invalid"; message.Text = "작성한 문의"; organization.Text = "테스트 기관"; title.Text = "문의 제목";
             submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(50);
             check(fixture.InquiryPosts == 0 && message.Text == "작성한 문의", "Invalid inquiry is not sent and keeps the typed message");
@@ -224,14 +225,22 @@ internal static class WindowsNotificationChecks
 
     private static bool AnswerInquiryClose(Window inquiry, int choice, Action attempt)
     {
-        var shown = false; var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        var shown = false; var timedOut = false; var deadline = DateTime.UtcNow.AddSeconds(5); var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
         timer.Tick += (_, _) =>
         {
+            if (DateTime.UtcNow >= deadline)
+            {
+                timedOut = true; timer.Stop();
+                foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == inquiry && w.IsVisible).ToArray()) child.Close();
+                return;
+            }
             var dialog = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(d => d.Owner == inquiry && d.IsVisible);
             if (dialog is null) return;
             shown = true; timer.Stop(); dialog.ActionButtons[choice].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         };
-        timer.Start(); try { attempt(); } finally { timer.Stop(); } return shown;
+        timer.Start(); try { attempt(); } finally { timer.Stop(); }
+        if (timedOut) throw new TimeoutException("Inquiry close confirmation did not finish within 5 seconds");
+        return shown;
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

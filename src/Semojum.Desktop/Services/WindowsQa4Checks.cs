@@ -17,6 +17,7 @@ internal static class WindowsQa4Checks
 {
     internal static async Task RunAsync(MainWindow owner, string directory, Action<bool, string> check, Func<Window, string, Task> render)
     {
+        void Stage(string name) => File.AppendAllText(Path.Combine(directory, "qa-progress.txt"), name + Environment.NewLine);
         await WindowsSearchSafetyChecks.RunAsync(check);
         await WindowsDraftSafetyChecks.RunAsync(check, directory);
         await WindowsNotificationChecks.RunAsync(check);
@@ -88,12 +89,19 @@ internal static class WindowsQa4Checks
         await WindowsInstitutionClientChecks.RunAsync(check);
         await WindowsInstitutionDesignChecks.RunAsync(check);
         await WindowsInstitutionVisualChecks.RunAsync(check);
+        Stage("login design start");
         WindowsLoginDesignChecks.Run(check);
+        Stage("login design complete; network message start");
         WindowsAccountChecks.CheckLoginNetworkMessage(owner, check);
+        Stage("network message complete; institution login start");
         WindowsAccountChecks.CheckInstitutionLoginRouting(owner, check);
+        Stage("institution login complete; logout cancellation start");
         await WindowsAccountChecks.CheckLogoutCancellationAsync(check);
+        Stage("logout cancellation complete; role change start");
         await WindowsAccountChecks.CheckRoleChangeAsync(check);
+        Stage("role change complete; view commands start");
         await CheckViewCommandsAsync(owner, check);
+        Stage("view commands complete; capture checks start");
         check(owner.Braille.Editor.Visibility == Visibility.Collapsed && owner.Braille.GridView.ActualHeight > 500,
             "Visual parity keeps one full-height editable braille surface without a duplicate editor");
         var faceElement = Children(owner.Braille.GridView).OfType<FrameworkElement>().First(e => e.GetType().Name == "Face");

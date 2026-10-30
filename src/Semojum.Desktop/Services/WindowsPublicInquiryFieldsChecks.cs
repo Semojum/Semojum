@@ -4,7 +4,10 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Semojum.Core.Integration;
@@ -43,7 +46,24 @@ internal static class WindowsPublicInquiryFieldsChecks
                 var name = boxes.Single(b => b.MaxLength == 50);
                 var message = boxes.Single(b => b.AcceptsReturn);
                 var send = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
+                var consent = Descendants(dialog).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent");
                 email.Text = "fixture@example.test"; name.Text = "홍길동"; organization.Text = "기관 A"; title.Text = "문의 제목"; message.Text = "본문";
+                send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
+                check(fixture.Bodies.Count == 0 && dialog.IsVisible && organization.Text == "기관 A" && title.Text == "문의 제목" && message.Text == "본문"
+                    && Descendants(dialog).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("동의해 주세요", StringComparison.Ordinal)),
+                    "Inquiry without consent is not sent, shows an error, and preserves all fields");
+                var provider = (UIElementAutomationPeer.CreatePeerForElement(consent) as CheckBoxAutomationPeer)?.GetPattern(PatternInterface.Toggle) as IToggleProvider;
+                provider?.Toggle();
+                check(provider is not null && consent.IsChecked == true, "Privacy consent is accessible through the checkbox automation toggle");
+                consent.Focus();
+                var source = PresentationSource.FromVisual(consent);
+                if (source is not null)
+                {
+                    consent.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
+                    consent.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
+                }
+                check(source is not null && consent.IsChecked == false, "The focused consent checkbox can be unchecked using the WPF Space key path");
+                provider?.Toggle();
                 send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var deadline = DateTime.UtcNow.AddSeconds(5);
                 while (fixture.Bodies.Count < 1 && DateTime.UtcNow < deadline) await Task.Delay(25);
@@ -64,9 +84,15 @@ internal static class WindowsPublicInquiryFieldsChecks
                 message.Text = "본문";
                 var cancel = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "취소"));
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
-                int action = 0;
+                int action = 0; var modalDeadline = DateTime.UtcNow.AddSeconds(5); var modalTimedOut = false;
                 timer.Tick += (_, _) =>
                 {
+                    if (DateTime.UtcNow >= modalDeadline)
+                    {
+                        modalTimedOut = true; timer.Stop();
+                        foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == dialog && w.IsVisible).ToArray()) child.Close();
+                        return;
+                    }
                     var notice = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(n => n.Owner == dialog && n.IsVisible);
                     if (notice is null) return;
                     notice.ActionButtons[action].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -74,9 +100,11 @@ internal static class WindowsPublicInquiryFieldsChecks
                 try
                 {
                     timer.Start(); cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    if (modalTimedOut) throw new TimeoutException("Inquiry discard confirmation did not finish within 5 seconds");
                     check(dialog.IsVisible && organization.Text == "기관 A" && title.Text == "문의 제목" && message.Text == "본문" && fixture.Bodies.Count == 1,
                         "Continuing after cancel preserves the inquiry draft without sending again");
-                    action = 1; cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    action = 1; modalDeadline = DateTime.UtcNow.AddSeconds(5); cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    if (modalTimedOut) throw new TimeoutException("Inquiry discard confirmation did not finish within 5 seconds");
                 }
                 finally { timer.Stop(); }
                 done.TrySetResult();
@@ -93,9 +121,15 @@ internal static class WindowsPublicInquiryFieldsChecks
         var choiceOnly = new PublicInquiryDialog(api); choiceOnly.Show();
         var type = Descendants(choiceOnly).OfType<ComboBox>().Single();
         var cancelOnly = Descendants(choiceOnly).OfType<Button>().Single(b => Equals(b.Content, "취소"));
-        var confirmation = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        var confirmation = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) }; var choiceDeadline = DateTime.UtcNow.AddSeconds(5); var choiceTimedOut = false;
         confirmation.Tick += (_, _) =>
         {
+            if (DateTime.UtcNow >= choiceDeadline)
+            {
+                choiceTimedOut = true; confirmation.Stop();
+                foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == choiceOnly && w.IsVisible).ToArray()) child.Close();
+                return;
+            }
             var notice = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(n => n.Owner == choiceOnly && n.IsVisible);
             if (notice is not null) notice.ActionButtons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         };
@@ -103,6 +137,7 @@ internal static class WindowsPublicInquiryFieldsChecks
         {
             type.SelectedIndex = 0;
             confirmation.Start(); cancelOnly.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (choiceTimedOut) throw new TimeoutException("Inquiry type discard confirmation did not finish within 5 seconds");
             check(choiceOnly.IsVisible && type.SelectedIndex == 0 && fixture.Bodies.Count == 1,
                 "Continuing after cancel preserves a changed inquiry type even when other fields are empty");
         }

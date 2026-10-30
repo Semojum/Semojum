@@ -35,7 +35,7 @@ internal static class WindowsNoticeDesignChecks
             check(Equals(trigger.Content, "변환 중") && AutomationProperties.GetName(trigger).Contains("47", StringComparison.Ordinal), "An accessible text control exposes real progress when the Figma loading icon is empty");
             var popup = ((Grid)VisualTreeHelper.GetParent(trigger)).Children.OfType<Popup>().Single();
             trigger.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(popup.IsOpen && popup.Child is Border { Width: 320, Height: 108 } && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 처리 (37%)")),
+            check(popup.IsOpen && Descendants(popup.Child).OfType<Border>().Any(b => AutomationProperties.GetAutomationId(b) == "TabProgressCard" && b.Width == 320 && b.Height == 108) && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 처리 (37%)")),
                 "Progress popup uses real finished and total counts with the Figma dimensions");
             var countLabel = Descendants(popup.Child).OfType<TextBlock>().First(t => t.Text.Contains("47쪽 / 128쪽"));
             check(countLabel.FontWeight == FontWeights.Normal && Descendants(popup.Child).OfType<Button>().First(b => Equals(b.Content, "취소")).FontWeight == FontWeights.Normal,

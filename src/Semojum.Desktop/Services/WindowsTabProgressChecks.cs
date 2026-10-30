@@ -2,8 +2,11 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using System.IO;
 using System.Net;
@@ -73,6 +76,26 @@ internal static class WindowsTabProgressChecks
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             check(popup.IsOpen && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 처리 (37%)", StringComparison.Ordinal)),
                 "The inactive tab opens its own progress details with the correct percentage");
+            var cardLayer = Descendants(popup.Child).OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "TabProgressCard");
+            check(popup.Child is Grid { ActualWidth: 320, ActualHeight: 108, Margin: var m } layers && m == new Thickness(20)
+                && cardLayer.Effect is DropShadowEffect { BlurRadius: 16, ShadowDepth: 8, Opacity: 0.14 }
+                && layers.Children.OfType<Border>().Any(b => b.Effect is DropShadowEffect { BlurRadius: 2, ShadowDepth: 0, Opacity: 0.1 } && !b.IsHitTestVisible)
+                && popup.Placement == PlacementMode.Custom,
+                "Progress card retains Figma dimensions and both independent shadow layers");
+            var triggerTop = firstButton.PointToScreen(new Point());
+            var triggerBottom = firstButton.PointToScreen(new Point(0, firstButton.ActualHeight));
+            var triggerScale = (firstButton.PointToScreen(new Point(100, 0)).X - triggerTop.X) / 100;
+            var cardTop = ((FrameworkElement)popup.Child).PointToScreen(new Point());
+            check(Math.Abs(cardTop.Y - triggerBottom.Y) <= 2 && Math.Abs(cardTop.X - (triggerTop.X - 48 * triggerScale)) <= 2,
+                "Progress popup stays anchored below its tab at the Figma offset");
+            await CheckPointerAsync(firstButton, popup, "below", check);
+            if (Environment.GetEnvironmentVariable("TAB_SHADOW_CAPTURE") is { Length: > 0 } shadowCapture
+                && PresentationSource.FromVisual((Visual)popup.Child)?.RootVisual is FrameworkElement popupRoot)
+            {
+                var bitmap = new RenderTargetBitmap((int)Math.Ceiling(popupRoot.ActualWidth), (int)Math.Ceiling(popupRoot.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+                bitmap.Render(popupRoot); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var output = File.Create(shadowCapture); encoder.Save(output);
+            }
             if (Environment.GetEnvironmentVariable("TAB_CAPTURE") is { Length: > 0 } capture)
             {
                 var card = (FrameworkElement)popup.Child; card.UpdateLayout();
@@ -89,6 +112,27 @@ internal static class WindowsTabProgressChecks
             first.Progress = null;
             check(firstButton.Visibility == Visibility.Collapsed && secondButton.Visibility == Visibility.Visible,
                 "Finishing one job removes only that tab's progress indicator");
+            var edge = new Window { Owner = window, Width = 480, Height = 360, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual };
+            var edgeGrid = new Grid();
+            var edgeProgress = new Controls.TabConversionProgress(second, () => Task.CompletedTask)
+                { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(70, 0, 0, 0) };
+            edgeGrid.Children.Add(edgeProgress); edge.Content = edgeGrid; edge.Show();
+            try
+            {
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                MoveToWorkBottom(edge);
+                var edgeButton = Descendants(edgeProgress).OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "TabConversionProgress");
+                var edgePopup = edgeProgress.Children.OfType<Popup>().Single();
+                edgeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                var edgeCard = (FrameworkElement)edgePopup.Child;
+                var buttonTop = edgeButton.PointToScreen(new Point());
+                var cardBottom = edgeCard.PointToScreen(new Point(0, edgeCard.ActualHeight));
+                check(edgePopup.IsOpen && Math.Abs(cardBottom.Y - buttonTop.Y) <= 2,
+                    $"Progress popup flips above the tab at the screen edge without a gap (tab {buttonTop.Y:0.0}, card bottom {cardBottom.Y:0.0})");
+                await CheckPointerAsync(edgeButton, edgePopup, "above", check);
+            }
+            finally { edgeProgress.Dispose(); edge.Close(); }
             if (closeButton is not null)
             {
                 closeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -115,6 +159,46 @@ internal static class WindowsTabProgressChecks
                 { Content = new StringContent("{\"isSuccess\":true,\"result\":" + result + "}", Encoding.UTF8, "application/json") });
         }
     }
+
+    private static async Task CheckPointerAsync(Button trigger, Popup popup, string placement, Action<bool, string> check)
+    {
+        GetCursorPos(out var cursor);
+        try
+        {
+            var start = trigger.PointToScreen(new Point(trigger.ActualWidth / 2, trigger.ActualHeight / 2));
+            var card = (FrameworkElement)popup.Child;
+            var end = card.PointToScreen(new Point(card.ActualWidth / 2, card.ActualHeight / 2));
+            for (var i = 0; i <= 12; i++)
+            {
+                SetCursorPos((int)(start.X + (end.X - start.X) * i / 12), (int)(start.Y + (end.Y - start.Y) * i / 12));
+                await Task.Delay(25);
+            }
+            GetCursorPos(out var actual);
+            if (Math.Abs(actual.X - end.X) <= 2 && Math.Abs(actual.Y - end.Y) <= 2)
+                check(popup.IsOpen && card.IsMouseOver, $"Pointer can move into the progress popup placed {placement} the tab");
+            else Console.WriteLine($"SKIP: {placement} progress popup pointer movement is unavailable");
+        }
+        finally { SetCursorPos(cursor.X, cursor.Y); }
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct CursorPosition { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] private struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
+    private static void MoveToWorkBottom(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(MonitorFromWindow(handle, 2), ref info) || !GetWindowRect(handle, out var rect)
+            || !SetWindowPos(handle, IntPtr.Zero, info.Work.Left, info.Work.Bottom - (rect.Bottom - rect.Top), 0, 0, 0x0001 | 0x0004 | 0x0010))
+            throw new InvalidOperationException("Cannot position the progress popup test at the work-area edge.");
+        window.UpdateLayout();
+    }
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPosition point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {
