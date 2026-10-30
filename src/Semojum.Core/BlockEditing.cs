@@ -12,13 +12,24 @@ public static class BlockEditing
         if (first.Page != second.Page || session.Blocks.IndexOf(second) != session.Blocks.IndexOf(first) + 1)
             throw new ArgumentException("같은 쪽의 인접 블록만 합칠 수 있습니다.");
         var sourceLines = first.Source.Count(c => c == '\n'); var brailleLines = first.Braille.Count(c => c == '\n');
+        var sourceLength = first.Source.Length; var brailleLength = first.Braille.Length;
         first.Source += second.Source; first.Braille += second.Braille;
+        // Combining blocks changes the source context even when one source is empty.
+        first.InvalidateBrailleConfirmations();
         first.HasManualBraille = keepBraille && (first.HasManualBraille || second.HasManualBraille);
         first.Translation = null;
         first.Metadata = first.Metadata with { BoundingBox = Union(first.Metadata.BoundingBox, second.Metadata.BoundingBox),
             OriginalSource = (first.Metadata.OriginalSource ?? first.Source[..^second.Source.Length]) + (second.Metadata.OriginalSource ?? second.Source),
             Alternatives = null, Rules = (first.Metadata.Rules ?? []).Concat(second.Metadata.Rules ?? []).ToArray() };
         foreach (var memo in second.Memos) first.Memos.Add(memo with { LineIndex = memo.LineIndex + (memo.Panel == "TEXT" ? sourceLines : brailleLines) });
+        foreach (var mark in second.ReviewMarks)
+        {
+            var id = first.ReviewMarks.Any(existing => existing.Id == mark.Id) ? Guid.NewGuid().ToString("N") : mark.Id;
+            var moved = mark with { Id = id, Start = mark.Start + (mark.Panel == ReviewPanel.Text ? sourceLength : brailleLength) };
+            if (moved.Panel == ReviewPanel.Braille && moved.Kind == ReviewKind.HumanConfirmed)
+                moved = moved with { IsStale = true, Length = 0 };
+            first.ReviewMarks.Add(moved);
+        }
         session.Blocks.Remove(second); session.ActiveBlock = first;
         first.State = first.HasManualBraille ? "합친 블록 · 직접 수정 점자 유지" : "합친 블록 · 재점역 필요";
         return first;

@@ -62,7 +62,7 @@ public partial class MainWindow : Window
     internal MainWindow(bool smoke = false, bool testWithoutAccount = false, bool startEmpty = false)
     {
         this.smoke = smoke;
-        api = new(http) { RefreshedIdentityAllowed = AutomaticLogin.IsEditorAllowed }; jobs = new(api);
+        api = new(http); api.RefreshedIdentityAllowed = account => AutomaticLogin.IsSameDesktopArea(api.Account, account); api.RefreshRequiresIdentity = account => account.Role == "ROLE_ORG_ADMIN"; jobs = new(api);
         if (smoke) engine = new MockTranslationEngine();
         else { sidecar = EngineRuntime.Create(); engine = new LocalBrailleEngine(sidecar, () => session.Options); }
         translator = new(engine);
@@ -84,8 +84,10 @@ public partial class MainWindow : Window
         }
         StyleSeparators(ApplicationMenu);
         InitializeContinuousEditor();
-        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)));
-        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
+        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)) { ManualReviewRequested = ShowReviewList });
+        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { ManualReviewRequested = ShowReviewList });
+        SourceEditor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Text), () => ReviewToggle.IsChecked, () => (SourceEditor.SelectionStart, SourceEditor.SelectionLength)));
+        Braille.Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Braille), () => ReviewToggle.IsChecked, () => (Braille.Editor.SelectionStart, Braille.Editor.SelectionLength)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
         InstallEditorMenu(SourceEditor); InstallEditorMenu(Braille.Editor);
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
@@ -210,11 +212,6 @@ public partial class MainWindow : Window
 
     private void RefreshSourcePosition()
     {
-        if (session?.ActiveBlock is not null)
-        {
-            var editor = PageEditor.Visibility == Visibility.Visible ? PageEditor.Editor : SourceEditor;
-            SourcePosition.Text = $"줄 {editor.TextArea.Caret.Line} / {editor.Document.LineCount}";
-        }
         RefreshEditorStatus();
     }
 
@@ -307,13 +304,17 @@ public partial class MainWindow : Window
                     detachedWindow?.Close(); OriginalToggle.IsChecked = SourceToggle.IsChecked = BrailleToggle.IsChecked = true;
                     UpdatePanelLayout(); break;
                 case "showReviews":
+                    PageEditor.ShowReviews = ReviewToggle.IsChecked;
                     foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowReviews = ReviewToggle.IsChecked; margin.InvalidateVisual(); }
+                    foreach (var grid in new[] { Braille.GridView, detachedPane?.GridView }.OfType<BrailleGridView>()) { grid.ShowReviews = ReviewToggle.IsChecked; grid.InvalidateFaces(); }
                     break;
                 case "selectRange": SelectTextRange(); break;
                 case "showMemos":
+                    PageEditor.ShowMemos = MemoToggle.IsChecked;
                     foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowMemos = MemoToggle.IsChecked; margin.InvalidateVisual(); }
+                    foreach (var grid in new[] { Braille.GridView, detachedPane?.GridView }.OfType<BrailleGridView>()) { grid.ShowMemos = MemoToggle.IsChecked; grid.InvalidateFaces(); }
                     break;
                 case "showOutlines":
                     Braille.GridView.ShowOutlines = OutlineToggle.IsChecked; Braille.GridView.InvalidateFaces();
@@ -399,6 +400,11 @@ public partial class MainWindow : Window
                     if (footer.ShowDialog() == true) { session.FooterText = footer.Footer; session.FooterRanges = footer.Ranges; session.Layout = session.Layout with { FooterAlign = footer.Alignment }; }
                     break;
                 case "memo": ShowLineMemos(ActiveSearchPanel); break;
+                case "reviewCorrection": SetReviewSelection(ReviewKind.SuggestCorrection); break;
+                case "reviewDeletion": SetReviewSelection(ReviewKind.SuggestDeletion); break;
+                case "reviewConfirmed": SetReviewSelection(ReviewKind.HumanConfirmed); break;
+                case "reviewRemove": RemoveSelectedReviews(); break;
+                case "reviewList": ShowReviewList(); break;
                 case "memos": await ShowMemoListAsync(); break;
                 case "drafts": await ShowAlternativesAsync(); break;
                 case "rules": ShowRules(); break;
@@ -507,6 +513,8 @@ public partial class MainWindow : Window
         FontSizeLabel.SelectedItem = choice;
         var percent = (SourceEditor.FontSize / 14 * 100).ToString("0") + "%";
         if (ZoomPicker.Text != percent) ZoomPicker.Text = percent;
+        ZoomPercent.Text = percent;
+        ZoomSlider.Value = SourceEditor.FontSize <= 14 ? (SourceEditor.FontSize - 10) * 50 / 4 : 50 + (SourceEditor.FontSize - 14) * 50 / 18;
         }
         finally { settingFontSize = false; }
     }
@@ -670,7 +678,7 @@ public partial class MainWindow : Window
     {
         if (fileBusy) return false;
         if (!session.IsDirty) return true;
-        return NoticeDialog.Choose(this, "변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 440) switch
+        return NoticeDialog.Choose(this, "변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 591) switch
         {
             0 => await SaveAsync(false),
             1 => true,

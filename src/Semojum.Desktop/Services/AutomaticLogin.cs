@@ -9,6 +9,9 @@ internal sealed record AutomaticLoginResult(AccountIdentity? Account, string? Me
 internal static class AutomaticLogin
 {
     internal static bool IsEditorAllowed(AccountIdentity account) => account.Role != "ROLE_ORG_ADMIN" && account is not { Role: "ROLE_ADMIN", AdminScope: "WEB" };
+    internal static bool IsDesktopAllowed(AccountIdentity account) => account.Role == "ROLE_ORG_ADMIN" || IsEditorAllowed(account);
+    internal static bool IsSameDesktopArea(AccountIdentity? current, AccountIdentity next) =>
+        current?.Role == "ROLE_ORG_ADMIN" ? next.Role == "ROLE_ORG_ADMIN" : IsEditorAllowed(next);
     internal static async Task<string?> RememberAsync(SemojumApiClient api, IAccountCredentialStore credentials)
     {
         try
@@ -41,7 +44,7 @@ internal static class AutomaticLogin
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
             var account = await api.RestoreSessionAsync(credential, timeout.Token);
             if (account is null) return new(null, "서버에서 현재 계정 권한을 확인할 수 없어 다시 로그인해 주세요.");
-            if (!IsEditorAllowed(account))
+            if (!IsDesktopAllowed(account))
             {
                 using var logoutTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                 try { await api.LogoutAsync(logoutTimeout.Token); }

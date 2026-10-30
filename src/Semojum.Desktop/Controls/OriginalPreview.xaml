@@ -2,7 +2,7 @@
   <Grid Background="#FAFAFA">
     <Grid.RowDefinitions><RowDefinition Height="0"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
     <Border Style="{StaticResource PanelHeader}"><DockPanel><TextBlock x:Name="PageLabel" DockPanel.Dock="Right" Text="12 / 128쪽" FontSize="11" Foreground="{StaticResource Muted}"/><TextBlock Text="❶  원본 이미지" FontWeight="SemiBold"/></DockPanel></Border>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer x:Name="PreviewScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
       <Viewbox Stretch="Uniform" VerticalAlignment="Top" Margin="15,18">
         <Border Width="350" Height="630" Background="White" BorderBrush="#D2D8E0" BorderThickness="1" Padding="23">
           <StackPanel>

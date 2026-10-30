@@ -70,7 +70,20 @@ internal static class WindowsMathDockChecks
             await Dispatcher.Yield(DispatcherPriority.Background); window.UpdateLayout();
             check(!dock.IsVisible && window.PageEditor.ActualHeight >= 28,
                 $"A very short window hides the formula preview to keep editing reachable (editor={window.PageEditor.ActualHeight:F0}, panel={window.SourcePanel.ActualHeight:F0})");
+            check(window.LinePreviewToggle.IsChecked && window.LineStrip.ActualHeight == 0 && window.SourcePageBar.IsVisible,
+                "A short window temporarily folds line preview while retaining its preference and page controls");
+            window.DraftDock.Visibility = Visibility.Visible; window.UpdateLayout();
+            await Dispatcher.Yield(DispatcherPriority.Background); window.UpdateLayout();
+            check(window.DraftDock.Visibility == Visibility.Visible && window.DraftDock.Opacity == 0 && !window.DraftDock.IsEnabled && window.PageEditor.ActualHeight >= 28,
+                $"An open alternative draft remains selected without covering the source editor in a short window (visibility={window.DraftDock.Visibility}, height={window.DraftDock.ActualHeight:F0}, enabled={window.DraftDock.IsEnabled}, editor={window.PageEditor.ActualHeight:F0})");
+            var firstBlock = window.Session.Blocks[0]; var source = firstBlock.Source;
+            window.PageEditor.Editor.Document.Insert(0, "가");
+            check(firstBlock.Source == "가" + source, "Source input still updates the document in the short window");
             window.Width = 960; window.Height = 700; window.UpdateLayout();
+            await Dispatcher.Yield(DispatcherPriority.Background); window.UpdateLayout();
+            check(window.LinePreviewToggle.IsChecked && window.LineStrip.ActualHeight > 0 && window.DraftDock.Visibility == Visibility.Visible && window.DraftDock.ActualHeight > 0 && window.DraftDock.IsEnabled && window.DraftDock.Opacity == 1,
+                "Line preview and the open draft return when the window grows");
+            window.DraftDock.Visibility = Visibility.Collapsed;
             await Dispatcher.Yield(DispatcherPriority.Background); window.UpdateLayout();
             check(dock.IsVisible && window.PageEditor.ActualHeight >= 70, "The formula preview returns when enough source-panel height is available");
             window.ToggleSourcePanel();

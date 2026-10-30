@@ -19,12 +19,25 @@ public partial class MainWindow
         MathDock.CloseRequested += () => { dismissedMathPreview = mathPreviewBlock; dismissedMathStart = mathPreviewBlock?.Metadata.Type == "formula" ? -1 : mathPreviewBlock is { } b ? SelectedInlineFormula(b).Start : -1; UpdateMathPreview(); };
         MathDock.EditRequested += async () => { if (!accountStarting && !resourcesReleased) await EditMathAsync(); };
         DraftDock.IsVisibleChanged += (_, _) => UpdateMathPreview();
+        SizeChanged += (_, _) => ResizeSupplementaryPanels();
         SourcePanel.SizeChanged += (_, _) => ResizeMathPreview();
         PageEditor.Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateMathPreview();
         PageEditor.Editor.TextArea.SelectionChanged += (_, _) => UpdateMathPreview();
         SourceEditor.TextArea.Caret.PositionChanged += (_, _) => UpdateMathPreview();
         SourceEditor.TextArea.SelectionChanged += (_, _) => UpdateMathPreview();
-        ObserveMathSession(); ResizeMathPreview();
+        ObserveMathSession(); ResizeSupplementaryPanels(); ResizeMathPreview();
+    }
+
+    // Keep the source editor usable in a very short split-screen window without
+    // changing the user's preview preference or discarding an open draft.
+    private void ResizeSupplementaryPanels()
+    {
+        var compact = ActualHeight > 0 && ActualHeight < 400;
+        LineStrip.MaxHeight = compact ? 0 : double.PositiveInfinity;
+        DraftDock.MaxHeight = compact ? 0 : double.PositiveInfinity;
+        DraftDock.Opacity = compact ? 0 : 1;
+        LineStrip.IsEnabled = !compact;
+        DraftDock.IsEnabled = !compact;
     }
 
     private void ObserveMathSession()

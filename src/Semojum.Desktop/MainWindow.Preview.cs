@@ -77,7 +77,7 @@ public partial class MainWindow
         OriginalImage.Source = null; OriginalText.Text = "원본 미리보기 없음";
         OriginalSelection.Visibility = Visibility.Collapsed;
         if (!session.OriginalPages.TryGetValue(page, out var original)) return;
-        if (original.Type == "text") { OriginalText.Text = string.Join("\n", original.Lines ?? []); return; }
+        if (original.Type == "text") { OriginalText.Text = string.Join("\n", original.Lines ?? []); FinishOriginalWheelTransition(owner, page, OriginalScroll); return; }
         if (original.AssetName is null || !session.OriginalFiles.TryGetValue(original.AssetName, out var bytes)) return;
         try
         {
@@ -102,9 +102,10 @@ public partial class MainWindow
                 System.Windows.Controls.Canvas.SetLeft(OriginalSelection, x); System.Windows.Controls.Canvas.SetTop(OriginalSelection, y);
                 OriginalSelection.Visibility = Visibility.Visible;
             }
+            FinishOriginalWheelTransition(owner, page, OriginalScroll);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is NotSupportedException or IOException or ArgumentException or System.Runtime.InteropServices.COMException)
-        { if (generation == originalGeneration && owner == session) OriginalText.Text = "원본을 표시할 수 없습니다: " + ex.Message; }
+        { if (generation == originalGeneration && owner == session) { OriginalText.Text = "원본을 표시할 수 없습니다: " + ex.Message; FinishOriginalWheelTransition(owner, page, OriginalScroll); } }
     }
 }

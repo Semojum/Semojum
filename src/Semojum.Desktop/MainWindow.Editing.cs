@@ -34,10 +34,10 @@ public partial class MainWindow
             if (resolved.Block is null) return;
             session.ActiveBlock = resolved.Block;
             ShowLineMemos(SearchPanel.Text, resolved.Line);
-        }) { ResolveLine = PageEditor.ResolveLine, ReviewRequested = async line =>
+        }) { ResolveLine = PageEditor.ResolveLine, ManualReviewRequested = ShowReviewList, ReviewRequested = line =>
         {
-            if (PageEditor.ResolveLine(line).Block is { } block) session.ActiveBlock = block;
-            await ExecuteAsync("pageStatus");
+            if (PageEditor.ResolveLine(line).Block is not { } block) return;
+            session.ActiveBlock = block; ShowLocalTranslationReview(block, this);
         } });
         PageEditor.Replay = redo => ReplayHistory(redo);
         PageEditor.InsertPageBreak = () => InsertTag("쪽바꿈");
@@ -66,6 +66,9 @@ public partial class MainWindow
             RefreshSourcePosition();
         };
         PageEditor.Editor.TextArea.SelectionChanged += (_, _) => RefreshLinkedSource();
+        // Selection and caret callbacks can run while the page projection is
+        // temporarily suppressed. Recompute linkage once its offsets are valid.
+        PageEditor.ProjectionRestored += () => { RefreshLinkedSource(); RefreshSourcePosition(); };
     }
     private void InstallEditorMenu(TextEditor editor)
     {
@@ -74,13 +77,7 @@ public partial class MainWindow
     }
     private ContextMenu CreateEditorContextMenu()
     {
-        var menu = new ContextMenu { Style = (Style)FindResource("EditorContextMenu") };
-        foreach (var (label, action) in new[] { ("메모 추가", "memo"), ("", ""), ("대체 초안 보기", "drafts"), ("적용 규정 보기", "rules") })
-        {
-            if (label.Length == 0) { menu.Items.Add(new Separator { Style = (Style)menu.Style.Resources[typeof(Separator)], Height = 9, Margin = new(0) }); continue; }
-            var item = new MenuItem { Header = label }; item.Click += async (_, _) => await ExecuteAsync(action); menu.Items.Add(item);
-        }
-        return menu;
+        return CreatePanelContextMenu(false);
     }
     private SearchPanel selectionPanel;
     private bool selectedWholeBlock;
@@ -191,7 +188,13 @@ public partial class MainWindow
         var blocks = SelectedBlocks(); if (blocks.Length == 0) return false;
         if (selectionPanel == SearchPanel.Braille && cut && blocks.Any(b => b.IsBrailleLocked)) return true;
         Clipboard.SetText(string.Join("\n", blocks.Select(b => selectionPanel == SearchPanel.Text ? b.Source : b.Braille)));
-        if (cut) EditStructure(() => { if (selectionPanel == SearchPanel.Braille) foreach (var block in blocks) block.EditBraille(""); else BlockEditing.Delete(session, blocks); }); return true;
+        if (cut)
+        {
+            var removesReviews = selectionPanel == SearchPanel.Text && blocks.Any(b => b.ReviewMarks.Count > 0);
+            EditStructure(() => { if (selectionPanel == SearchPanel.Braille) foreach (var block in blocks) block.EditBraille(""); else BlockEditing.Delete(session, blocks); });
+            if (removesReviews) session.Status = "삭제한 블록의 검토 표시도 함께 지워졌습니다. 실행 취소로 복원할 수 있습니다.";
+        }
+        return true;
     }
     private async Task<bool> PasteSelectedBlocksAsync()
     {
@@ -239,6 +242,7 @@ public partial class MainWindow
         }
         var blocks = SelectedBlocks(); if (blocks.Length == 0 && session.ActiveBlock is { } active) blocks = [active];
         if (blocks.Length == 0 || blocks.Any(b => b.IsBrailleLocked)) return;
+        var deletingReviews = action == "deleteBlock" && blocks.Any(b => b.ReviewMarks.Count > 0);
         EditStructure(() =>
         {
             if (action == "deleteBlock") { BlockEditing.Delete(session, blocks); return; }
@@ -258,6 +262,7 @@ public partial class MainWindow
                 if (selectionPanel == SearchPanel.Text) b.Source = text; else b.EditBraille(text);
             }
         });
+        if (deletingReviews) session.Status = "삭제한 블록의 검토 표시도 함께 지워졌습니다. 실행 취소로 복원할 수 있습니다.";
     }
     private void ClearCurrentLine()
     {

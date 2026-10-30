@@ -62,6 +62,13 @@ internal static class WindowsTabPanelChecks
             check(dropSelected, "Dropping a supported file opens settings for that file");
             var typed = window.Session;
             typed.ActiveBlock!.Source = "새 문서에서 저장하지 않은 원문";
+            await Dispatcher.Yield(DispatcherPriority.DataBind);
+            var typedTab = (System.Windows.Controls.TabItem)window.DocumentTabs.SelectedItem;
+            var typedLabel = ((System.Windows.Controls.StackPanel)typedTab.Header).Children.OfType<System.Windows.Controls.TextBlock>().Single();
+            check(typed.IsDirty && typed.WindowTitle.StartsWith("*" + typed.Title, StringComparison.Ordinal) && window.Title == typed.WindowTitle && typedLabel.Text == typed.Title &&
+                  (typedTab.ToolTip as string)?.Contains("저장되지 않음", StringComparison.Ordinal) == true &&
+                  System.Windows.Automation.AutomationProperties.GetName(typedTab).Contains("저장되지 않음", StringComparison.Ordinal),
+                "The Figma title marks unsaved work while the tab retains its filename and exposes its unsaved state");
             var txt = Path.Combine(directory, "panel-import.txt");
             await File.WriteAllTextAsync(txt, "TXT 본문");
             await window.OpenAsync(txt);
@@ -74,6 +81,8 @@ internal static class WindowsTabPanelChecks
                 "Switching back to an unsaved new document restores its three panels and edits");
             window.DocumentTabs.SelectedIndex = txtIndex;
             check(!window.OriginalToggle.IsChecked, "Switching back to a TXT document restores its two panels");
+            check(typed.IsDirty && typedLabel.Text == typed.Title && (typedTab.ToolTip as string)?.Contains("저장되지 않음", StringComparison.Ordinal) == true,
+                "An inactive unsaved tab keeps the Figma filename and exposes its unsaved state on hover");
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
 

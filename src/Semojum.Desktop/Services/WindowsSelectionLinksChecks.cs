@@ -32,6 +32,18 @@ internal static class WindowsSelectionLinksChecks
             check(grid.LinkedBlocks.Count == 0, "A partial text selection does not claim a complete braille correspondence");
             window.PageEditor.FollowActive(0);
             check(grid.LinkedBlocks.SequenceEqual([first]), "Returning to a source caret restores whole-line linkage");
+            window.PageEditor.Editor.Select(0, 1);
+            first.Metadata = first.Metadata with { TranslatorNote = "queued refresh fixture" };
+            window.PageEditor.FollowActive(0);
+            check(grid.LinkedBlocks.Count == 0, "Source linkage waits while a page refresh is queued");
+            // The metadata change also queues asynchronous braille composition.
+            // Do not treat an intentionally stale grid as ready merely because the
+            // source editor's Dispatcher callback has completed.
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while ((!grid.CoordinatesCurrent || !grid.LinkedBlocks.SequenceEqual([first])) && DateTime.UtcNow < deadline)
+                await Task.Delay(20);
+            check(grid.CoordinatesCurrent && grid.LinkedBlocks.SequenceEqual([first]),
+                "Source linkage is restored after the queued page and braille grid refresh finish");
             window.ToggleDetached();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); await Task.Delay(150);
             window.Activate(); window.PageEditor.Editor.Focus();

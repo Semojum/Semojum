@@ -8,15 +8,86 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using Semojum.Core.Integration;
 using SharpVectors.Converters;
+using static Semojum.Desktop.Dialogs.ExportRangeDialog;
 
 namespace Semojum.Desktop.Dialogs;
 
+internal static class PublicDialogDesign
+{
+    internal static Grid Frame(CompactDialog window, string heading, string icon, string automationId, out StackPanel actions)
+    {
+        if (window.Content is Border frame) { frame.CornerRadius = new(8); frame.BorderBrush = Brush("#EAEAEA"); frame.Background = Brush("#F3F3F3"); }
+        var layout = new Grid();
+        layout.RowDefinitions.Add(new() { Height = new(55) }); layout.RowDefinitions.Add(new()); layout.RowDefinitions.Add(new() { Height = new(64) });
+        var title = new Grid { Margin = new(24, 0, 24, 0) };
+        title.Children.Add(new TextBlock { Text = heading, FontSize = 16, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
+        var close = new Button { Width = 28, Height = 28, MinWidth = 0, MinHeight = 0, Padding = new(0), Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Right, Content = DesignIcon(icon, 16, 16), Template = SurfaceTemplate(0), ToolTip = "닫기" };
+        AutomationProperties.SetAutomationId(close, automationId); AutomationProperties.SetName(close, "닫기"); close.Click += (_, _) => window.Close(); title.Children.Add(close);
+        layout.Children.Add(title);
+        actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 24, 16) };
+        var footer = new Border { BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0), Child = actions };
+        Grid.SetRow(footer, 2); layout.Children.Add(footer); return layout;
+    }
+    internal static void StyleAction(Button button, bool primary = false)
+    {
+        button.Width = 88; button.Height = 32; button.MinWidth = button.MinHeight = 0; button.Padding = new(0); button.Template = SurfaceTemplate(4);
+        button.Background = Brush(primary ? "#005FB8" : "#FBFBFB"); button.BorderBrush = Brush(primary ? "#005FB8" : "#EAEAEA");
+        button.Foreground = primary ? Brushes.White : Brush("#1A1A1A");
+    }
+    internal static FrameworkElement TextField(TextBox input, string label, string hint)
+    {
+        AutomationProperties.SetName(input, label); input.Background = Brushes.Transparent; input.BorderThickness = new(0);
+        input.Padding = new(11, 5, 11, 5); input.FontSize = 12; input.VerticalContentAlignment = VerticalAlignment.Center;
+        var holder = new Grid(); holder.Children.Add(input);
+        var placeholder = new TextBlock { Text = hint, Foreground = Brush("#8A8A8A"), Margin = new(12, 0, 12, 0),
+            VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false, TextTrimming = TextTrimming.CharacterEllipsis };
+        void Update() => placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        input.TextChanged += (_, _) => Update(); Update(); holder.Children.Add(placeholder);
+        var underline = new Border { Height = 1, Background = Brush("#D1D1D1"), VerticalAlignment = VerticalAlignment.Bottom, IsHitTestVisible = false };
+        holder.Children.Add(underline);
+        input.GotKeyboardFocus += (_, _) => { underline.Height = 2; underline.Background = Brush("#005FB8"); };
+        input.LostKeyboardFocus += (_, _) => { underline.Height = 1; underline.Background = Brush("#D1D1D1"); };
+        return new Border { Background = Brush("#FBFBFB"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(4), Child = holder };
+    }
+
+    internal static Style ConsentStyle()
+    {
+        var style = new Style(typeof(CheckBox), Application.Current.FindResource(typeof(CheckBox)) as Style);
+        var template = new ControlTemplate(typeof(CheckBox));
+        var panel = new FrameworkElementFactory(typeof(StackPanel)); panel.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+        var square = new FrameworkElementFactory(typeof(Border), "Square"); square.SetValue(FrameworkElement.WidthProperty, 20d); square.SetValue(FrameworkElement.HeightProperty, 20d);
+        square.SetValue(Border.CornerRadiusProperty, new CornerRadius(4)); square.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        square.SetValue(Border.BorderBrushProperty, Brush("#A0A0A0")); square.SetValue(Border.BackgroundProperty, Brushes.White);
+        var icon = new FrameworkElementFactory(typeof(SvgViewbox), "Tick"); icon.SetValue(SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Mockup;component/Assets/Figma/public-inquiry-check.svg"));
+        icon.SetValue(FrameworkElement.WidthProperty, 16d); icon.SetValue(FrameworkElement.HeightProperty, 16d); icon.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed); square.AppendChild(icon); panel.AppendChild(square);
+        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(FrameworkElement.MarginProperty, new Thickness(8, 0, 0, 0)); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); panel.AppendChild(content);
+        template.VisualTree = panel;
+        var selected = new Trigger { Property = CheckBox.IsCheckedProperty, Value = true };
+        selected.Setters.Add(new Setter(Border.BackgroundProperty, Brush("#005FB8"), "Square")); selected.Setters.Add(new Setter(Border.BorderBrushProperty, Brush("#005FB8"), "Square"));
+        selected.Setters.Add(new Setter(UIElement.VisibilityProperty, Visibility.Visible, "Tick")); template.Triggers.Add(selected);
+        var focus = new Trigger { Property = UIElement.IsKeyboardFocusedProperty, Value = true }; focus.Setters.Add(new Setter(Border.BorderThicknessProperty, new Thickness(2), "Square")); template.Triggers.Add(focus);
+        style.Setters.Add(new Setter(Control.TemplateProperty, template)); return style;
+    }
+}
+
 public sealed class PublicNoticesDialog : CompactDialog
 {
-    public PublicNoticesDialog(SemojumApiClient api) : base("공지사항", 620, 440)
+    public PublicNoticesDialog(SemojumApiClient api) : base("공지사항", 600, 488, popover: true)
     {
-        var panel = new StackPanel { Margin = new(16) };
-        Body(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var layout = PublicDialogDesign.Frame(this, "공지사항", "public-notice-close.svg", "PublicNoticesClose", out var actions); Body(layout);
+        var body = new DockPanel { Margin = new(16, 12, 16, 0) }; Grid.SetRow(body, 1); layout.Children.Add(body);
+        var categories = new StackPanel { Orientation = Orientation.Horizontal, Height = 24, Margin = new(0, 0, 0, 16) };
+        DockPanel.SetDock(categories, Dock.Top); body.Children.Add(categories);
+        foreach (var (label, width, available) in new[] { ("전체", 44d, true), ("점검", 44d, false), ("새 판", 51d, false), ("자료", 44d, false) })
+        {
+            var chip = new Button { Content = label, Width = width, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0), Margin = new(0, 0, 8, 0),
+                Background = Brush(available ? "#EFF6FC" : "#FFFFFF"), BorderBrush = Brush(available ? "#005FB8" : "#D1D1D1"),
+                Foreground = Brush(available ? "#1A1A1A" : "#5F5F5F"), Template = SurfaceTemplate(10), IsEnabled = available, Opacity = available ? 1 : .5 };
+            if (!available) { chip.ToolTip = "현재 서버는 공지 분류를 지원하지 않습니다."; ToolTipService.SetShowOnDisabled(chip, true); AutomationProperties.SetHelpText(chip, "현재 서버는 공지 분류를 지원하지 않습니다."); }
+            categories.Children.Add(chip);
+        }
+        var panel = new StackPanel(); body.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         var loading = false;
         Closing += (_, e) => { if (loading) { e.Cancel = false; Lifetime.Cancel(); } };
         async Task LoadAsync()
@@ -34,7 +105,19 @@ public sealed class PublicNoticesDialog : CompactDialog
             }
             finally { loading = false; }
         }
-        Action("새로고침", LoadAsync); Action("닫기", Close); OnLoad(LoadAsync);
+        // Keep the custom title-bar close action interactive while the server is slow.
+        // Disable duplicate requests without disabling the entire dialog.
+        async Task LoadSafelyAsync()
+        {
+            if (loading) return;
+            Status.Text = "";
+            try { await LoadAsync(); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Status.Text = ex.Message; }
+        }
+        var refresh = Button("새로고침", LoadSafelyAsync); PublicDialogDesign.StyleAction(refresh); actions.Children.Add(refresh);
+        var close = Button("닫기", () => { Close(); return Task.CompletedTask; }, true); PublicDialogDesign.StyleAction(close, true); actions.Children.Add(close);
+        Loaded += async (_, _) => await LoadSafelyAsync();
     }
 
     private static string NoticeDate(JsonElement notice)
@@ -51,22 +134,22 @@ public sealed class PublicNoticesDialog : CompactDialog
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
-        var dateText = new TextBlock { Text = date, FontSize = 12, Foreground = Brushes.DimGray, VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
+        var dateText = new TextBlock { Text = date, FontSize = 12, Foreground = Brush("#5F5F5F"), VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
         Grid.SetColumn(dateText, 1); header.Children.Add(dateText);
         var icon = new SvgViewbox { Width = 16, Height = 16, Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(icon, 2); header.Children.Add(icon);
-        var content = new Border { Background = Brushes.White, Margin = new(12, 0, 12, 8), Padding = new(12, 8, 12, 8),
-            Child = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, FontSize = 13 } };
+        var content = new Border { Background = Brushes.White, BorderBrush = Brush("#EAEAEA"), BorderThickness = new(1), Margin = new(12, 0, 12, 8), Padding = new(12, 8, 12, 8),
+            Child = new TextBlock { Text = body, TextWrapping = TextWrapping.Wrap, FontSize = 12 } };
         var card = new Expander { Header = header, Content = content, IsExpanded = expanded, Margin = new(0, 0, 0, 8), Template = NoticeTemplate() };
         AutomationProperties.SetName(card, title);
-        void UpdateIcon() => icon.Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/notice-chevron-{(card.IsExpanded ? "down" : "right")}.svg");
+        void UpdateIcon() => icon.Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/public-notice-chevron-{(card.IsExpanded ? "down" : "right")}.svg");
         card.Expanded += (_, _) => UpdateIcon(); card.Collapsed += (_, _) => UpdateIcon(); UpdateIcon();
         return card;
     }
 
     private static ControlTemplate NoticeTemplate() => (ControlTemplate)XamlReader.Parse("""
         <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" TargetType="Expander">
-          <Border x:Name="Card" Background="White" BorderBrush="#D6D6D6" BorderThickness="1" CornerRadius="4">
+          <Border x:Name="Card" Background="White" BorderBrush="#EAEAEA" BorderThickness="1">
             <StackPanel>
               <ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Content="{TemplateBinding Header}" HorizontalContentAlignment="Stretch" BorderThickness="0" Background="Transparent" Padding="0">
                 <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Stretch" /></Border></ControlTemplate></ToggleButton.Template>
@@ -74,34 +157,74 @@ public sealed class PublicNoticesDialog : CompactDialog
               <ContentPresenter x:Name="Details" Content="{TemplateBinding Content}" Visibility="Collapsed" />
             </StackPanel>
           </Border>
-          <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="Card" Property="Background" Value="#CCE4F7"/><Setter TargetName="Card" Property="BorderBrush" Value="#005FB8"/><Setter TargetName="Details" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
+          <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="Card" Property="Background" Value="#EFF6FC"/><Setter TargetName="Card" Property="BorderBrush" Value="#005FB8"/><Setter TargetName="Details" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
         </ControlTemplate>
         """);
 }
 public sealed class PublicInquiryDialog : CompactDialog
 {
-    public PublicInquiryDialog(SemojumApiClient api) : base("문의하기", 560, 480)
+    public PublicInquiryDialog(SemojumApiClient api, string? initialTitle = null) : base("문의하기", 540, 528, popover: true)
     {
-        var panel = new StackPanel { Margin = new(16) }; Body(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var layout = PublicDialogDesign.Frame(this, "문의하기", "public-inquiry-close.svg", "PublicInquiryClose", out var actions); Body(layout);
+        var panel = new StackPanel { Margin = new(16, 12, 16, 0) };
+        var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 1); layout.Children.Add(scroll);
+        panel.Children.Add(new TextBlock { Text = "로그인 없이도 보낼 수 있습니다. 적어 주신 메일 주소로 회신해드립니다.", Foreground = Brush("#5F5F5F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
         var type = Choices(["도입 문의", "오류 신고", "기타"], "기타"); var name = new TextBox { MaxLength = 50 }; var email = new TextBox { MaxLength = 100 };
         var initialType = type.SelectedItem;
-        var organization = new TextBox { MaxLength = 2000 }; var title = new TextBox { MaxLength = 2000 };
-        AutomationProperties.SetName(organization, "기관명"); AutomationProperties.SetName(title, "제목");
-        var message = new TextBox { MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 170, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Row(panel, "문의 유형", type); Row(panel, "이름 (선택)", name); Row(panel, "답변받을 이메일", email);
-        Row(panel, "기관명 (선택)", organization); Row(panel, "제목 (선택)", title); panel.Children.Add(message);
-        panel.Children.Add(new TextBlock { Text = "기관명과 제목은 문의 내용에 함께 전달됩니다. 현재 첨부파일은 보낼 수 없습니다.", TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) });
-        panel.Children.Add(new TextBlock { Text = "이름·이메일·문의 내용이 운영자에게 전달됩니다. 문의 이메일: contact@semo-jum.com", TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 0) });
+        var organization = new TextBox { MaxLength = 2000 }; var title = new TextBox { MaxLength = 2000, Text = initialTitle ?? "" };
+        var message = new TextBox { MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 92, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        void AddLabel(string label) => panel.Children.Add(new TextBlock { Text = label, Foreground = Brush("#5F5F5F"), FontSize = 12 });
+        void AddField(string label, TextBox field, string hint)
+        {
+            AddLabel(label); var element = PublicDialogDesign.TextField(field, label == "기관명 (선택)" ? "기관명" : label == "제목 (선택)" ? "제목" : label, hint);
+            element.Height = 32; panel.Children.Add(element);
+        }
+        AddLabel("분류"); type.Height = type.MinHeight = 32; type.Padding = new(11, 0, 25, 0); AutomationProperties.SetName(type, "분류");
+        var typeField = new Grid { Height = 32 }; typeField.Children.Add(type);
+        typeField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = Brush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
+        var chevron = DesignIcon("public-inquiry-chevron.svg", 16, 16); chevron.HorizontalAlignment = HorizontalAlignment.Right; chevron.Margin = new(0, 0, 5, 0); chevron.IsHitTestVisible = false; typeField.Children.Add(chevron); panel.Children.Add(typeField);
+        AddField("답 받을 주소", email, "name@example.com");
+        // The legacy anonymous API still accepts an optional sender name. Keep it
+        // alongside the organization field without displacing the remaining form.
+        var identity = new Grid();
+        identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new(2, GridUnitType.Star) });
+        identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new(1, GridUnitType.Star) });
+        void IdentityField(int column, string label, string accessibleName, TextBox field, string hint)
+        {
+            var group = new StackPanel { Margin = column == 0 ? new(0, 0, 4, 0) : new(4, 0, 0, 0) };
+            group.Children.Add(new TextBlock { Text = label, Foreground = Brush("#5F5F5F"), FontSize = 12 });
+            var entry = PublicDialogDesign.TextField(field, accessibleName, hint); entry.Height = 32; group.Children.Add(entry);
+            Grid.SetColumn(group, column); identity.Children.Add(group);
+        }
+        IdentityField(0, "기관명 (선택)", "기관명", organization, "(선택) 기관명");
+        IdentityField(1, "이름 (선택)", "이름 (선택)", name, "(선택) 이름");
+        panel.Children.Add(identity); AddField("제목 (선택)", title, "문의 제목을 입력해 주세요");
+        AddLabel("내용"); AutomationProperties.SetName(message, "내용"); message.Background = Brushes.White; message.BorderBrush = Brush("#EAEAEA"); message.Padding = new(11, 7, 11, 7); panel.Children.Add(message);
+        var attachmentRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 12, 0, 0) };
+        var attachmentContent = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        attachmentContent.Children.Add(DesignIcon("public-inquiry-upload.svg", 16, 16)); attachmentContent.Children.Add(new TextBlock { Text = "파일", Margin = new(8, 0, 0, 0) });
+        var attachment = new Button { Content = attachmentContent, Width = 104, Height = 32, MinWidth = 0, MinHeight = 0, Padding = new(0),
+            Background = Brushes.White, BorderBrush = Brush("#D1D1D1"), Template = SurfaceTemplate(0), IsEnabled = false, Opacity = .5,
+            ToolTip = "현재 공개 문의는 첨부 파일을 지원하지 않습니다." };
+        ToolTipService.SetShowOnDisabled(attachment, true);
+        AutomationProperties.SetAutomationId(attachment, "PublicInquiryAttachment"); AutomationProperties.SetName(attachment, "파일 첨부"); AutomationProperties.SetHelpText(attachment, "현재 공개 문의는 첨부 파일을 지원하지 않습니다.");
+        attachmentRow.Children.Add(attachment); attachmentRow.Children.Add(new TextBlock { Text = "첨부 기능은 아직 지원되지 않습니다.", Foreground = Brush("#5F5F5F"), Margin = new(12, 0, 0, 0), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(attachmentRow);
+        var consent = new CheckBox { Content = "문의 답변을 위한 개인정보 수집·이용에 동의합니다", Style = PublicDialogDesign.ConsentStyle(), Margin = new(0, 4, 0, 0) };
+        AutomationProperties.SetAutomationId(consent, "PublicInquiryConsent"); AutomationProperties.SetName(consent, "문의 답변을 위한 개인정보 수집·이용에 동의합니다"); panel.Children.Add(consent);
+        panel.Children.Add(new TextBlock { Text = "기관명과 제목은 문의 내용에 함께 전달됩니다. 이름·이메일·문의 내용은 운영자에게 전달됩니다.", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "문의 이메일: contact@semo-jum.com", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
         var submitted = false; var discardConfirmed = false;
         Closing += (_, e) =>
         {
             if (e.Cancel || submitted || discardConfirmed || Equals(type.SelectedItem, initialType) && string.IsNullOrWhiteSpace(name.Text) && string.IsNullOrWhiteSpace(email.Text)
-                && string.IsNullOrWhiteSpace(organization.Text) && string.IsNullOrWhiteSpace(title.Text) && string.IsNullOrWhiteSpace(message.Text)) return;
+                && string.IsNullOrWhiteSpace(organization.Text) && string.Equals(title.Text.Trim(), (initialTitle ?? "").Trim(), StringComparison.Ordinal) && string.IsNullOrWhiteSpace(message.Text)) return;
             var choice = NoticeDialog.Choose(this, "작성 중인 문의를 닫으시겠습니까?", "계속 작성하면 입력한 내용을 유지합니다.", ["계속 작성", "닫기"], width: 440);
             if (choice != 1) e.Cancel = true; else discardConfirmed = true;
         };
-        Action("문의 보내기", async () =>
+        async Task SubmitAsync()
         {
+            if (consent.IsChecked != true) throw new ArgumentException("문의 답변을 위한 개인정보 수집·이용에 동의해 주세요.");
             if (!MailAddress.TryCreate(email.Text.Trim(), out var address) || address.Address != email.Text.Trim() || string.IsNullOrWhiteSpace(message.Text)) throw new ArgumentException("이메일 주소와 문의 내용을 확인해 주세요.");
             var lines = new List<string>();
             if (!string.IsNullOrWhiteSpace(organization.Text)) lines.Add("기관명: " + organization.Text.Trim());
@@ -111,8 +234,9 @@ public sealed class PublicInquiryDialog : CompactDialog
             await api.SubmitInquiryAsync(new { type = type.SelectedIndex switch { 0 => "ONBOARDING", 1 => "ERROR_REPORT", _ => "ETC" }, name = name.Text.Trim(), email = address.Address, message = body, website = "" }, Lifetime.Token);
             submitted = true;
             MessageBox.Show(this, "문의를 접수했습니다.", "문의하기"); DialogResult = true;
-        }, true);
-        var cancel = Action("취소", Close); cancel.IsCancel = false;
+        }
+        var cancel = Button("취소", () => { Close(); return Task.CompletedTask; }); cancel.IsCancel = false; PublicDialogDesign.StyleAction(cancel); actions.Children.Add(cancel);
+        var send = Button("보내기", () => RunAsync(SubmitAsync), true); PublicDialogDesign.StyleAction(send, true); actions.Children.Add(send);
         PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape) { e.Handled = true; Close(); } };
     }
 }

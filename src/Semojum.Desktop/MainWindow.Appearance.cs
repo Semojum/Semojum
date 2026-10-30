@@ -14,16 +14,24 @@ public partial class MainWindow
         if (editor is not null) lastEditor = editor;
         var selected = new LinearGradientBrush(new GradientStopCollection
         {
-            new(Color.FromRgb(0, 95, 184), 0), new(Color.FromRgb(0, 95, 184), 2d / 31),
-            new(Color.FromRgb(204, 228, 247), 2d / 31), new(Color.FromRgb(204, 228, 247), 1)
+            new(Color.FromRgb(0, 95, 184), 0), new(Color.FromRgb(0, 95, 184), 2d / 35),
+            new(Colors.White, 2d / 35), new(Colors.White, 1)
         }, new Point(0, 0), new Point(0, 1));
-        var neutral = (Brush)FindResource("PanelBlue");
+        var neutral = new SolidColorBrush(Color.FromRgb(249, 249, 249));
         SourceHeader.Background = (editor == SourceEditor || editor == PageEditor.Editor) ? selected : neutral;
         OriginalHeader.Background = editor is null ? selected : neutral;
         Braille.Header.Background = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? selected : neutral;
-        SourcePanelTitle.FontWeight = editor == SourceEditor || editor == PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
-        OriginalPanelTitle.FontWeight = editor is null ? FontWeights.SemiBold : FontWeights.Normal;
-        Braille.PanelTitle.FontWeight = editor is not null && editor != SourceEditor && editor != PageEditor.Editor ? FontWeights.SemiBold : FontWeights.Normal;
+        var sourceActive = editor == SourceEditor || editor == PageEditor.Editor;
+        var originalActive = editor is null;
+        var brailleActive = !originalActive && !sourceActive;
+        SourcePanelTitle.FontWeight = sourceActive ? FontWeights.Bold : FontWeights.Normal;
+        OriginalPanelTitle.FontWeight = originalActive ? FontWeights.Bold : FontWeights.Normal;
+        Braille.PanelTitle.FontWeight = brailleActive ? FontWeights.Bold : FontWeights.Normal;
+        var ink = new SolidColorBrush(Color.FromRgb(26, 26, 26));
+        var muted = new SolidColorBrush(Color.FromRgb(95, 95, 95));
+        SourcePanelTitle.Foreground = sourceActive ? ink : muted;
+        OriginalPanelTitle.Foreground = originalActive ? ink : muted;
+        Braille.PanelTitle.Foreground = brailleActive ? ink : muted;
         if (detachedPane is not null) detachedPane.Header.Background = Braille.Header.Background;
         RefreshLinkedSource();
         RefreshEditorStatus();
@@ -31,17 +39,24 @@ public partial class MainWindow
 
     private void RefreshEditorStatus()
     {
-        if (session?.ActiveBlock is not { } block || CaretStatus is null) return;
+        if (session?.ActiveBlock is not { } block || CaretStatus is null)
+        {
+            if (OriginalPosition is not null) OriginalPosition.Text = "";
+            if (SourcePosition is not null) SourcePosition.Text = "";
+            return;
+        }
         var editor = lastEditor ?? SourceEditor;
         var braille = editor != SourceEditor && editor != PageEditor.Editor;
         var input = braille ? (Braille.SixDotEnabled ? "점형" : "점자") : "텍스트";
-        var pageNumbers = session.Blocks.Select(b => b.Page).Concat(session.PageStatuses.Keys).Concat(session.OriginalPages.Keys).Distinct().Order().ToArray();
-        var pages = pageNumbers.Length;
         OptionsLabel.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
         StatusOptions.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
         StatusInput.Text = $"입력 {input}";
-        StatusPage.Text = pageNumbers.SequenceEqual(Enumerable.Range(1, pages)) ? $"쪽 {block.Page} / {pages}" : $"쪽 {block.Page}";
-        StatusPage.ToolTip = $"원본 {block.Page}쪽 (총 {pages}쪽)";
+        var hasOriginal = session.IsTextJob != true && session.OriginalPages.ContainsKey(block.Page);
+        var confirmedTotal = session.IsTextJob != true && session.TotalOriginalPages is { } known && block.Page <= known ? known : (int?)null;
+        StatusPage.Text = confirmedTotal is { } pageTotal ? $"쪽 {block.Page} / {pageTotal}" : $"쪽 {block.Page}";
+        StatusPage.ToolTip = session.IsTextJob == true ? $"텍스트 {block.Page}쪽"
+            : hasOriginal ? confirmedTotal is { } t ? $"원본 {block.Page}쪽 (총 {t}쪽)" : $"원본 {block.Page}쪽 (전체 쪽수 미확인)"
+            : confirmedTotal is { } pendingTotal ? $"작업 {block.Page}쪽 (총 {pendingTotal}쪽 · 원본 미수신)" : $"작업 {block.Page}쪽 (원본 없음)";
         CaretStatus.Text = $"줄 {editor.TextArea.Caret.Line}";
         StatusCell.Text = $"칸 {editor.TextArea.Caret.Column} / {session.Layout.Columns}";
         if (lastGrid is not null)
@@ -52,13 +67,46 @@ public partial class MainWindow
             CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"}";
             StatusCell.Text = $"칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";
         }
-        OriginalPosition.Text = $"{block.Page}쪽 · 맞춤";
+        OriginalPosition.Text = session.IsTextJob == true || !session.OriginalPages.ContainsKey(block.Page) ? ""
+            : session.TotalOriginalPages is { } total && block.Page <= total ? $"{block.Page} / {total}쪽" : $"{block.Page}쪽";
+        OriginalPosition.ToolTip = OriginalPosition.Text;
+        UpdateSourcePosition(block);
+        RefreshPanelPageBars();
+    }
+
+    private void UpdateSourcePosition(Semojum.Core.EditorBlock block)
+    {
+        int line, column;
+        if (PageEditor.Visibility == Visibility.Visible)
+        {
+            if (!PageEditor.TryGetPageCaretPosition(block.Page, out line, out column))
+            { SourcePosition.Text = ""; SourcePosition.ToolTip = null; return; }
+        }
+        else
+        {
+            // The fallback editor holds one block rather than the whole page.
+            if (SourceEditor.Text != block.Source)
+            { SourcePosition.Text = ""; SourcePosition.ToolTip = null; return; }
+            line = SourceEditor.TextArea.Caret.Line + session.Blocks
+                .Where(b => b.Page == block.Page).TakeWhile(b => b != block)
+                .Sum(b => b.Source.Count(c => c == '\n') + 1);
+            column = SourceEditor.TextArea.Caret.Column;
+        }
+        SourcePosition.Text = $"{block.Page}쪽 {line}줄 {column}칸";
+        SourcePosition.ToolTip = SourcePosition.Text;
     }
 
     private void ZoomPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SourceEditor is null || ZoomPicker.SelectedItem is not string text) return;
         if (double.TryParse(text.TrimEnd('%'), out var percent)) SetFontSize(14 * percent / 100);
+    }
+
+    private void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (settingFontSize || SourceEditor is null) return;
+        var size = e.NewValue <= 50 ? 10 + e.NewValue * 4 / 50 : 14 + (e.NewValue - 50) * 18 / 50;
+        SetFontSize(size);
     }
 
     private void FontSizePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -81,6 +129,12 @@ public partial class MainWindow
     {
         SourceEditor.ShowLineNumbers = PageEditor.Editor.ShowLineNumbers = Braille.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
         if (detachedPane is not null) detachedPane.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
+        if (LineNumbersToggle.IsChecked)
+        {
+            ApplyLineNumberAppearance(SourceEditor, appearance); ApplyLineNumberAppearance(PageEditor.Editor, appearance);
+            ApplyLineNumberAppearance(Braille.Editor, appearance);
+            if (detachedPane is not null) ApplyLineNumberAppearance(detachedPane.Editor, appearance);
+        }
         Braille.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; Braille.GridView.InvalidateFaces();
         if (detachedPane is not null) { detachedPane.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; detachedPane.GridView.InvalidateFaces(); }
     }

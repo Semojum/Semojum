@@ -15,14 +15,14 @@ public sealed class MemoThreadDialog : CompactDialog
     internal Button ReplyButton { get; }
     internal TextBox ReplyInput { get; } = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 32, MaxLength = 2000, Padding = new(11, 7, 11, 7), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     public NavigationLocation? Destination { get; private set; }
+    internal void ApplyReplyAppearance(bool highContrast) => MemoTextInputAppearance.Apply(ReplyInput, highContrast);
     public MemoThreadDialog(EditorBlock block, string panel, int line, string lineText, Action<Action> edit,
         DocumentSession? model = null, bool showResolved = false, string? author = null) : base("메모", 360, 232, popover: true)
     {
-        var body = new DockPanel { Margin = new(11, 7, 11, 11) }; Body(body);
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Height = 24 };
-        DockPanel.SetDock(toolbar, Dock.Top); body.Children.Add(toolbar);
+        var body = new DockPanel { Margin = new(7, 7, 7, 11) }; Body(body);
         var input = ReplyInput;
-        var replyHost = new Grid { Margin = new(0, 14, 0, 0), Height = 32 };
+        MemoTextInputAppearance.Attach(this, input);
+        var replyHost = new Grid { Margin = new(4, 14, 4, 0), Height = 32 };
         replyHost.ColumnDefinitions.Add(new()); replyHost.ColumnDefinitions.Add(new() { Width = new(40) }); replyHost.Children.Add(input);
         var placeholder = new TextBlock { Text = "회신...", Foreground = Brushes.Gray, Margin = new(12, 7, 0, 0), IsHitTestVisible = false };
         replyHost.Children.Add(placeholder); input.TextChanged += (_, _) => placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -69,12 +69,6 @@ public sealed class MemoThreadDialog : CompactDialog
             edit(() => block.Memos[index] = shown with { Resolved = !shown.Resolved, ResolvedAt = shown.Resolved ? null : DateTimeOffset.Now });
             if (!shown.Resolved) Close(); else Refresh();
         }
-        Button Tool(string glyph, string label, Action action)
-        {
-            var button = Action(glyph, action); Actions.Children.Remove(button);
-            button.IsDefault = false; button.MinWidth = button.Width = 24; button.Height = 24; button.Padding = new(0); button.Margin = new(2, 0, 0, 0); button.ToolTip = label;
-            System.Windows.Automation.AutomationProperties.SetName(button, label); toolbar.Children.Add(button); return button;
-        }
         void Move(int delta)
         {
             if (model is null) return;
@@ -89,14 +83,15 @@ public sealed class MemoThreadDialog : CompactDialog
             if (a.LineIndex >= offsets.Length) { Status.Text = "원래 줄이 삭제된 메모입니다. 메모 목록에서 확인해 주세요."; return; }
             Destination = new(a.Block, targetPanel, offsets[a.LineIndex]); DialogResult = true;
         }
-        ResolveButton = Tool("✓", "해결·다시 열기", () =>
+        // The Figma popover has per-row actions instead of a separate top toolbar.
+        // Keep the command in the hidden action host for existing callers and expose it in the context menu.
+        ResolveButton = Action("해결·다시 열기", () =>
         {
             if (list.SelectedItem is not LineMemo m) return;
             Resolve(m);
         });
         if (model is null) ResolveButton.IsEnabled = false;
         else ResolveButton.SetBinding(IsEnabledProperty, new Binding(nameof(DocumentSession.IsReadOnly)) { Source = model, Converter = InverseReadOnly.Instance });
-        Tool("‹", "이전 메모", () => Move(-1)); Tool("›", "다음 메모", () => Move(1));
         ShowResolved.IsChecked = showResolved;
         ShowResolved.Checked += (_, _) => Refresh(); ShowResolved.Unchecked += (_, _) => Refresh();
         ReplyButton = Action("회신 추가", () =>
@@ -119,10 +114,15 @@ public sealed class MemoThreadDialog : CompactDialog
         };
         var menu = new ContextMenu(); body.ContextMenu = menu;
         menu.Items.Add(new MenuItem { Header = ShowResolved, StaysOpenOnClick = true });
-        void MenuAction(string label, Action callback)
+        MenuItem MenuAction(string label, Action callback)
         {
-            var item = new MenuItem { Header = label }; item.Click += (_, _) => { try { callback(); } catch (Exception ex) { Status.Text = ex.Message; } }; menu.Items.Add(item);
+            var item = new MenuItem { Header = label }; item.Click += (_, _) => { try { callback(); } catch (Exception ex) { Status.Text = ex.Message; } }; menu.Items.Add(item); return item;
         }
+        var resolveMenu = MenuAction("해결·다시 열기", () => ResolveButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)));
+        if (model is null) resolveMenu.IsEnabled = false;
+        else resolveMenu.SetBinding(IsEnabledProperty, new Binding(nameof(DocumentSession.IsReadOnly)) { Source = model, Converter = InverseReadOnly.Instance });
+        MenuAction("이전 메모", () => Move(-1));
+        MenuAction("다음 메모", () => Move(1));
         MenuAction("회신 추가", () => ReplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)));
         MenuAction("새 메모", () =>
         {
@@ -185,21 +185,21 @@ public sealed class MemoConversationView : ContentControl
         }
         void Add(string? author, string text, DateTimeOffset date, int? replyIndex)
         {
-            var row = new DockPanel { MinHeight = 54, Style = rowStyle };
+            var row = new DockPanel { MinHeight = 66, Margin = new(0, 0, 0, 6), Style = rowStyle };
             var delete = new Button { Content = DesignIcon("memo-row-trash.svg"), Width = 24, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0),
-                Style = actionStyle, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), IsEnabled = CanEdit, ToolTip = replyIndex is null ? "메모 삭제" : "답글 삭제" };
+                Style = actionStyle, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 2, 6, 0), Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), IsEnabled = CanEdit, ToolTip = replyIndex is null ? "메모 삭제" : "답글 삭제" };
             AutomationProperties.SetName(delete, replyIndex is null ? "메모 삭제" : "답글 삭제");
             delete.Click += (_, _) => DeleteAction?.Invoke(memo, replyIndex); DockPanel.SetDock(delete, Dock.Right); row.Children.Add(delete);
             if (replyIndex is null)
             {
                 var resolve = new Button { Content = DesignIcon("memo-row-resolve.svg"), Width = 24, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0),
-                    Style = actionStyle, VerticalAlignment = VerticalAlignment.Top, Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), IsEnabled = CanEdit, ToolTip = memo.Resolved ? "해결 되돌리기" : "메모 해결" };
+                    Style = actionStyle, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 2, 2, 0), Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), IsEnabled = CanEdit, ToolTip = memo.Resolved ? "해결 되돌리기" : "메모 해결" };
                 AutomationProperties.SetName(resolve, memo.Resolved ? "해결 되돌리기" : "메모 해결");
                 resolve.Click += (_, _) => ResolveAction?.Invoke(memo); DockPanel.SetDock(resolve, Dock.Right); row.Children.Add(resolve);
             }
-            var lines = new StackPanel(); row.Children.Add(lines);
+            var lines = new StackPanel { Margin = new(4, 4, 0, 4) }; row.Children.Add(lines);
             var heading = new StackPanel { Orientation = Orientation.Horizontal, Height = 20 };
-            heading.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(author) ? "작성자 미상" : author, FontWeight = FontWeights.SemiBold });
+            heading.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(author) ? "작성자 미상" : author, FontSize = 14, FontWeight = FontWeights.Bold });
             heading.Children.Add(new TextBlock { Text = DateTimeOffset.Now - date < TimeSpan.FromMinutes(1) ? "방금" : date.ToLocalTime().ToString("MM-dd HH:mm"), Foreground = new SolidColorBrush(Color.FromRgb(95, 100, 109)), Margin = new(8, 0, 0, 0), ToolTip = date.ToLocalTime().ToString("yyyy-MM-dd HH:mm") });
             lines.Children.Add(heading); lines.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, LineHeight = 16 }); messages.Children.Add(row);
         }

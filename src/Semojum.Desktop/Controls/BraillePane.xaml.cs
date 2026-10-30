@@ -20,6 +20,7 @@ public partial class BraillePane : UserControl, IDisposable
     public Func<DocumentSession, Task<ComposedBraille>>? ComposeGridAsync { get; set; }
     public Func<BlockSpan[], string, Task>? ReplaceGridAsync { get; set; }
     private bool gridBusy, gridPending;
+    private int? selectedFace;
     private long gridVersion = -1;
     public Func<GridCell, Task>? NavigateGridAsync { get; set; }
     private readonly SixDotInput chord = new();
@@ -35,13 +36,18 @@ public partial class BraillePane : UserControl, IDisposable
     public BraillePane()
     {
         InitializeComponent();
+        FacePageBar.SetIcons("panel-face-prev.svg", "panel-face-next.svg");
+        FacePageBar.PageRequested += page => { if (GridView.GoToFace(page)) { selectedFace = page; RefreshFacePageBar(); } };
+        FacePageBar.InvalidPageRequested += () => { if (session is not null) session.Status = "이동할 수 있는 점자 면 번호를 입력해 주세요."; };
         gridTimer.Tick += (_, _) => { gridTimer.Stop(); RefreshGrid(); };
         GridView.CellSelected += async cell =>
         {
+            selectedFace = GridView.CaretCoordinates?.Face;
             if (NavigateGridAsync is not null) await NavigateGridAsync(cell);
             else if (session is not null) { session.ActiveBlock = cell.Block; Editor.CaretOffset = Math.Min(cell.Offset, Editor.Document.TextLength); }
             GridView.Focus();
-            LayoutLabel.Text = GridView.DescribeCaret();
+            RefreshPositionLabel();
+            RefreshFacePageBar();
         };
         GridView.ReplaceAsync = async (spans, value) =>
         {
@@ -82,7 +88,7 @@ public partial class BraillePane : UserControl, IDisposable
     }
     public void Attach(DocumentSession model, EditorDocuments store)
     {
-        Dispose(); session = model; documents = store;
+        Dispose(); selectedFace = null; session = model; documents = store;
         session.PropertyChanged += SessionChanged;
         session.Blocks.CollectionChanged += GridBlocksChanged; ObserveGridBlocks(); RefreshGrid();
         SwitchBlock();
@@ -91,24 +97,25 @@ public partial class BraillePane : UserControl, IDisposable
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DocumentSession.ActiveBlock)) SwitchBlock();
-        if (e.PropertyName is nameof(DocumentSession.Layout) or nameof(DocumentSession.Options) or nameof(DocumentSession.FooterText) or nameof(DocumentSession.FooterRanges)) QueueGrid();
+        if (e.PropertyName is nameof(DocumentSession.Layout) or nameof(DocumentSession.Options) or nameof(DocumentSession.FooterText) or nameof(DocumentSession.FooterRanges) or nameof(DocumentSession.TotalOriginalPages)) QueueGrid();
         RefreshIndicators();
     }
     private void GridBlocksChanged(object? sender, NotifyCollectionChangedEventArgs e) { ObserveGridBlocks(); QueueGrid(); }
     private void ObserveGridBlocks()
     {
-        foreach (var b in gridBlocks.Where(b => session?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= GridBlockChanged; gridBlocks.Remove(b); }
-        if (session is not null) foreach (var b in session.Blocks.Where(b => !gridBlocks.Contains(b))) { b.PropertyChanged += GridBlockChanged; gridBlocks.Add(b); }
+        foreach (var b in gridBlocks.Where(b => session?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= GridBlockChanged; b.ReviewMarks.CollectionChanged -= GridReviewsChanged; gridBlocks.Remove(b); }
+        if (session is not null) foreach (var b in session.Blocks.Where(b => !gridBlocks.Contains(b))) { b.PropertyChanged += GridBlockChanged; b.ReviewMarks.CollectionChanged += GridReviewsChanged; gridBlocks.Add(b); }
     }
+    private void GridReviewsChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueGrid();
     private void GridBlockChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation) or nameof(EditorBlock.Source)) QueueGrid(); }
-    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); gridTimer.Stop(); gridTimer.Start(); }
+    private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); RefreshPositionLabel(); RefreshFacePageBar(); gridTimer.Stop(); gridTimer.Start(); }
     public async void RefreshGrid()
     {
         if (session is null) return;
         if (gridBusy) { gridPending = true; return; }
         var owner = session; var version = owner.ChangeVersion;
-        gridBusy = true; GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]);
+        gridBusy = true; GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); RefreshPositionLabel();
         try
         {
             var composition = ComposeGridAsync is null ? null : await ComposeGridAsync(owner);
@@ -119,13 +126,16 @@ public partial class BraillePane : UserControl, IDisposable
                 : BrailleGrid.Project(owner.Blocks, owner.Layout);
             gridVersion = version; GridView.CoordinatesCurrent = true; GridView.IsReadOnly = owner.IsReadOnly;
             GridView.ActiveBlock = owner.ActiveBlock; GridView.CaretOffset = Editor.CaretOffset;
-            if (GridView.IsKeyboardFocusWithin) LayoutLabel.Text = GridView.DescribeCaret();
+            selectedFace = GridView.CaretCoordinates?.Face;
+            RefreshFacePageBar();
+            RefreshPositionLabel();
             GridRefreshed?.Invoke();
         }
         catch (Exception ex)
         {
             if (owner != session) return;
             GridView.ItemsSource = null;
+            selectedFace = null; RefreshPositionLabel(); RefreshFacePageBar();
             owner.Status = "모눈 조판 실패: " + ex.Message;
         }
         finally
@@ -158,17 +168,32 @@ public partial class BraillePane : UserControl, IDisposable
     private void BlockChanged(object? sender, PropertyChangedEventArgs e) => RefreshIndicators();
     private void RefreshIndicators()
     {
-        if (session is null || active is null) return;
+        if (session is null || active is null) { LayoutLabel.Text = ""; return; }
         Editor.IsReadOnly = active.IsBrailleLocked || session.IsReadOnly;
         GridView.IsReadOnly = session.IsReadOnly || gridVersion != session.ChangeVersion;
         Editor.Options.ColumnRulerPosition = session.Layout.Columns;
-        LayoutLabel.Text = $"{session.Layout.Columns}칸 × {session.Layout.Lines}줄 · {Editor.TextArea.Caret.Line}줄 {Editor.TextArea.Caret.Column}칸";
         GridView.ActiveBlock = active; GridView.CaretOffset = Editor.CaretOffset; GridView.InvalidateFaces();
+        if (GridView.CoordinatesCurrent && GridView.CaretCoordinates?.Face is { } face) selectedFace = face;
+        RefreshPositionLabel();
+        RefreshFacePageBar();
         StateLabel.Text = active.State;
         var lineNumber = Math.Clamp(Editor.TextArea.Caret.Line, 1, Editor.Document.LineCount);
         var line = Editor.Document.GetLineByNumber(lineNumber);
         Editor.Foreground = active.HasManualBraille ? Brushes.Firebrick : NormalForeground;
         if (line.Length > session.Layout.Columns) StateLabel.Text += $" · 판면 초과 +{line.Length - session.Layout.Columns}칸";
+    }
+    private void RefreshPositionLabel()
+    {
+        // The hidden text editor is only the editing model. Its line/column
+        // need not match a composed braille face and may be stale while
+        // composition is being refreshed.
+        var position = GridView.CoordinatesCurrent ? GridView.CaretCoordinates : null;
+        LayoutLabel.Text = position is { } p ? $"{p.Face}면 {p.Line}줄 {p.Cell}칸" : "";
+    }
+    private void RefreshFacePageBar()
+    {
+        var pages = Enumerable.Range(1, GridView.Items.Count).ToArray();
+        FacePageBar.SetPages(pages, GridView.CoordinatesCurrent ? pages : [], selectedFace);
     }
     public void SetLinePreview(int line, string cells) => PreviewStrip.SetPreview(line, cells);
     public void SetLinePreviewVisible(bool visible) => PreviewStrip.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
@@ -199,7 +224,7 @@ public partial class BraillePane : UserControl, IDisposable
     {
         gridTimer.Stop();
         if (session is not null) { session.PropertyChanged -= SessionChanged; session.Blocks.CollectionChanged -= GridBlocksChanged; }
-        foreach (var b in gridBlocks) b.PropertyChanged -= GridBlockChanged;
+        foreach (var b in gridBlocks) { b.PropertyChanged -= GridBlockChanged; b.ReviewMarks.CollectionChanged -= GridReviewsChanged; }
         gridBlocks.Clear();
         if (active is not null) active.PropertyChanged -= BlockChanged;
         chord.Reset(); session = null; gridPending = false; gridVersion = -1; GridView.ResetSelection();

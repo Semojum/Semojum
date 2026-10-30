@@ -22,7 +22,7 @@ public partial class MainWindow
             target.InputBindings.Add(new KeyBinding(new RelayCommand(() => InsertSnippet(slot, SearchPanel.Text)), new KeyGesture(Key.D0 + i, ModifierKeys.Control)));
             target.InputBindings.Add(new KeyBinding(new RelayCommand(() => InsertSnippet(slot, SearchPanel.Braille)), new KeyGesture(Key.D0 + i, ModifierKeys.Alt)));
         }
-        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace"), (Key.G, "goto"), (Key.W, "closeDocument"), (Key.C, "copy"), (Key.X, "cut"), (Key.V, "paste") })
+        foreach (var (key, action) in new[] { (Key.N, "new"), (Key.O, "open"), (Key.S, "save"), (Key.F, "find"), (Key.H, "replace"), (Key.G, "goto"), (Key.W, "closeDocument"), (Key.C, "copy"), (Key.X, "cut"), (Key.V, "paste"), (Key.M, "memo") })
             target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync(action)), new KeyGesture(key, ModifierKeys.Control)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("appearance")), new KeyGesture(Key.S, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("colors")), new KeyGesture(Key.C, ModifierKeys.Alt)));
@@ -78,8 +78,8 @@ public partial class MainWindow
         var panels = new[]
         {
             (Panel: (FrameworkElement)OriginalPanel, Visible: OriginalToggle.IsChecked && !detachedPanels.ContainsKey(OriginalPanel), Weight: 380d, Minimum: 260d),
-            (Panel: (FrameworkElement)SourcePanel, Visible: SourceToggle.IsChecked && !detachedPanels.ContainsKey(SourcePanel), Weight: OriginalToggle.IsChecked ? 484d : 864d, Minimum: 300d),
-            (Panel: (FrameworkElement)BrailleContainer, Visible: BrailleToggle.IsChecked && detachedWindow is null, Weight: 576d, Minimum: 300d)
+            (Panel: (FrameworkElement)SourcePanel, Visible: SourceToggle.IsChecked && !detachedPanels.ContainsKey(SourcePanel), Weight: OriginalToggle.IsChecked ? 474d : 854d, Minimum: 300d),
+            (Panel: (FrameworkElement)BrailleContainer, Visible: BrailleToggle.IsChecked && detachedWindow is null, Weight: 586d, Minimum: 300d)
         };
         PanelGrid.MinWidth = panels.Where(p => p.Visible).Sum(p => p.Minimum);
         ResizePanelGrid();

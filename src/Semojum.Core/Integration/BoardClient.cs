@@ -22,6 +22,7 @@ public sealed record BoardNotifications(int UnreadCount, BoardNotification[] Ite
 
 public sealed class BoardClient(SemojumApiClient api)
 {
+    public string? CurrentLoginId => api.Account?.LoginId;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static T Read<T>(JsonElement e) => e.Deserialize<T>(Json) ?? throw new InvalidDataException("게시판 응답을 읽을 수 없습니다.");
     public async Task<BoardPage> ListAsync(int page, string field, string keyword, bool mine, CancellationToken ct = default) => Read<BoardPage>(

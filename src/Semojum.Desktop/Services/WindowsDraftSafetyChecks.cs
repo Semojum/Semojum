@@ -21,9 +21,15 @@ internal static class WindowsDraftSafetyChecks
         try
         {
             block.Source = "기존 원문"; block.Braille = "⠁"; block.Metadata = new(Type: "image", SelectedIndex: 0, Alternatives: drafts, Rules: [evidence]);
+            block.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Braille, 0, 1);
             await window.ExecuteAsync("drafts");
             window.DraftDockClose.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(block.Source == "기존 원문" && block.Metadata.Rules is [{ RuleId: "original" }], "Reapplying unchanged source preserves its original evidence");
+            check(block.Braille == "⠁" && block.ReviewMarks.Single().IsStale, "Applying an identical alternative invalidates the prior braille confirmation");
+            window.ReplayHistory();
+            check(block.ReviewMarks.Single() is { IsStale: false, OriginalText: "⠁" }, "Undo of identical alternative restores the previously confirmed braille");
+            window.ReplayHistory(true);
+            check(block.ReviewMarks.Single().IsStale, "Redo of identical alternative restores the stale confirmation");
             await window.ExecuteAsync("drafts"); ((RadioButton)window.DraftChoiceGrid.Children[1]).IsChecked = true;
             window.DraftDockClose.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(block.Source == "다른 원문" && block.Metadata.Rules is null && block.Metadata.Alternatives?.Length == 2 && AppliedRules.Select(block, 0, 0).Length == 0,

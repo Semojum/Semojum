@@ -19,7 +19,7 @@ public partial class MainWindow
         && (openDocuments.Any(other => !ReferenceEquals(other, context) && other.Model.JobId == id) || HasClosedJobRecovery(context));
     // The same window and commands can be exercised against an isolated HTTP service in Windows smoke checks.
     internal MainWindow(SemojumApiClient service) : this(smoke: true, testWithoutAccount: true)
-    { api = service; api.RefreshedIdentityAllowed = AutomaticLogin.IsEditorAllowed; jobs = new(service); }
+    { api = service; api.RefreshedIdentityAllowed = account => AutomaticLogin.IsSameDesktopArea(api.Account, account); api.RefreshRequiresIdentity = account => account.Role == "ROLE_ORG_ADMIN"; jobs = new(service); }
 
     private void CreditNotice_Close(object sender, RoutedEventArgs e) => session.CreditNotice = "";
     private async Task TranslateImportedTextAsync(OpenDocument context)
@@ -46,12 +46,43 @@ public partial class MainWindow
         catch (Exception ex) { model.ErrorNotice = model.Status = "TXT 점역 실패 · 원문은 유지됩니다: " + ex.Message; }
     }
     private void RefreshAccount() => AccountLabel.Text = api.Account is { } account ? account.LoginId : "로그인 안 됨";
-    private bool EnsureAccount()
+    private bool EnsureAccount(bool allowInstitution = false)
     {
-        if (api.Account is not null) return true;
-        var result = new AccountDialog(api, smoke ? null : accountCredentials, automaticLoginMessage) { Owner = this }.ShowDialog() == true;
-        automaticLoginMessage = null;
-        RefreshAccount(); return result;
+        while (true)
+        {
+            if (api.Account is null)
+            {
+                var signedIn = new AccountDialog(api, smoke ? null : accountCredentials, automaticLoginMessage, allowInstitution) { Owner = this }.ShowDialog() == true;
+                automaticLoginMessage = null;
+                if (!signedIn) { RefreshAccount(); return false; }
+            }
+            if (api.Account is { Role: "ROLE_ORG_ADMIN" })
+            {
+                if (!allowInstitution) return false;
+                var institution = new InstitutionWindow(api, LogoutInstitutionAsync) { Owner = this };
+                institution.ShowDialog();
+                if (institution.LogoutRequested) continue;
+                return false;
+            }
+            RefreshAccount();
+            return api.Account is { } account && AutomaticLogin.IsEditorAllowed(account);
+        }
+    }
+
+    private async Task<bool> LogoutInstitutionAsync()
+    {
+        try
+        {
+            if (smoke) await api.LogoutAsync();
+            else await AutomaticLogin.LogoutAsync(api, accountCredentials);
+            RefreshAccount();
+            return true;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show("저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message, "로그아웃");
+            return false;
+        }
     }
 
     private async Task OpenServerAsync()
@@ -172,9 +203,10 @@ public partial class MainWindow
                 .Concat(model.PendingServerPages.Values.SelectMany(p => p.Blocks.Select(b => b.Id))).DefaultIfEmpty(0).Max() + 1;
             while (true)
             {
-                model.JobStatus = status.OverallStatus;
+                ct.ThrowIfCancellationRequested();
+                if (!JobClient.ApplyReceivedStatus(model, status))
+                    throw new InvalidDataException("현재 문서와 다른 작업의 상태는 적용할 수 없습니다.");
                 model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 변환 완료)" : "";
-                foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
                 // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
                 // count twice nor shorten the estimate a second time (C-02).
                 var finishedSinceOpen = status.FinishedPages - initialFinished;
@@ -199,7 +231,7 @@ public partial class MainWindow
                     }
                     if (applyInitialChoices) foreach (var block in result.Blocks) VisualDraftSelection.ApplyInitial(block, model.Options);
                     var keepLocalPage = replacePages?.Contains(page.Key) == true && model.Blocks.Any(b => b.Page == page.Key
-                        && (b.ServerId is not null || !b.Metadata.IsBlocked || b.Source.Length > 0 || b.Braille.Length > 0 || b.Memos.Count > 0));
+                        && (b.ServerId is not null || !b.Metadata.IsBlocked || b.Source.Length > 0 || b.Braille.Length > 0 || b.Memos.Count > 0 || b.ReviewMarks.Count > 0));
                     if (keepLocalPage && !missingCreditResult)
                     {
                         // Both versions remain available: never replace local work or record the new server baseline as if it had been applied.
@@ -229,7 +261,14 @@ public partial class MainWindow
                     if (result.Blocks.Length == 0 && page.Value is "FAILED" or "BLOCKED")
                         result = result with { Blocks = [new EditorBlock { Id = nextId++, Page = page.Key, Heading = missingCreditResult ? "크레딧 소진 · 변환 대기" : "변환 실패 · 원본 확인", State = page.Value, IsBrailleLocked = true, Metadata = new(IsBlocked: true) }] };
                     if (result.Blocks.Length == 0) { loadedPages.Add(page.Key); MarkPageChecked(page.Key); continue; }
-                    if (waiting) { model.ActiveBlock = null; model.Blocks.Clear(); waiting = false; }
+                    if (waiting)
+                    {
+                        // The initial placeholder is blocked and empty. Never silently discard
+                        // local review data if a future flow changes that invariant.
+                        if (model.Blocks.Any(b => b.ReviewMarks.Count > 0))
+                            throw new InvalidOperationException("변환 대기 문서에 저장할 검토 표시가 있어 서버 결과를 자동 적용하지 않았습니다. 먼저 로컬 SMJ로 보관해 주세요.");
+                        model.ActiveBlock = null; model.Blocks.Clear(); waiting = false;
+                    }
                     // First-time results may arrive in different polls out of page order.
                     // Insert the whole page before later pages without disturbing their edits
                     // or the server's order of blocks within this page.
@@ -288,7 +327,7 @@ public partial class MainWindow
         finally { ReleaseSync(); model.Progress = null; }
     }
 
-    private async Task ShowJobOutcomeAsync(DocumentSession model, JobStatus status)
+    internal async Task ShowJobOutcomeAsync(DocumentSession model, JobStatus status)
     {
         if (resourcesReleased || session != model || status.OverallStatus is "CANCELLED" or "CANCELED") return;
         NoticeDialog? notice = status.CreditExhausted ? FileNotices.NoCredits() :
@@ -300,13 +339,13 @@ public partial class MainWindow
         notice.Owner = this; notice.ShowDialog();
         if (status.CreditExhausted)
         {
-            if (notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+            ShowCreditInquiry(notice);
         }
-        else if (status.FailedPages > 0)
+        else if (status.FailedPages > 0 && status.SucceededPages > 0)
         {
             if (notice.Choice == 0) await RestartJobAsync(model, retry: true);
         }
-        else if (status.SucceededPages == 0)
+        else if (status.OverallStatus == "FAILED")
         {
             if (notice.Choice == 0) await UploadAsync(openDocument?.UploadPaths);
             else if (notice.Choice == 1 && EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();
@@ -344,7 +383,7 @@ public partial class MainWindow
             }
             model.PendingRestart = new PendingRestart(false, restart.Pages);
             model.CreditNotice = "";
-            model.Status = $"{(retry ? "실패한 쪽 다시 변환" : "이어서 처리")} 요청 · {restart.Pages.Length}쪽 ({string.Join(", ", restart.Pages)}) · 성공한 쪽만 크레딧이 차감됩니다.";
+            model.Status = $"{(retry ? "실패한 쪽 다시 변환" : "이어서 처리")} 요청 · {restart.Pages.Length}쪽 ({string.Join(", ", restart.Pages)}) · 차감 내역은 마이페이지 사용량에서 확인해 주세요.";
             var status = await jobs.StatusAsync(model.JobId, ct);
             _ = MonitorJobAsync(context, status, null, replacePages: restart.Pages.ToHashSet());
         }
@@ -356,7 +395,7 @@ public partial class MainWindow
             var notice = ex.Code == "CREDIT4001" ? FileNotices.NoCredits()
                 : new NoticeDialog(retry ? "실패한 쪽을 다시 변환하지 못했습니다." : "이어서 처리하지 못했습니다.", $"{ex.Message} ({ex.Code})", ["닫기"], error: true);
             notice.Owner = this; notice.ShowDialog();
-            if (ex.Code == "CREDIT4001" && notice.Choice is 0 or 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+            if (ex.Code == "CREDIT4001") ShowCreditInquiry(notice);
         }
         catch (HttpRequestException)
         { model.ErrorNotice = model.PendingRestart is { Unconfirmed: true } ? UnconfirmedRestartNotice : "재개 상태를 확인하지 못했습니다. 확인 전에는 서버 저장을 할 수 없습니다."; }
@@ -365,13 +404,19 @@ public partial class MainWindow
         finally { context.PageSyncInProgress--; }
     }
 
+    private void ShowCreditInquiry(NoticeDialog notice)
+    {
+        if (notice.Choice is 0 or 1)
+            new PublicInquiryDialog(api, notice.Choice == 0 ? "크레딧 구매 문의" : null) { Owner = this }.ShowDialog();
+    }
+
     private async void ReviewPendingServerPages_Click(object sender, RoutedEventArgs e)
     {
         if (fileBusy || !session.HasPendingServerPages) return;
         var owner = session;
         var pages = owner.PendingServerPages.Values.OrderBy(p => p.Page).ToArray();
         var choice = NoticeDialog.Choose(this, "재개 결과와 로컬 교정 확인",
-            "재개 결과가 돌아온 쪽에 로컬 교정이나 메모가 있습니다. 서버 결과를 별도 탭에서 비교하거나, 현재 교정본을 별도 파일로 보관한 뒤 서버 결과를 적용할 수 있습니다. 해결 전에는 서버 저장이 차단됩니다.",
+            "재개 결과가 돌아온 쪽에 로컬 교정, 메모 또는 검토 표시가 있습니다. 서버 결과를 별도 탭에서 비교하거나, 현재 교정본을 별도 파일로 보관한 뒤 서버 결과를 적용할 수 있습니다. 서버 결과를 적용한 쪽의 기존 검토 표시는 백업 파일에만 남습니다. 해결 전에는 서버 저장이 차단됩니다.",
             ["서버 결과 별도 탭", "교정본 백업 후 적용", "닫기"], width: 560);
         if (choice == 0)
         {

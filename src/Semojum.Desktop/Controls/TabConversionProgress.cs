@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Semojum.Core;
 
@@ -28,7 +29,7 @@ internal sealed class TabConversionProgress : Grid, IDisposable
     public TabConversionProgress(DocumentSession model, Func<Task> cancelJob)
     {
         this.model = model;
-        trigger = new Button { Content = "◌", FontSize = 16, Width = 20, Height = 20, MinHeight = 20,
+        trigger = new Button { Content = "변환 중", FontSize = 11, Width = 48, Height = 20, MinHeight = 20,
             Padding = new(0), BorderThickness = new(0), Background = Brushes.Transparent,
             Foreground = (Brush)Application.Current.FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(trigger, "TabConversionProgress");
@@ -48,10 +49,28 @@ internal sealed class TabConversionProgress : Grid, IDisposable
         detail.Children.Add(text); Grid.SetColumn(cancel, 1); detail.Children.Add(cancel);
         var content = new StackPanel(); content.Children.Add(title); content.Children.Add(track); content.Children.Add(detail);
         card = new Border { Width = 320, Height = 108, Padding = new(15, 11, 15, 0), CornerRadius = new(8),
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 16, ShadowDepth = 8, Direction = 270, Opacity = 0.14 },
             Background = new SolidColorBrush(Color.FromRgb(251, 251, 251)),
             BorderBrush = new SolidColorBrush(Color.FromRgb(234, 234, 234)), BorderThickness = new(1), Child = content };
-        popup = new Popup { Placement = PlacementMode.Bottom, PlacementTarget = trigger, AllowsTransparency = true,
-            StaysOpen = true, Child = card };
+        AutomationProperties.SetAutomationId(card, "TabProgressCard");
+        System.Windows.Documents.TextElement.SetFontWeight(card, FontWeights.Normal);
+        var shadowBase = new Border { CornerRadius = new(8), Background = card.Background, IsHitTestVisible = false,
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 2, ShadowDepth = 0, Opacity = 0.1 } };
+        var popupLayers = new Grid { Width = 320, Height = 108, Margin = new(20) };
+        popupLayers.Children.Add(shadowBase); popupLayers.Children.Add(card);
+        popup = new Popup { Placement = PlacementMode.Custom, PlacementTarget = trigger, AllowsTransparency = true,
+            StaysOpen = true, Child = popupLayers };
+        popup.CustomPopupPlacementCallback = (size, target, _) =>
+        {
+            // Custom popup placement receives screen coordinates, including in mixed DPI contexts.
+            var origin = trigger.PointToScreen(new Point());
+            var extent = trigger.PointToScreen(new Point(100, 100));
+            var scaleX = Math.Abs(extent.X - origin.X) / 100;
+            var scaleY = Math.Abs(extent.Y - origin.Y) / 100;
+            var x = -68 * scaleX; // 48px Figma alignment plus 20px reserved for the shadow.
+            return [new(new Point(x, target.Height - 20 * scaleY), PopupPrimaryAxis.Vertical),
+                    new(new Point(x, -size.Height - 20 * scaleY), PopupPrimaryAxis.Vertical)];
+        };
         Children.Add(trigger); Children.Add(popup);
         closeTimer.Tick += (_, _) => { closeTimer.Stop(); if (!trigger.IsMouseOver && !card.IsMouseOver && !trigger.IsKeyboardFocusWithin && !card.IsKeyboardFocusWithin) popup.IsOpen = false; };
         void Open() { closeTimer.Stop(); if (model.Progress is not null) popup.IsOpen = true; }

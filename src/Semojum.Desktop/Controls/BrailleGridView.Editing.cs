@@ -7,9 +7,21 @@ namespace Semojum.Desktop.Controls;
 
 public sealed partial class BrailleGridView
 {
-    public IReadOnlyList<EditorBlock> Blocks { get; set; } = [];
+    private IReadOnlyList<EditorBlock> blocks = [];
+    public IReadOnlyList<EditorBlock> Blocks
+    {
+        get => blocks;
+        set
+        {
+            foreach (var block in blocks) { System.Collections.Specialized.CollectionChangedEventManager.RemoveHandler(block.Memos, MarkerMemosChanged); System.Collections.Specialized.CollectionChangedEventManager.RemoveHandler(block.ReviewMarks, MarkerMemosChanged); PropertyChangedEventManager.RemoveHandler(block, MarkerBlockChanged, ""); }
+            blocks = value;
+            foreach (var block in blocks) { System.Collections.Specialized.CollectionChangedEventManager.AddHandler(block.Memos, MarkerMemosChanged); System.Collections.Specialized.CollectionChangedEventManager.AddHandler(block.ReviewMarks, MarkerMemosChanged); PropertyChangedEventManager.AddHandler(block, MarkerBlockChanged, ""); }
+            InvalidateMarkerCache();
+        }
+    }
     public bool IsReadOnly { get; set; }
-    public bool CoordinatesCurrent { get; set; } = true;
+    private bool coordinatesCurrent = true;
+    public bool CoordinatesCurrent { get => coordinatesCurrent; set { if (coordinatesCurrent != value) { coordinatesCurrent = value; InvalidateFaces(); } } }
     public Func<BlockSpan[], string, Task>? ReplaceAsync { get; set; }
     public Action<EditorBlock, EditorBlock>? MoveBlock { get; set; }
     public Action<bool>? ReplayHistory { get; set; }

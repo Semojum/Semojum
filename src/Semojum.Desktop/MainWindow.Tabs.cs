@@ -1,9 +1,13 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Threading;
 using Semojum.Core;
 using Semojum.Desktop.Controls;
 using Semojum.Desktop.Services;
+using SharpVectors.Converters;
 
 namespace Semojum.Desktop;
 
@@ -96,7 +100,21 @@ public partial class MainWindow
         var context = new OpenDocument(model, new()) { Path = path, ShowOriginal = showOriginal, ShowUpload = showUpload };
         var header = new StackPanel { Orientation = Orientation.Horizontal };
         var label = new TextBlock { Margin = new(6, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-        void UpdateLabel() { label.Text = (model.IsReadOnly ? "[읽기 전용] " : "") + (model.IsDirty ? "● " : "") + model.Title; context.Tab.ToolTip = context.Path ?? model.Title; }
+        var closeIcon = new SvgViewbox { Width = 16, Height = 16, Stretch = Stretch.None, IsHitTestVisible = false };
+        var close = new Button
+        {
+            Style = (Style)FindResource("PanelButton"), MinHeight = 20, MinWidth = 20, Height = 20, Width = 20,
+            Padding = new(0), Margin = new(2, 0, 0, 0), Background = Brushes.Transparent, BorderBrush = Brushes.Transparent,
+            ToolTip = "문서 탭 닫기", Content = closeIcon
+        };
+        AutomationProperties.SetAutomationId(close, "DocumentTabClose");
+        void UpdateLabel()
+        {
+            label.Text = (model.IsReadOnly ? "[읽기 전용] " : "") + model.Title;
+            context.Tab.ToolTip = (context.Path ?? model.Title) + (model.IsDirty ? " · 저장되지 않음" : "");
+            AutomationProperties.SetName(context.Tab, model.Title + (model.IsDirty ? " · 저장되지 않음" : "") + (model.IsReadOnly ? " · 읽기 전용" : ""));
+            AutomationProperties.SetName(close, $"{model.Title} 탭 닫기");
+        }
         context.ProgressIndicator = new TabConversionProgress(model, () => CancelTabJobAsync(context));
         context.LabelListener = (_, e) =>
         {
@@ -104,12 +122,18 @@ public partial class MainWindow
             if (e.PropertyName is nameof(DocumentSession.Title) or nameof(DocumentSession.Progress)) context.ProgressIndicator.Refresh();
         };
         model.PropertyChanged += context.LabelListener;
-        var close = new Button { Content = "×", MinHeight = 20, Height = 20, Width = 22, Padding = new(0), Margin = new(2, 0, 0, 0) };
         close.Click += async (_, e) => { e.Handled = true; await CloseDocumentAsync(context); };
         header.Children.Add(label); header.Children.Add(context.ProgressIndicator); header.Children.Add(close); context.Tab.Header = header; context.Tab.Tag = context; UpdateLabel();
         tabSwitching = true;
         try { openDocuments.Add(context); DocumentTabs.Items.Add(context.Tab); }
         finally { tabSwitching = false; }
+        // SharpVectors can pump layout while loading SVGs. Wait until the document
+        // switch has completed before touching the icon, to avoid rendering the
+        // editor against mismatched old/new document buffers.
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(() =>
+        {
+            if (openDocuments.Contains(context)) closeIcon.Source = new Uri("pack://application:,,,/Semojum.Mockup;component/Assets/Figma/tab-close.svg");
+        }));
         return context;
     }
 

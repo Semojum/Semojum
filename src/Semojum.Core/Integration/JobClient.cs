@@ -66,6 +66,16 @@ public sealed record RemotePage(int Number, string Status, EditorBlock[] Blocks,
 /// <summary>V3.1 job boundary. Saving does not create a job or invoke AI.</summary>
 public sealed partial class JobClient(SemojumApiClient api)
 {
+    /// <summary>Apply a received status only to its own document and retain a confirmed source-page total.</summary>
+    public static bool ApplyReceivedStatus(DocumentSession model, JobStatus status)
+    {
+        if (string.IsNullOrEmpty(model.JobId) || !string.Equals(model.JobId, status.JobId, StringComparison.Ordinal)
+            || status.Pages.Keys.Any(page => page < 1)) return false;
+        model.TryApplyServerOriginalPageTotal(status.JobId, status.TotalPages, status.Pages.Keys);
+        model.JobStatus = status.OverallStatus;
+        foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
+        return true;
+    }
     public const long MaximumUploadBytes = 100L * 1024 * 1024;
     public async Task<JobCreated> CreateTextAsync(string fileName, DocumentSession settings, CancellationToken ct = default, string? formId = null)
     {

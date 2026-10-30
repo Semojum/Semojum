@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
@@ -17,21 +18,39 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     public Action<BlockSpan[], string>? Replace { get; set; }
     public Action<bool>? Replay { get; set; }
     public Action? InsertPageBreak { get; set; }
+    public event Action? ProjectionRestored;
     public bool IsSynchronizing => syncing || followingCaret;
     private bool followingCaret;
     private DocumentSession? model;
     private readonly HashSet<EditorBlock> observed = [];
-    private bool syncing, queued, selectedBlock;
+    private bool syncing, queued, selectedBlock, projectionSuppressed;
+    private bool showReviews = true;
+    private bool showMemos = true;
+    private readonly ReviewOverview overview;
+    internal ReviewOverview Overview => overview;
+    public bool ShowReviews { get => showReviews; set { if (showReviews == value) return; showReviews = value; InvalidateReviewPresentation(); } }
+    public bool ShowMemos { get => showMemos; set { if (showMemos == value) return; showMemos = value; overview.InvalidateMarkers(); } }
+    public bool OverviewHighContrast { get => overview.HighContrast; set { overview.HighContrast = value; overview.InvalidateVisual(); } }
     private int page;
     public ContinuousSourceEditor()
     {
-        Children.Add(Editor);
+        // Draw the overview over the real vertical scrollbar.  It is not hit-testable:
+        // the underlying native Track/Thumb still handles mouse, keyboard and UIA.
+        var host = new Grid(); host.Children.Add(Editor);
+        overview = new ReviewOverview(Editor, OverviewMarkers) { HorizontalAlignment = HorizontalAlignment.Right, Width = 12, IsHitTestVisible = false };
+        host.Children.Add(overview); Children.Add(host);
+        var scrollStyle = new Style(typeof(ScrollBar));
+        var vertical = new Trigger { Property = ScrollBar.OrientationProperty, Value = Orientation.Vertical };
+        vertical.Setters.Add(new Setter(WidthProperty, 12d)); scrollStyle.Triggers.Add(vertical);
+        Editor.Resources[typeof(ScrollBar)] = scrollStyle;
+        ColoredLineNumbers.SetReviewProvider(Editor.TextArea.TextView, ReviewKindForLine);
         NativeIme.Attach(Editor);
         Editor.Options.HighlightCurrentLine = true;
         Editor.TextArea.TextView.CurrentLineBackground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 245, 163));
         Editor.TextArea.TextView.CurrentLineBorder = null;
         Editor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         Editor.TextArea.TextView.ElementGenerators.Add(new IndentTagGenerator());
+        Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(ReviewRanges, () => ShowReviews, () => (Editor.SelectionStart, Editor.SelectionLength)));
         Editor.Document.UndoStack.SizeLimit = 0;
         Editor.PreviewKeyDown += (_, e) =>
         {
@@ -76,9 +95,73 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         }));
     }
     private EditorBlock[] Blocks() => model?.Blocks.Where(b => b.Page == page).ToArray() ?? [];
+    internal bool TryGetPageCaretPosition(int expectedPage, out int line, out int column)
+    {
+        line = column = 0;
+        // A queued update may still be showing the previous page or previous
+        // contents. Do not present its caret as a position in the new model.
+        if (model is null || syncing || page != expectedPage || Editor.Text != BlockRange.Text(Blocks(), SearchPanel.Text))
+        {
+            projectionSuppressed = true;
+            return false;
+        }
+        line = Editor.TextArea.Caret.Line;
+        column = Editor.TextArea.Caret.Column;
+        return true;
+    }
+    private IReadOnlyList<(int Start, ReviewMark Mark)> ReviewRanges()
+    {
+        // The page model can change before its queued editor refresh runs. Its
+        // offsets must not be rendered against the previous document snapshot.
+        if (ProjectionPending()) return [];
+        var result = new List<(int, ReviewMark)>(); var offset = 0;
+        foreach (var block in Blocks())
+        {
+            result.AddRange(block.ReviewMarks.Where(m => m.Panel == ReviewPanel.Text && !m.IsStale)
+                .Select(m => (offset + m.Start, m)));
+            offset += block.Source.Length + 1;
+        }
+        return result;
+    }
+    private ReviewKind? ReviewKindForLine(int line)
+    {
+        if (!ShowReviews) return null;
+        var kinds = Editor.TextArea.LeftMargins.OfType<MemoMargin>().FirstOrDefault()?.ManualKinds(line) ?? [];
+        // A pending correction/deletion must not be masked by an overlapping confirmation.
+        return kinds.Contains(ReviewKind.SuggestDeletion) ? ReviewKind.SuggestDeletion
+            : kinds.Contains(ReviewKind.SuggestCorrection) ? ReviewKind.SuggestCorrection
+            : kinds.Contains(ReviewKind.HumanConfirmed) ? ReviewKind.HumanConfirmed : null;
+    }
+    private IReadOnlyList<ReviewOverviewMarker> OverviewMarkers()
+    {
+        if (ProjectionPending() || model is null) return [];
+        var markers = new List<ReviewOverviewMarker>(); var offset = 0;
+        foreach (var block in Blocks())
+        {
+            if (showMemos && block.Memos.Any(m => m.Panel == "TEXT" && !m.Resolved))
+            {
+                var lines = DocumentNavigation.LineOffsets(block.Source);
+                foreach (var memo in block.Memos.Where(m => m.Panel == "TEXT" && !m.Resolved && m.LineIndex >= 0 && m.LineIndex < lines.Length))
+                    markers.Add(new(offset + lines[memo.LineIndex], 1, null));
+            }
+            if (showReviews)
+                foreach (var mark in block.ReviewMarks.Where(m => m.Panel == ReviewPanel.Text && !m.IsStale && Enum.IsDefined(m.Kind) && m.Start >= 0 && m.Length > 0 && m.Start <= block.Source.Length && m.Length <= block.Source.Length - m.Start && block.Source.AsSpan(m.Start, m.Length).SequenceEqual(m.OriginalText.AsSpan())))
+                    markers.Add(new(offset + mark.Start, mark.Length, mark.Kind));
+            offset += block.Source.Length + 1;
+        }
+        return markers;
+    }
+    private void InvalidateReviewPresentation()
+    {
+        Editor.TextArea.TextView.Redraw();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<ColoredLineNumbers>()) margin.InvalidateVisual();
+        overview.InvalidateMarkers();
+    }
     public (EditorBlock? Block, int Line) ResolveLine(int line)
     {
-        if (line < 0 || line >= Editor.Document.LineCount) return (null, 0);
+        // Visual lines may still belong to the previous document while the
+        // model is being replaced or a refresh is waiting on the dispatcher.
+        if (ProjectionPending() || line < 0 || line >= Editor.Document.LineCount) return (null, 0);
         var span = BlockRange.Select(Blocks(), SearchPanel.Text, Editor.Document.GetLineByNumber(line + 1).Offset, 0).FirstOrDefault();
         return span is null ? (null, 0) : (span.Block, span.Block.Source[..span.Start].Count(c => c == '\n'));
     }
@@ -95,9 +178,37 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
             Editor.CaretOffset = start + local + Math.Clamp(length, 0, block.Source.Length - local);
             Editor.ScrollToLine(Editor.Document.GetLineByOffset(start + local).LineNumber);
         }
-        finally { syncing = false; }
+        finally { syncing = false; RestoreProjectionIfReady(); }
     }
-    public BlockSpan[] Selection => BlockRange.Select(Blocks(), SearchPanel.Text, Editor.SelectionStart, Editor.SelectionLength);
+    public BlockSpan[] Selection
+    {
+        get
+        {
+            if (syncing || model is null) return [];
+            var blocks = Blocks();
+            // A refresh can still be queued after an explicit Refresh has already
+            // synchronized the editor. Conversely, matching lengths alone cannot
+            // prove that a queued refresh is safe to map to the current blocks.
+            if (Editor.Text != BlockRange.Text(blocks, SearchPanel.Text)) return [];
+            return BlockRange.Select(blocks, SearchPanel.Text, Editor.SelectionStart, Editor.SelectionLength);
+        }
+    }
+    private bool ProjectionPending()
+    {
+        if (!syncing && !queued) return false;
+        projectionSuppressed = true;
+        return true;
+    }
+    private void RestoreProjectionIfReady()
+    {
+        if (syncing || queued || !projectionSuppressed) return;
+        projectionSuppressed = false;
+        Editor.TextArea.TextView.Redraw();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.InvalidateVisual();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<ColoredLineNumbers>()) margin.InvalidateVisual();
+        overview.InvalidateMarkers();
+        ProjectionRestored?.Invoke();
+    }
     internal void SelectContext()
     {
         if (selectedBlock) { Editor.SelectAll(); return; }
@@ -127,14 +238,20 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     }
     private void Observe()
     {
-        foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; observed.Remove(b); }
-        if (model is not null) foreach (var b in model.Blocks.Where(b => !observed.Contains(b))) { b.PropertyChanged += Changed; observed.Add(b); }
+        foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; b.Memos.CollectionChanged -= MemosChanged; observed.Remove(b); }
+        if (model is not null) foreach (var b in model.Blocks.Where(b => !observed.Contains(b))) { b.PropertyChanged += Changed; b.ReviewMarks.CollectionChanged += ReviewsChanged; b.Memos.CollectionChanged += MemosChanged; observed.Add(b); }
     }
+    private void ReviewsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        InvalidateReviewPresentation();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.InvalidateVisual();
+    }
+    private void MemosChanged(object? sender, NotifyCollectionChangedEventArgs e) => overview.InvalidateMarkers();
     private void Changed(object? sender, PropertyChangedEventArgs e)
     { if (!syncing && e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Metadata)) QueueRefresh(); }
     private void QueueRefresh()
     {
-        if (queued) return; queued = true;
+        if (queued) return; queued = true; overview.InvalidateMarkers();
         Dispatcher.BeginInvoke(() => { queued = false; Refresh(); }, DispatcherPriority.DataBind);
     }
     public void Refresh()
@@ -151,12 +268,16 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
             }
             Editor.IsReadOnly = model.IsReadOnly;
         }
-        finally { syncing = false; }
+        finally
+        {
+            syncing = false;
+            RestoreProjectionIfReady();
+        }
     }
     public void Dispose()
     {
         if (model is not null) { model.PropertyChanged -= SessionChanged; model.Blocks.CollectionChanged -= BlocksChanged; }
-        foreach (var b in observed) b.PropertyChanged -= Changed;
-        observed.Clear(); model = null;
+        foreach (var b in observed) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; b.Memos.CollectionChanged -= MemosChanged; }
+        observed.Clear(); model = null; overview.InvalidateMarkers();
     }
 }

@@ -17,6 +17,7 @@ public sealed partial class EditorBlock : ObservableObject
     [ObservableProperty] private BlockMetadata metadata = new();
     [ObservableProperty] private BrailleTranslation? translation;
     public ObservableCollection<LineMemo> Memos { get; } = [];
+    public ObservableCollection<ReviewMark> ReviewMarks { get; } = [];
     [ObservableProperty] private string source = "";
     [ObservableProperty] private string braille = "";
     [ObservableProperty] private string memo = "";
@@ -26,13 +27,53 @@ public sealed partial class EditorBlock : ObservableObject
     public int SourceRevision { get; private set; }
     public int BrailleRevision { get; private set; }
     public int MetadataRevision { get; private set; }
+    // Advances even when newly translated cells compare equal and no property change fires.
+    public int BrailleConfirmationRevision { get; private set; }
     // Navigation state is captured on explicit save; moving the caret is not a content edit.
     public int SourceCaret { get; set; }
     public int BrailleCaret { get; set; }
 
+    partial void OnSourceChanging(string? oldValue, string newValue)
+    {
+        ReanchorReviews(ReviewPanel.Text, oldValue ?? "", newValue);
+        // A human's braille confirmation also refers to the corresponding source.
+        // Until rechecked, identical cells cannot prove the changed source is correct.
+        InvalidateBrailleConfirmations();
+    }
+    partial void OnBrailleChanging(string? oldValue, string newValue) => ReanchorReviews(ReviewPanel.Braille, oldValue ?? "", newValue);
     partial void OnSourceChanged(string value) => SourceRevision++;
     partial void OnBrailleChanged(string value) => BrailleRevision++;
     partial void OnMetadataChanged(BlockMetadata value) => MetadataRevision++;
+    private void ReanchorReviews(ReviewPanel panel, string before, string after)
+    {
+        for (var i = 0; i < ReviewMarks.Count; i++)
+        {
+            var mark = ReviewMarks[i];
+            if (mark.Panel != panel) continue;
+            var updated = ReviewAnchors.Reanchor(mark, before, after);
+            if (updated != mark) ReviewMarks[i] = updated;
+        }
+    }
+    public void InvalidateBrailleConfirmations()
+    {
+        BrailleConfirmationRevision++;
+        for (var i = 0; i < ReviewMarks.Count; i++)
+        {
+            var mark = ReviewMarks[i];
+            if (mark.Panel == ReviewPanel.Braille && mark.Kind == ReviewKind.HumanConfirmed && !mark.IsStale)
+                ReviewMarks[i] = mark with { Length = 0, IsStale = true };
+        }
+    }
+    public ReviewMark AddReviewMark(ReviewKind kind, ReviewPanel panel, int start, int length)
+    {
+        var text = panel == ReviewPanel.Text ? Source : Braille;
+        if (!Enum.IsDefined(kind) || !Enum.IsDefined(panel) || start < 0 || length <= 0 || start > text.Length || length > text.Length - start)
+            throw new ArgumentOutOfRangeException(nameof(start), "검토할 범위를 선택해 주세요.");
+        var mark = new ReviewMark(Guid.NewGuid().ToString("N"), kind, panel, start, length, text.Substring(start, length));
+        if (!ReviewAnchors.Valid(mark, Source, Braille)) throw new ArgumentException("문자를 나누지 않는 검토 범위를 선택해 주세요.");
+        ReviewMarks.Add(mark);
+        return mark;
+    }
     public void EditBraille(string value)
     {
         if (IsBrailleLocked || Braille == value) return;
@@ -51,9 +92,9 @@ public sealed partial class DocumentSession : ObservableObject
         Blocks.CollectionChanged += (_, _) =>
         {
             foreach (var block in observedBlocks.Where(b => !Blocks.Contains(b)).ToArray())
-            { block.PropertyChanged -= BlockChanged; block.Memos.CollectionChanged -= MemosChanged; observedBlocks.Remove(block); }
+            { block.PropertyChanged -= BlockChanged; block.Memos.CollectionChanged -= MemosChanged; block.ReviewMarks.CollectionChanged -= MemosChanged; observedBlocks.Remove(block); }
             foreach (var block in Blocks.Where(b => !observedBlocks.Contains(b)))
-            { block.PropertyChanged += BlockChanged; block.Memos.CollectionChanged += MemosChanged; observedBlocks.Add(block); }
+            { block.PropertyChanged += BlockChanged; block.Memos.CollectionChanged += MemosChanged; block.ReviewMarks.CollectionChanged += MemosChanged; observedBlocks.Add(block); }
             MarkChanged();
         };
     }
@@ -75,17 +116,58 @@ public sealed partial class DocumentSession : ObservableObject
     [ObservableProperty] private ConversionProgress? progress;
     [ObservableProperty] private string creditNotice = "";
     [ObservableProperty] private string errorNotice = "";
+    [ObservableProperty] private int? totalOriginalPages;
+    partial void OnTotalOriginalPagesChanged(int? value) => MarkChanged();
     [ObservableProperty] private PageLayout layout = new();
     [ObservableProperty] private BrailleOptions options = new();
     [ObservableProperty] private string footerText = "";
     [ObservableProperty] private FooterRange[] footerRanges = [];
-    public string? JobId { get; set; }
+    private string? jobId;
+    public string? JobId
+    {
+        get => jobId;
+        set
+        {
+            if (string.Equals(jobId, value, StringComparison.Ordinal)) return;
+            jobId = value;
+            // The old job's page count must never be shown for a different job.
+            TotalOriginalPages = null;
+            OnPropertyChanged(nameof(JobId));
+        }
+    }
     public string? OwnerLoginId { get; set; }
-    public bool? IsTextJob { get; set; }
+    private bool? isTextJob;
+    public bool? IsTextJob
+    {
+        get => isTextJob;
+        set
+        {
+            if (isTextJob == value) return;
+            isTextJob = value;
+            if (value == true) TotalOriginalPages = null;
+            OnPropertyChanged(nameof(IsTextJob));
+        }
+    }
     public string JobStatus { get; set; } = "COMPLETED";
     public bool CancellationRequested { get; set; }
     public Dictionary<int, string> PageStatuses { get; } = [];
     public Dictionary<int, OriginalPage> OriginalPages { get; } = [];
+    /// <summary>Accept a positive total only from the same job and only when it agrees with known page numbers.</summary>
+    public bool TryApplyServerOriginalPageTotal(string? jobId, int total, IEnumerable<int> responsePages)
+    {
+        if (IsTextJob == true || string.IsNullOrEmpty(JobId) || !string.Equals(JobId, jobId, StringComparison.Ordinal)) return false;
+        var received = responsePages.ToArray();
+        var known = PageStatuses.Keys.Concat(OriginalPages.Keys).ToArray();
+        if (total <= 0 || received.Any(p => p < 1 || p > total) || known.Any(p => p < 1 || p > total))
+        {
+            // Conflicting information is not a confirmed total. Drop only
+            // this optional metadata before applying any received page status.
+            TotalOriginalPages = null;
+            return false;
+        }
+        TotalOriginalPages = total;
+        return true;
+    }
     /// <summary>Blocks the server is known to hold per page (last read or last confirmed save). Drives deletion and braille-panel planning.</summary>
     public Dictionary<int, ServerBlockRecord[]> ServerPages { get; } = [];
     public Dictionary<int, PendingServerPage> PendingServerPages { get; } = [];
@@ -122,7 +204,7 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<int, double?> OcrConfidence { get; } = [];
     /// <summary>Last "kept locally only" notice shown for this document, so repeated saves do not repeat the same dialog. Not persisted.</summary>
     public string? LastSyncNotice { get; set; }
-    public string WindowTitle => $"{(IsDirty ? "● " : "")}{Title} — 세모점";
+    public string WindowTitle => $"{(IsDirty ? "*" : "")}{Title} — 세모점";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnLayoutChanged(PageLayout value) { ChangeVersion++; IsDirty = true; }

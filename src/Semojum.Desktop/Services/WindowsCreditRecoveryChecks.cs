@@ -57,6 +57,121 @@ internal static class WindowsCreditRecoveryChecks
         await CheckSameJobTabsAsync(directory, check);
         await CheckClosedPendingTabAsync(directory, check);
         await CheckInitialArrivalOrderAsync(check);
+        await CheckStaleReviewRecoveryAsync(directory, check);
+        await CheckCreditInquiryRoutesAsync(check);
+    }
+
+    private static async Task CheckCreditInquiryRoutesAsync(Action<bool, string> check)
+    {
+        var fixture = new HeldResumeFixture(); using var http = new HttpClient(fixture);
+        var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
+        var window = new MainWindow(api); window.Show();
+        try
+        {
+            for (var choice = 0; choice < 3; choice++)
+            {
+                var selected = choice; var ticks = 0; var openedNotice = false; var openedInquiry = false;
+                string? inquiryTitle = null; Exception? error = null;
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+                timer.Tick += (_, _) =>
+                {
+                    try
+                    {
+                        if (!openedNotice && Application.Current.Windows.OfType<NoticeDialog>()
+                            .FirstOrDefault(d => d.Owner == window && d.IsVisible && d.MessageText.Contains("크레딧이 모두", StringComparison.Ordinal)) is { } notice)
+                        {
+                            openedNotice = true;
+                            notice.ActionButtons[selected].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        }
+                        else if (openedNotice && !openedInquiry && Application.Current.Windows.OfType<PublicInquiryDialog>()
+                            .FirstOrDefault(d => d.Owner == window && d.IsVisible) is { } inquiry)
+                        {
+                            openedInquiry = true;
+                            inquiryTitle = Descendants(inquiry).OfType<TextBox>().Single(t =>
+                                System.Windows.Automation.AutomationProperties.GetName(t) == "제목").Text;
+                            inquiry.Close();
+                        }
+                        if (++ticks >= 400) throw new TimeoutException("Credit inquiry route did not close");
+                    }
+                    catch (Exception ex)
+                    {
+                        error = ex; timer.Stop();
+                        foreach (var owned in window.OwnedWindows.Cast<Window>().Where(w => w.IsVisible).ToArray()) owned.Close();
+                    }
+                };
+                timer.Start();
+                try { await window.ShowJobOutcomeAsync(window.Session, new JobStatus("fixture", 1, 0, "FAILED", new() { [1] = "BLOCKED" }, true)); }
+                finally { timer.Stop(); }
+                check(error is null && openedNotice && openedInquiry == (choice != 2)
+                    && (choice == 0 ? inquiryTitle == "크레딧 구매 문의" : choice == 1 ? inquiryTitle == "" : inquiryTitle is null),
+                    $"Credit notice action {choice} opens its intended inquiry or closes without sending");
+            }
+            check(fixture.InquiryRequests == 0, "Opening or cancelling credit inquiry actions never submits a message");
+        }
+        finally { fixture.Cancel(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
+    }
+
+    private static async Task CheckStaleReviewRecoveryAsync(string directory, Action<bool, string> check)
+    {
+        var fixture = new Fixture("resume-success"); using var http = new HttpClient(fixture);
+        var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
+        var window = new MainWindow(api); var choice = -1; var notices = 0;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+        timer.Tick += (_, _) =>
+        {
+            foreach (Window dialog in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == window && w.IsVisible).ToArray())
+            {
+                if (dialog is TextValueDialog)
+                {
+                    Descendants(dialog).OfType<TextBox>().Single().Text = "review-recovery";
+                    Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "확인")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                else if (dialog is NoticeDialog notice && notice.MessageText == "재개 결과와 로컬 교정 확인" && choice >= 0)
+                { var selected = choice; choice = -1; notice.ActionButtons[selected].RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+                else if (dialog is AccountDialog account)
+                { check(false, "Recovery fixture unexpectedly requested interactive login"); account.Close(); }
+                else if (dialog is NoticeDialog other) { notices++; other.Close(); }
+            }
+        };
+        var backup = Path.Combine(directory, "review-recovery-" + Guid.NewGuid().ToString("N") + ".smj");
+        window.Show(); timer.Start();
+        try
+        {
+            check(api.Account is { LoginId: "fixture" }, "Recovery fixture starts with an authenticated account");
+            await window.ExecuteAsync("serverOpen");
+            var deadline = DateTime.UtcNow.AddSeconds(8);
+            while (notices == 0 && DateTime.UtcNow < deadline) await Task.Delay(25);
+            var model = window.Session;
+            if (model.Blocks.FirstOrDefault(b => b.Page == 2) is not { } old)
+            { check(false, "Recovery fixture received the blocked second page"); return; }
+            old.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Text, 0, 1);
+            old.Source = ""; old.Braille = ""; old.ServerId = null;
+            old.Metadata = old.Metadata with { IsBlocked = true };
+            check(old.ReviewMarks is [{ IsStale: true, Length: 0 }] && old.Memos.Count == 0,
+                "Resume fixture contains only a stale review on an empty blocked placeholder");
+            Descendants(window.CreditBanner).OfType<Button>().Single(b => Equals(b.Content, "이어서 처리")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            deadline = DateTime.UtcNow.AddSeconds(8);
+            while (!model.HasPendingServerPages && DateTime.UtcNow < deadline) await Task.Delay(25);
+            check(model.HasPendingServerPages && model.Blocks.Contains(old) && old.ReviewMarks.Count == 1,
+                "Server resume cannot silently replace an empty placeholder that retains a stale review");
+            choice = 2; window.ReviewPendingServerPages.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(model.HasPendingServerPages && old.ReviewMarks.Count == 1, "Closing resume conflict retains the original stale review");
+            window.PendingBackupPicker = () => null; choice = 1;
+            window.ReviewPendingServerPages.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(model.HasPendingServerPages && old.ReviewMarks.Count == 1, "Canceling backup cannot replace the original stale review");
+            window.PendingBackupPicker = () => backup; choice = 1;
+            window.ReviewPendingServerPages.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            deadline = DateTime.UtcNow.AddSeconds(8);
+            while (model.HasPendingServerPages && DateTime.UtcNow < deadline) await Task.Delay(25);
+            var saved = File.Exists(backup) ? await SmjFile.LoadAsync(backup) : null;
+            check(!model.HasPendingServerPages && saved?.Blocks.Any(b => b.Page == 2 && b.ReviewMarks is [{ IsStale: true }]) == true,
+                "Applying a resumed server result first preserves the stale review in the explicit SMJ backup");
+        }
+        finally
+        {
+            timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close();
+            if (File.Exists(backup)) File.Delete(backup);
+        }
     }
 
     internal static async Task CheckInitialArrivalOrderAsync(Action<bool, string> check)
@@ -348,17 +463,21 @@ internal static class WindowsCreditRecoveryChecks
                 deadline = DateTime.UtcNow.AddSeconds(5);
                 while (!fixture.StatusStarted && DateTime.UtcNow < deadline) await Task.Delay(25);
                 check(fixture.StatusStarted && window.Session.PendingRestart is { Unconfirmed: false }, "The accepted resume retains its confirmed target pages");
+                check(window.Session.Status.Contains("1쪽 (2)", StringComparison.Ordinal)
+                    && window.Session.Status.Contains("마이페이지 사용량", StringComparison.Ordinal)
+                    && !window.Session.Status.Contains("성공한 쪽만", StringComparison.Ordinal),
+                    "The accepted resume reports its actual page and directs users to usage without promising a charge rule");
             }
             await window.ExecuteAsync("save");
             await window.OpenAsync(path2);
             await window.ExecuteAsync("save");
             check(fixture.SaveRequests == 0 && File.Exists(path2), "The second copy saves locally but cannot save to the server during resume");
-            var original = window.DocumentTabs.Items.OfType<TabItem>().First(t => (t.ToolTip as string) == path1);
+            var original = window.DocumentTabs.Items.OfType<TabItem>().First(t => (t.ToolTip as string) is { } tooltip && (tooltip == path1 || tooltip == path1 + " · 저장되지 않음"));
             ((StackPanel)original.Header).Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             deadline = DateTime.UtcNow.AddSeconds(5);
             while (window.DocumentTabs.Items.Contains(original) && DateTime.UtcNow < deadline) await Task.Delay(25);
             check(!window.DocumentTabs.Items.Contains(original), "The original pending tab can close after local save");
-            window.DocumentTabs.SelectedItem = window.DocumentTabs.Items.OfType<TabItem>().Single(t => (t.ToolTip as string) == path2);
+            window.DocumentTabs.SelectedItem = window.DocumentTabs.Items.OfType<TabItem>().Single(t => (t.ToolTip as string) is { } tooltip && (tooltip == path2 || tooltip == path2 + " · 저장되지 않음"));
             fixture.HoldSave = true;
             var finalSave = window.ExecuteAsync("save");
             deadline = DateTime.UtcNow.AddSeconds(5);
@@ -452,6 +571,7 @@ internal static class WindowsCreditRecoveryChecks
         public bool ResumeStarted { get; private set; }
         public bool StatusStarted { get; private set; }
         public int SaveRequests { get; private set; }
+        public int InquiryRequests { get; private set; }
         public void AcceptResume() => resume.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK)
         { Content = new StringContent("{\"isSuccess\":true,\"result\":{\"jobId\":\"held-job\",\"status\":\"IN_PROGRESS\",\"totalPages\":2,\"resumedPages\":[2]}}", Encoding.UTF8, "application/json") });
         public void Cancel() { resume.TrySetCanceled(); status.TrySetCanceled(); }
@@ -461,6 +581,7 @@ internal static class WindowsCreditRecoveryChecks
             if (path.EndsWith("/login")) return Reply("{\"isSuccess\":true,\"result\":{\"accessToken\":\"fixture\",\"refreshToken\":\"fixture\",\"role\":\"ROLE_USER\"}}");
             if (path.EndsWith("/resume")) { ResumeStarted = true; return resume.Task; }
             if (path.EndsWith("/status")) { StatusStarted = true; return status.Task; }
+            if (path.EndsWith("/public/inquiries")) { InquiryRequests++; return Reply("{\"isSuccess\":true,\"result\":{}}"); }
             if (path.EndsWith("/save")) { SaveRequests++; return HoldSave ? heldSave.Task : Reply("{\"isSuccess\":true,\"result\":{\"savedPages\":1,\"failedPages\":[]}}"); }
             throw new InvalidOperationException("Unexpected fixture path: " + path);
         }

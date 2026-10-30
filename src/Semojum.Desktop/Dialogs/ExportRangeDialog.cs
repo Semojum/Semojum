@@ -29,7 +29,7 @@ public sealed class ExportRangeDialog : CompactDialog
         this.originalNumbers = originalNumbers; this.brailleCount = brailleCount;
         if (Content is Border frame) { frame.CornerRadius = new(8); frame.BorderBrush = Brush("#EAEAEA"); frame.Background = Brush("#F3F3F3"); }
         var layout = new Grid();
-        layout.RowDefinitions.Add(new() { Height = new(56) });
+        layout.RowDefinitions.Add(new() { Height = new(55) });
         layout.RowDefinitions.Add(new() { Height = new(204) });
         layout.RowDefinitions.Add(new() { Height = new(64) }); Body(layout);
 
@@ -40,9 +40,9 @@ public sealed class ExportRangeDialog : CompactDialog
         close.Template = SurfaceTemplate(0); AutomationProperties.SetName(close, "닫기"); close.Click += (_, _) => Close(); title.Children.Add(close);
         layout.Children.Add(title);
 
-        var body = new StackPanel { Margin = new(24, 16, 24, 0) }; Grid.SetRow(body, 1); layout.Children.Add(body);
+        var body = new StackPanel { Margin = new(24, 15, 24, 0) }; Grid.SetRow(body, 1); layout.Children.Add(body);
         body.Children.Add(new TextBlock { Text = "범위", Foreground = Brush("#5F5F5F"), FontSize = 12, Margin = new(0, 0, 0, 4) });
-        var form = new Grid { Margin = new(16, 12, 16, 8) };
+        var form = new Grid { Margin = new(16, 12, 16, 4) };
         form.ColumnDefinitions.Add(new() { Width = new(134) }); form.ColumnDefinitions.Add(new());
         for (var i = 0; i < 4; i++) form.RowDefinitions.Add(new() { Height = new(36) });
         body.Children.Add(new Border { Height = 160, CornerRadius = new(6), Background = Brush("#F9F9F9"), Child = form });
@@ -89,23 +89,33 @@ public sealed class ExportRangeDialog : CompactDialog
         _ = UpdateBoundsAsync();
     }
 
-    private static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;
-    private static SvgViewbox DesignIcon(string name, double width, double height) => new()
+    internal static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;
+    internal static SvgViewbox DesignIcon(string name, double width, double height) => new()
     {
         Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{name}"),
         Width = width, Height = height, Stretch = Stretch.None
     };
-    private static ControlTemplate SurfaceTemplate(double radius)
+    internal static ControlTemplate SurfaceTemplate(double radius, bool stretchContent = false)
     {
-        var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius));
+        var root = new FrameworkElementFactory(typeof(Grid));
+        var outer = new FrameworkElementFactory(typeof(Border), "FocusOuter"); outer.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius + 3));
+        outer.SetValue(Border.BorderThicknessProperty, new Thickness(2)); outer.SetValue(Border.BorderBrushProperty, Brush("#1A1A1A")); outer.SetValue(MarginProperty, new Thickness(-3)); outer.SetValue(VisibilityProperty, Visibility.Collapsed); outer.SetValue(IsHitTestVisibleProperty, false); root.AppendChild(outer);
+        var inner = new FrameworkElementFactory(typeof(Border), "FocusInner"); inner.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius + 1)); inner.SetValue(Border.BorderThicknessProperty, new Thickness(1)); inner.SetValue(Border.BorderBrushProperty, Brushes.White); inner.SetValue(MarginProperty, new Thickness(-1)); inner.SetValue(VisibilityProperty, Visibility.Collapsed); inner.SetValue(IsHitTestVisibleProperty, false); root.AppendChild(inner);
+        var border = new FrameworkElementFactory(typeof(Border), "Surface"); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius));
         border.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        border.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
-        border.SetBinding(Border.BorderBrushProperty, new Binding(nameof(BorderBrush)) { RelativeSource = RelativeSource.TemplatedParent });
-        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        border.SetBinding(Border.BackgroundProperty, FigmaButtonStateBrush.Binding());
+        border.SetBinding(Border.BorderBrushProperty, FigmaButtonStateBrush.Binding(true));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(HorizontalAlignmentProperty, stretchContent ? HorizontalAlignment.Stretch : HorizontalAlignment.Center);
+        content.SetBinding(System.Windows.Documents.TextElement.ForegroundProperty, FigmaButtonForegroundBrush.Binding());
+        content.SetBinding(OpacityProperty, FigmaDisabledIconOpacity.Binding());
         content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(content);
-        return new ControlTemplate(typeof(Button)) { VisualTree = border };
+        root.AppendChild(border);
+        var template = new ControlTemplate(typeof(Button)) { VisualTree = root };
+        var focus = new Trigger { Property = IsKeyboardFocusedProperty, Value = true };
+        focus.Setters.Add(new Setter(VisibilityProperty, Visibility.Visible, "FocusOuter")); focus.Setters.Add(new Setter(VisibilityProperty, Visibility.Visible, "FocusInner")); template.Triggers.Add(focus);
+        return template;
     }
-    private static Style ScopeStyle()
+    internal static Style ScopeStyle()
     {
         var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
         border.SetValue(Border.BorderThicknessProperty, new Thickness(1));

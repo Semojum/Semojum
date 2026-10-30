@@ -32,6 +32,18 @@ internal static class WindowsAccountChecks
             var api = new SemojumApiClient(http); var result = await AutomaticLogin.RestoreAsync(api, store);
             check(result.Account is { LoginId: "editor", Role: "ROLE_USER", Alias: "현재 이름" } && store.Value is not null, "Saved session restores current server identity");
         }
+        store = new MemoryStore { Value = new("institution", "r") };
+        using (var http = new HttpClient(new Handler(_ => Task.FromResult(Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"accessToken\":\"fresh\",\"loginId\":\"institution\",\"role\":\"ROLE_ORG_ADMIN\"}}")))))
+        {
+            var api = new SemojumApiClient(http); var result = await AutomaticLogin.RestoreAsync(api, store);
+            check(result.Account is { Role: "ROLE_ORG_ADMIN" } && store.Value is not null && !AutomaticLogin.IsEditorAllowed(result.Account),
+                "Institution account restores for the desktop institution area without granting editor access");
+            var editor = new AccountIdentity("institution", "ROLE_USER", null);
+            var institution = result.Account!;
+            check(!AutomaticLogin.IsSameDesktopArea(editor, institution) && !AutomaticLogin.IsSameDesktopArea(institution, editor)
+                && AutomaticLogin.IsSameDesktopArea(institution, institution) && AutomaticLogin.IsSameDesktopArea(editor, editor),
+                "A refreshed identity cannot switch between the editor and institution area");
+        }
         store = new MemoryStore();
         using (var http = new HttpClient(new Handler(_ => throw new HttpRequestException("offline"))))
         {
@@ -129,26 +141,96 @@ internal static class WindowsAccountChecks
     {
         using var http = new HttpClient(new Handler(_ => throw new HttpRequestException("fixture network detail")));
         var dialog = new AccountDialog(new SemojumApiClient(http)) { Owner = owner };
-        var fields = (StackPanel)dialog.Content;
-        var login = fields.Children.OfType<TextBox>().Single();
-        var password = fields.Children.OfType<PasswordBox>().Single();
-        var submit = fields.Children.OfType<Button>().Single(b => Equals(b.Content, "로그인"));
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            yield return parent;
+            for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+                foreach (var child in Descendants(System.Windows.Media.VisualTreeHelper.GetChild(parent, i))) yield return child;
+        }
         var observed = "";
+        Exception? callbackFailure = null; var timedOut = false;
+        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        timeout.Tick += (_, _) => { timeout.Stop(); timedOut = true; if (dialog.IsVisible) dialog.Close(); };
         _ = dialog.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
         {
-            login.Text = "fixture-user"; password.Password = "fixture-password";
-            submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-            timer.Tick += (_, _) =>
+            try
             {
-                timer.Stop();
-                observed = string.Join(" ", fields.Children.OfType<TextBlock>().Select(t => t.Text));
-                dialog.Close();
-            };
-            timer.Start();
+                var controls = Descendants(dialog).ToArray();
+                var login = controls.OfType<TextBox>().Single();
+                var password = controls.OfType<PasswordBox>().Single();
+                var submit = controls.OfType<Button>().Single(b => Equals(b.Content, "로그인"));
+                login.Text = "fixture-user"; password.Password = "fixture-password";
+                submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    if (!dialog.IsVisible) return;
+                    observed = string.Join(" ", Descendants(dialog).OfType<TextBlock>().Select(t => t.Text));
+                    dialog.Close();
+                };
+                timer.Start();
+            }
+            catch (Exception ex) { callbackFailure = ex; if (dialog.IsVisible) dialog.Close(); }
         }));
-        dialog.ShowDialog();
+        timeout.Start();
+        try { dialog.ShowDialog(); }
+        finally { timeout.Stop(); }
+        if (callbackFailure is not null) throw new InvalidOperationException("Login network fixture interaction failed", callbackFailure);
+        if (timedOut) throw new TimeoutException("Login network fixture did not close within 5 seconds");
         check(observed.Contains("서버") && observed.Contains("연결"), "Login window explains a network error without treating it as bad credentials");
+    }
+
+    internal static void CheckInstitutionLoginRouting(Window owner, Action<bool, string> check)
+    {
+        static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
+        {
+            yield return parent;
+            for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+                foreach (var child in Descendants(System.Windows.Media.VisualTreeHelper.GetChild(parent, i))) yield return child;
+        }
+        foreach (var allowInstitution in new[] { false, true })
+        {
+            using var http = new HttpClient(new Handler(req => Task.FromResult(Json(HttpStatusCode.OK,
+                req.RequestUri!.AbsolutePath.EndsWith("/login")
+                    ? "{\"isSuccess\":true,\"result\":{\"accessToken\":\"a\",\"refreshToken\":\"r\",\"role\":\"ROLE_ORG_ADMIN\"}}"
+                    : "{\"isSuccess\":true,\"result\":null}"))));
+            var api = new SemojumApiClient(http);
+            var dialog = new AccountDialog(api, null, null, allowInstitution) { Owner = owner };
+            var errorShown = false; var timedOut = false; Exception? callbackFailure = null;
+            var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            timeout.Tick += (_, _) => { timeout.Stop(); timedOut = true; if (dialog.IsVisible) dialog.Close(); };
+            _ = dialog.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                try
+                {
+                    var controls = Descendants(dialog).ToArray();
+                    controls.OfType<TextBox>().Single().Text = "fixture-institution";
+                    controls.OfType<PasswordBox>().Single().Password = "fixture-password";
+                    controls.OfType<Button>().Single(b => Equals(b.Content, "로그인")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                    timer.Tick += (_, _) =>
+                    {
+                        timer.Stop();
+                        if (!dialog.IsVisible) return;
+                        errorShown = Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("에디터를 사용할 수 없습니다"));
+                        dialog.Close();
+                    };
+                    timer.Start();
+                }
+                catch (Exception ex) { callbackFailure = ex; if (dialog.IsVisible) dialog.Close(); }
+            }));
+            bool? result;
+            timeout.Start();
+            try { result = dialog.ShowDialog(); }
+            finally { timeout.Stop(); }
+            if (callbackFailure is not null) throw new InvalidOperationException("Institution login fixture interaction failed", callbackFailure);
+            if (timedOut) throw new TimeoutException("Institution login fixture did not close within 5 seconds");
+            if (allowInstitution)
+                check(result == true && api.Account?.Role == "ROLE_ORG_ADMIN", "Institution sign-in is accepted at the desktop startup routing boundary");
+            else
+                check(result != true && api.Account is null && errorShown, "An institution account cannot enter an existing editor through reauthentication");
+        }
     }
 
     internal static async Task CheckLogoutCancellationAsync(Action<bool, string> check)
@@ -157,17 +239,26 @@ internal static class WindowsAccountChecks
         var api = new SemojumApiClient(http); await api.LoginAsync("editor", "fixture-password");
         var window = new MainWindow(api);
         window.Show();
+        var sawNotice = false; var timedOut = false; var deadline = DateTime.UtcNow.AddSeconds(5);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        timer.Tick += (_, _) =>
+        {
+            var notice = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(d => d.Owner == window && d.IsVisible);
+            if (notice is not null) { sawNotice = true; notice.Close(); return; }
+            if (DateTime.UtcNow < deadline) return;
+            timedOut = true; timer.Stop();
+            foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == window && w.IsVisible).ToArray()) child.Close();
+        };
         try
         {
             var model = window.Session;
             model.ActiveBlock!.Source = "아직 저장하지 않은 내용";
-            _ = window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
-                Application.Current.Windows.OfType<NoticeDialog>().Single().Close()));
-            await window.ExecuteAsync("logout");
-            check(ReferenceEquals(model, window.Session) && model.ActiveBlock!.Source == "아직 저장하지 않은 내용" && model.IsDirty && api.Account?.LoginId == "editor",
+            timer.Start(); await window.ExecuteAsync("logout").WaitAsync(TimeSpan.FromSeconds(7));
+            if (timedOut) throw new TimeoutException("Logout cancellation fixture did not finish within 5 seconds");
+            check(sawNotice && ReferenceEquals(model, window.Session) && model.ActiveBlock!.Source == "아직 저장하지 않은 내용" && model.IsDirty && api.Account?.LoginId == "editor",
                 "Cancelling logout preserves the signed-in account and unsaved document");
         }
-        finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
+        finally { timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }
 
     internal static async Task CheckRoleChangeAsync(Action<bool, string> check)
@@ -183,19 +274,22 @@ internal static class WindowsAccountChecks
         }));
         var api = new SemojumApiClient(http); await api.LoginAsync("editor", "fixture-password");
         var window = new MainWindow(api); window.Show();
-        var reportedRoleChange = false;
+        var reportedRoleChange = false; var timedOut = false; var deadline = DateTime.UtcNow.AddSeconds(5);
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
         timer.Tick += (_, _) =>
         {
             var notice = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(d => d.Owner == window && d.IsVisible);
-            if (notice is null) return;
-            reportedRoleChange = notice.DetailText.Contains("권한"); notice.Close();
+            if (notice is not null) { reportedRoleChange = notice.DetailText.Contains("권한"); notice.Close(); return; }
+            if (DateTime.UtcNow < deadline) return;
+            timedOut = true; timer.Stop();
+            foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == window && w.IsVisible).ToArray()) child.Close();
         };
         try
         {
             var model = window.Session; model.JobId = "fixture-job";
             model.ActiveBlock!.Source = "저장하지 않은 교정";
-            timer.Start(); await window.ExecuteAsync("cancelJob");
+            timer.Start(); await window.ExecuteAsync("cancelJob").WaitAsync(TimeSpan.FromSeconds(7));
+            if (timedOut) throw new TimeoutException("Role change fixture did not finish within 5 seconds");
             check(reportedRoleChange && calls == 1 && api.Account is null && ReferenceEquals(model, window.Session)
                 && model.IsDirty && model.ActiveBlock!.Source == "저장하지 않은 교정",
                 "Changed role stops request retry and preserves unsaved editor contents");

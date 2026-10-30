@@ -1,0 +1,133 @@
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using Semojum.Core;
+using Semojum.Desktop.Controls;
+using Semojum.Desktop.Dialogs;
+using SharpVectors.Converters;
+
+namespace Semojum.Desktop.Services;
+
+internal static class WindowsEditorDialogDesignChecks
+{
+    internal static void Run(Window owner, Action<bool, string> check)
+    {
+        var keys = new SixDotDialog("W E R U I O", true, true) { Owner = owner };
+        keys.Show();
+        try
+        {
+            keys.UpdateLayout();
+            var mode = Children(keys).OfType<SegmentedChoice>().Single();
+            check(keys.Width == 520 && keys.Height == 356 && keys.KeyFields.All(field => field.IsReadOnly), "Six-dot Figma size and preset fields");
+            CheckIcons(keys, check);
+            check(Canvas.GetLeft(keys.KeyFields[2]) < Canvas.GetLeft(keys.KeyFields[1]) && Canvas.GetLeft(keys.KeyFields[1]) < Canvas.GetLeft(keys.KeyFields[0]), "Six-dot left hand displayed in physical key order");
+            mode.SelectedIndex = 2;
+            check(string.Concat(keys.KeyFields.Select(field => field.Text)) == "XCVNM,", "Six-dot three-row dot mapping remains unchanged");
+            mode.SelectedIndex = 3;
+            check(keys.KeyFields.All(field => !field.IsReadOnly), "Custom six-dot keys are editable");
+        }
+        finally { keys.Close(); }
+
+        var layout = new LayoutDialog(new PageLayout()) { Owner = owner };
+        layout.Show();
+        try
+        {
+            layout.UpdateLayout();
+            check(layout.Width == 520 && layout.Height == 412, "Page layout Figma size");
+            CheckIcons(layout, check);
+            check(Children(layout).OfType<TextBlock>().Any(t => t.Text == "면 크기") && Children(layout).OfType<TextBlock>().Any(t => t.Text == "쪽 번호와 꼬리말"), "Page layout groups are visible");
+            var combo = Children(layout).OfType<ComboBox>().First(); combo.IsDropDownOpen = true; combo.SelectedIndex = 1;
+            check(combo.IsDropDownOpen && combo.SelectedIndex == 1, "Page layout combo opens and selects after rounded Figma styling"); combo.IsDropDownOpen = false;
+        }
+        finally { layout.Close(); }
+
+        string? searched = null; SearchPanel? searchedPanel = null; string? replaced = null;
+        var find = new FindDialog(SearchPanel.Text, "", false,
+            (text, panel) => { searched = text; searchedPanel = panel; return Task.FromResult("ok"); },
+            (_, text, _, _) => { replaced = text; return Task.FromResult("ok"); }, "Q 1 , 4 - /") { Owner = owner };
+        find.Show();
+        try
+        {
+            find.UpdateLayout();
+            var toggle = Children(find).OfType<ToggleButton>().Single(t => AutomationProperties.GetName(t) == "점자 입력");
+            var query = Children(find).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "찾을 내용");
+            var replacement = Children(find).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "바꿀 내용");
+            var hint = Children(find).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "ReplacementPlaceholder");
+            check(hint.Text == "바꿀 말을 적는다" && hint.IsVisible && !hint.IsHitTestVisible && replacement.Text == "",
+                "Empty replacement shows the Figma hint without intercepting input");
+            replacement.Focus(); replacement.Text = "변경"; find.UpdateLayout();
+            check(replacement.IsKeyboardFocusWithin && hint.Visibility == Visibility.Collapsed,
+                "Typing into the replacement field hides its noninteractive hint");
+            Children(find).OfType<Button>().Single(b => b.Content as string == "바꾸기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(replaced == "변경", "Replace action receives only the entered value rather than its hint");
+            replacement.Clear(); find.UpdateLayout();
+            check(hint.IsVisible, "Clearing the replacement field restores its hint");
+            query.Focus(); find.UpdateLayout();
+            CheckFindToggle(toggle, false, check);
+            var togglePeer = new ToggleButtonAutomationPeer(toggle);
+            var toggleProvider = (IToggleProvider)togglePeer.GetPattern(PatternInterface.Toggle)!;
+            toggleProvider.Toggle(); find.UpdateLayout();
+            CheckFindToggle(toggle, true, check);
+            check(query.IsKeyboardFocusWithin, "Accessible toggle keeps the focused search input available");
+            CheckIcons(find, check);
+            var source = PresentationSource.FromVisual(query) ?? throw new InvalidOperationException("Missing find input presentation source");
+            query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            toggleProvider.Toggle(); toggleProvider.Toggle();
+            query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
+            check(query.Text == "", "Switching the input toggle resets a pending six-dot chord");
+            query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
+            check(query.Text == "⠁", "Find dialog uses configured six-dot keys");
+            var button = Children(find).OfType<Button>().Single(b => b.Content as string == "다음 찾기");
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(searched == "⠁" && searchedPanel == SearchPanel.Braille, "Find uses braille input and braille search target");
+            replacement.Focus(); replacement.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            replacement.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
+            check(replacement.Text == "⠁" && hint.Visibility == Visibility.Collapsed, "Replacement still accepts configured six-dot input with its hint");
+        }
+        finally { find.Close(); }
+    }
+
+    private static void CheckFindToggle(ToggleButton toggle, bool on, Action<bool, string> check)
+    {
+        var surface = toggle.Template.FindName("Surface", toggle) as Border;
+        var icon = toggle.Content as SvgViewbox;
+        var expectedBorder = on ? Color.FromRgb(0, 95, 184) : Color.FromRgb(234, 234, 234);
+        var expectedBackground = on ? Color.FromRgb(239, 246, 252) : Color.FromRgb(251, 251, 251);
+        var expectedIcon = on ? "find-braille-on.svg" : "find-braille-off.svg";
+        var drawing = icon?.Drawings?.Bounds ?? Rect.Empty;
+        var actualIcon = icon is null ? Rect.Empty : icon.TransformToAncestor(toggle).TransformBounds(new Rect(0, 0, icon.ActualWidth, icon.ActualHeight));
+        check(toggle.IsChecked == on && toggle.ActualWidth == 32 && toggle.ActualHeight == 32 &&
+              surface is { CornerRadius.TopLeft: 4, BorderBrush: SolidColorBrush border, Background: SolidColorBrush background } &&
+              surface.BorderThickness == new Thickness(on ? 2 : 1) && border.Color == expectedBorder && background.Color == expectedBackground &&
+              icon is { Width: 16, Height: 16, Drawings.Bounds.IsEmpty: false } &&
+              Math.Abs(actualIcon.Width - drawing.Width) < 1 && Math.Abs(actualIcon.Height - drawing.Height) < 1 &&
+              Math.Abs(actualIcon.Left + actualIcon.Width / 2 - 16) < 1 && Math.Abs(actualIcon.Top + actualIcon.Height / 2 - 16) < 1 &&
+              icon.Source?.ToString().EndsWith(expectedIcon, StringComparison.Ordinal) == true,
+            $"Find braille input {(on ? "on" : "off")} matches the Figma border, background, icon and 32px slot " +
+            $"(checked={toggle.IsChecked}, size={toggle.ActualWidth:0.##}x{toggle.ActualHeight:0.##}, " +
+            $"border={surface?.BorderThickness}/{surface?.BorderBrush}, background={surface?.Background}, " +
+            $"corner={surface?.CornerRadius}, icon={actualIcon}, " +
+            $"iconData={icon?.Drawings?.Bounds}, source={icon?.Source})");
+    }
+
+    private static void CheckIcons(Window window, Action<bool, string> check)
+    {
+        var icons = Children(window).OfType<SvgViewbox>().ToArray();
+        check(icons.Length > 0 && icons.All(icon => icon.Drawings is { Bounds.IsEmpty: false } && icon.ActualWidth > 0 && icon.ActualHeight > 0 && icon.ActualWidth <= icon.Width + 1 && icon.ActualHeight <= icon.Height + 1), $"{window.Title} Figma SVGs render in their intended slots");
+    }
+
+    private static IEnumerable<DependencyObject> Children(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i); yield return child;
+            foreach (var nested in Children(child)) yield return nested;
+        }
+    }
+}
