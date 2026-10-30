@@ -52,6 +52,7 @@ internal static class WindowsCaptionChecks
                     baseline.Show(); baseline.Activate(); await Task.Delay(200);
                     var baselineHandle = new WindowInteropHelper(baseline).Handle;
                     SetForegroundWindow(baselineHandle); await Task.Delay(100);
+                    await WindowsInteractiveFocusWait.WaitAsync(baseline, "기본 창 명령");
                     if (GetForegroundWindow() != baselineHandle) { Console.WriteLine("SKIP: caption commands require the standard test window to be the native foreground window."); return; }
                     SystemCommands.MinimizeWindow(baseline); await Task.Delay(300);
                     if (baseline.WindowState != WindowState.Minimized)
@@ -65,6 +66,7 @@ internal static class WindowsCaptionChecks
                     framed.Show(); framed.Activate(); await Task.Delay(200);
                     var frameHandle = new WindowInteropHelper(framed).Handle;
                     SetForegroundWindow(frameHandle); await Task.Delay(100);
+                    await WindowsInteractiveFocusWait.WaitAsync(framed, "편집기 프레임 명령");
                     if (!framed.IsActive || GetForegroundWindow() != frameHandle) { Console.WriteLine("SKIP: caption commands require the test frame to be the native foreground window."); return; }
                     SystemCommands.MinimizeWindow(framed); await Task.Delay(300);
                     if (framed.WindowState != WindowState.Minimized)
@@ -74,6 +76,7 @@ internal static class WindowsCaptionChecks
                 window.Activate(); await Task.Delay(200);
                 var handle = new WindowInteropHelper(window).Handle;
                 SetForegroundWindow(handle); await Task.Delay(100);
+                await WindowsInteractiveFocusWait.WaitAsync(window, "편집기 창 명령");
                 if (!window.IsActive || GetForegroundWindow() != handle) { Console.WriteLine("SKIP: caption commands require the test editor to be the native foreground window."); return; }
                 var events = new List<string>();
                 var source = HwndSource.FromHwnd(handle);

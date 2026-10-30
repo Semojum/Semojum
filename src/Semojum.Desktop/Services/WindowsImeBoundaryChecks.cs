@@ -57,6 +57,7 @@ internal static class WindowsImeBoundaryChecks
 
             messages.Clear();
             var sourceActivated = window.Activate();
+            await WindowsInteractiveFocusWait.WaitAsync(window, "IME 창 전환");
             var editorFocused = editor.Focus();
             editor.CaretOffset = editor.Document.TextLength;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);

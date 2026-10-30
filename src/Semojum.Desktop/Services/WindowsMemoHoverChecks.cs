@@ -43,11 +43,15 @@ internal static class WindowsMemoHoverChecks
 
             if (Environment.GetEnvironmentVariable("MEMO_INTERACTIVE_CHECKS") == "1" && GetCursorPos(out var originalPointer))
             {
+                var pointerMoved = false;
                 try
                 {
                     window.Activate(); SetForegroundWindow(new WindowInteropHelper(window).Handle);
                     await Task.Delay(200);
-                    var p = rows[0].PointToScreen(new Point(12, 12)); var moved = SetCursorPos((int)p.X, (int)p.Y);
+                    var focusReady = await WindowsInteractiveFocusWait.WaitAsync(window, "메모 표시");
+                    if (focusReady) focusReady = GetCursorPos(out originalPointer);
+                    var p = rows[0].PointToScreen(new Point(12, 12)); var moved = focusReady && SetCursorPos((int)p.X, (int)p.Y);
+                    pointerMoved = moved;
                     await Task.Delay(200); Mouse.Synchronize(); GetCursorPos(out var actual);
                     var hitWindow = GetAncestor(WindowFromPoint(actual), 2);
                     if (!moved || !window.IsActive || Math.Abs(actual.X - p.X) > 2 || Math.Abs(actual.Y - p.Y) > 2
@@ -71,7 +75,7 @@ internal static class WindowsMemoHoverChecks
                     { Keyboard.Focus(reply[0]); await Task.Delay(100); check(reply[0].IsKeyboardFocused && reply[0].Opacity == 1, "Keyboard focus reveals reply action"); }
                     else Console.WriteLine("SKIP: memo keyboard focus requires an active test window.");
                 }
-                finally { SetCursorPos(originalPointer.X, originalPointer.Y); }
+                finally { if (pointerMoved) SetCursorPos(originalPointer.X, originalPointer.Y); }
             }
             else Console.WriteLine("SKIP: memo hover and keyboard focus require an interactive desktop (set MEMO_INTERACTIVE_CHECKS=1).");
             var deleted = false; view.DeleteAction = (_, index) => deleted = index == 0;

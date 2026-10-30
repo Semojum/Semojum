@@ -44,16 +44,21 @@ internal static class WindowsReviewMarginChecks
             memoClicks = reviewClicks = 0;
             if (Environment.GetEnvironmentVariable("REVIEW_MOUSE_CHECKS") == "1" && GetCursorPos(out var originalPointer))
             {
+                var pointerMoved = false;
                 try
                 {
                     var validCoordinates = true; var inputFailure = false;
                     window.Activate(); await Task.Delay(100);
+                    validCoordinates = await WindowsInteractiveFocusWait.WaitAsync(window, "원문 표식");
+                    if (validCoordinates) validCoordinates = GetCursorPos(out originalPointer);
                     var line = source.TextArea.TextView.VisualLines.First();
                     var y = line.VisualTop - source.TextArea.TextView.VerticalOffset + line.Height / 2;
                     async Task ClickSlot(double x)
                     {
+                        if (!validCoordinates) return;
                         var position = margin.PointToScreen(new Point(x, y));
                         if (!SetCursorPos((int)Math.Round(position.X), (int)Math.Round(position.Y))) { validCoordinates = false; return; }
+                        pointerMoved = true;
                         await Task.Delay(100); Mouse.Synchronize();
                         var positionInMargin = Mouse.GetPosition(margin); GetCursorPos(out var actual);
                         var nativeReady = window.IsActive && GetForegroundWindow() == new WindowInteropHelper(window).Handle && Math.Abs(actual.X - position.X) < 2 && Math.Abs(actual.Y - position.Y) < 2
@@ -75,7 +80,7 @@ internal static class WindowsReviewMarginChecks
                     if (validCoordinates) check(memoClicks == 1 && reviewClicks == 1, $"Actual pointer clicks invoke source memo and review callbacks separately (memo={memoClicks}, review={reviewClicks})");
                     else if (!inputFailure) Console.WriteLine("SKIP: source WPF mouse routing requires the test window in the foreground and under the moved pointer.");
                 }
-                finally { SetCursorPos(originalPointer.X, originalPointer.Y); }
+                finally { if (pointerMoved) SetCursorPos(originalPointer.X, originalPointer.Y); }
             }
             else Console.WriteLine("SKIP: source WPF mouse routing requires REVIEW_MOUSE_CHECKS=1 and a usable pointer.");
             check(!MemoMargin.MemoDrawing.Bounds.IsEmpty && !MemoMargin.WarningDrawing.Bounds.IsEmpty && MemoMargin.MemoDrawing.Bounds.Width <= 16 && MemoMargin.WarningDrawing.Bounds.Width <= 16,
@@ -142,14 +147,19 @@ internal static class WindowsReviewMarginChecks
             check(grid.ActiveBlock == block && grid.CaretOffset == 2 && grid.Selection.Any(), "Selection across faces remains available with marker gutters");
             if (Environment.GetEnvironmentVariable("REVIEW_MOUSE_CHECKS") == "1" && GetCursorPos(out var savedPointer))
             {
+                var pointerMoved = false;
                 try
                 {
                     var validCoordinates = true; var inputFailure = false;
                     gridWindow.Activate(); await Task.Delay(100);
+                    validCoordinates = await WindowsInteractiveFocusWait.WaitAsync(gridWindow, "점자 표식");
+                    if (validCoordinates) validCoordinates = GetCursorPos(out savedPointer);
                     foreach (var x in new[] { 48d, 64d })
                     {
+                        if (!validCoordinates) break;
                         var pos = faceVisual.PointToScreen(new Point(x, 14));
                         if (!SetCursorPos((int)Math.Round(pos.X), (int)Math.Round(pos.Y))) { validCoordinates = false; continue; }
+                        pointerMoved = true;
                         await Task.Delay(100); Mouse.Synchronize();
                         var positionInFace = Mouse.GetPosition(faceVisual); GetCursorPos(out var actual);
                         var nativeReady = gridWindow.IsActive && GetForegroundWindow() == new WindowInteropHelper(gridWindow).Handle && Math.Abs(actual.X - pos.X) < 2 && Math.Abs(actual.Y - pos.Y) < 2
@@ -170,7 +180,7 @@ internal static class WindowsReviewMarginChecks
                     if (validCoordinates) check(gridMemoClicks == 1 && gridReviewClicks == 1, $"Actual pointer clicks invoke grid memo and review callbacks separately (memo={gridMemoClicks}, review={gridReviewClicks})");
                     else if (!inputFailure) Console.WriteLine("SKIP: grid WPF mouse routing requires the test window in the foreground and under the moved pointer.");
                 }
-                finally { SetCursorPos(savedPointer.X, savedPointer.Y); }
+                finally { if (pointerMoved) SetCursorPos(savedPointer.X, savedPointer.Y); }
             }
             else Console.WriteLine("SKIP: grid WPF mouse routing requires REVIEW_MOUSE_CHECKS=1 and a usable pointer.");
             if (Environment.GetEnvironmentVariable("REVIEW_GRID_CAPTURE") is { Length: > 0 } gridCapture) await WindowsSmoke.RenderElementAsync(gridWindow, gridCapture);
