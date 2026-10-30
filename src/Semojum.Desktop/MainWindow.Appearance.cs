@@ -48,13 +48,15 @@ public partial class MainWindow
         var editor = lastEditor ?? SourceEditor;
         var braille = editor != SourceEditor && editor != PageEditor.Editor;
         var input = braille ? (Braille.SixDotEnabled ? "점형" : "점자") : "텍스트";
-        var pageNumbers = session.Blocks.Select(b => b.Page).Concat(session.PageStatuses.Keys).Concat(session.OriginalPages.Keys).Distinct().Order().ToArray();
-        var pages = pageNumbers.Length;
         OptionsLabel.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
         StatusOptions.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
         StatusInput.Text = $"입력 {input}";
-        StatusPage.Text = pageNumbers.SequenceEqual(Enumerable.Range(1, pages)) ? $"쪽 {block.Page} / {pages}" : $"쪽 {block.Page}";
-        StatusPage.ToolTip = $"원본 {block.Page}쪽 (총 {pages}쪽)";
+        var hasOriginal = session.IsTextJob != true && session.OriginalPages.ContainsKey(block.Page);
+        var confirmedTotal = session.IsTextJob != true && session.TotalOriginalPages is { } known && block.Page <= known ? known : (int?)null;
+        StatusPage.Text = confirmedTotal is { } pageTotal ? $"쪽 {block.Page} / {pageTotal}" : $"쪽 {block.Page}";
+        StatusPage.ToolTip = session.IsTextJob == true ? $"텍스트 {block.Page}쪽"
+            : hasOriginal ? confirmedTotal is { } t ? $"원본 {block.Page}쪽 (총 {t}쪽)" : $"원본 {block.Page}쪽 (전체 쪽수 미확인)"
+            : confirmedTotal is { } pendingTotal ? $"작업 {block.Page}쪽 (총 {pendingTotal}쪽 · 원본 미수신)" : $"작업 {block.Page}쪽 (원본 없음)";
         CaretStatus.Text = $"줄 {editor.TextArea.Caret.Line}";
         StatusCell.Text = $"칸 {editor.TextArea.Caret.Column} / {session.Layout.Columns}";
         if (lastGrid is not null)

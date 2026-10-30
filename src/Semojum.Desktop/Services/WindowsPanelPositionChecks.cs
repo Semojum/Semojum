@@ -34,20 +34,33 @@ internal static class WindowsPanelPositionChecks
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); Refresh();
             check(window.OriginalPosition.Text == "3쪽", "A contiguous partial page list does not invent an original total");
             check(window.SourcePosition.Text == "3쪽 2줄 2칸", $"Source position uses current page caret (actual {window.SourcePosition.Text})");
+            check(window.StatusPage.Text == "쪽 3" && Equals(window.StatusPage.ToolTip, "원본 3쪽 (전체 쪽수 미확인)"),
+                "A partial original list does not invent a status-bar total or tooltip");
 
             model.PageStatuses.Remove(2); Refresh();
             check(window.OriginalPosition.Text == "3쪽", "Sparse page numbers do not invent an original total");
+            check(window.StatusPage.Text == "쪽 3" && Equals(window.StatusPage.ToolTip, "원본 3쪽 (전체 쪽수 미확인)"),
+                "Sparse original pages do not claim the count is a known total");
             model.JobStatus = "IN_PROGRESS";
             check(model.TryApplyServerOriginalPageTotal("position-job", 128, [1, 3]), "A matching partial server response preserves its explicit original total");
             Refresh();
             check(window.OriginalPosition.Text == "3 / 128쪽", "A sparse in-progress response displays only the confirmed server total");
+            check(window.StatusPage.Text == "쪽 3 / 128" && Equals(window.StatusPage.ToolTip, "원본 3쪽 (총 128쪽)"),
+                "A partially received job uses the confirmed total in the status bar");
+            model.OriginalPages.Remove(3); Refresh();
+            check(window.StatusPage.Text == "쪽 3 / 128" && Equals(window.StatusPage.ToolTip, "작업 3쪽 (총 128쪽 · 원본 미수신)"),
+                "A known total remains accurate before the current original page is received");
+            model.OriginalPages[3] = new OriginalPage("text", null, ["셋째 쪽"]); Refresh();
             check(!model.TryApplyServerOriginalPageTotal("old-job", 4, [1, 3]) && model.TotalOriginalPages == 128,
                 "An older job response cannot change the current document total");
             model.JobId = "next-job"; Refresh();
             check(window.OriginalPosition.Text == "3쪽", "Changing jobs discards the previous job's total");
+            model.TotalOriginalPages = 128;
             model.IsTextJob = true; Refresh();
             check(window.OriginalPosition.Text == "", "TXT documents do not show server job pages as original-page positions");
-            model.IsTextJob = false; Refresh();
+            check(window.StatusPage.Text == "쪽 3" && Equals(window.StatusPage.ToolTip, "텍스트 3쪽"),
+                "TXT status is labelled as text without using an original-page total");
+            model.TotalOriginalPages = null; model.IsTextJob = false; Refresh();
 
             third.Source = "새 원문"; Refresh();
             check(window.SourcePosition.Text == "", "An outdated source projection does not show a caret for newer text");
@@ -87,6 +100,27 @@ internal static class WindowsPanelPositionChecks
             }
             model.OriginalPages.Clear(); Refresh();
             check(window.OriginalPosition.Text == "", "An original-free document does not retain an old original position");
+            typeof(MainWindow).GetMethod("SetActiveEditor", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [window.PageEditor.Editor]);
+            Refresh();
+            check(window.StatusPage.Text == "쪽 3" && Equals(window.StatusPage.ToolTip, "작업 3쪽 (원본 없음)"),
+                "An original-free document does not describe its working page as an original");
+
+            var lines = window.AllTagsMenu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "점자 줄"));
+            var lineItems = lines.Items.OfType<MenuItem>().ToArray();
+            check(lineItems.Select(item => item.Tag as string).SequenceEqual(new[] {
+                "tag:상단줄", "tag:중단줄", "tag:하단줄", "tag:상단굵은줄", "tag:하단굵은줄",
+                "tag:표시작", "tag:표중앙", "tag:표끝", "tag:표구분선", "tag:표지시작", "tag:표지세로", "tag:표지끝" }),
+                "The real braille-line menu preserves the Figma table-line order and supported extra tags");
+            foreach (var name in new[] { "표시작", "표중앙", "표끝", "표구분선", "표지시작" })
+            {
+                var editor = window.PageEditor.Editor;
+                editor.Select(editor.Document.TextLength, 0);
+                var previous = editor.Text;
+                lineItems.Single(item => Equals(item.Tag, "tag:" + name)).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                check(editor.Text == previous + BrailleTags.Get(name).Insert(""),
+                    $"The {name} command inserts its real tag through the submenu click");
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            }
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }

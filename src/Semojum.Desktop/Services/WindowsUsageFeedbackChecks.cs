@@ -27,11 +27,22 @@ internal static class WindowsUsageFeedbackChecks
         var zero = Ratios("{\"orgAllocated\":100,\"orgRemaining\":100,\"usedCredits\":0,\"usedPercent\":0}");
         check(zero is { Personal: 0, Organization: 0, OrganizationUsed: 0 }, "Verified zero usage is shown as zero rather than missing data");
 
-        var fixture = new Fixture(); using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
+        var fixture = new Fixture { LoginAlias = "긴 계정 이름을 끝까지 확인할 수 있는 별칭" }; using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
         await api.LoginAsync("fixture", "fixture"); var dialog = new UsageDialog(api); dialog.Show();
         try
         {
             await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "600"));
+            var accountName = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName");
+            check(accountName.Text == fixture.LoginAlias && Equals(accountName.ToolTip, fixture.LoginAlias)
+                && System.Windows.Automation.AutomationProperties.GetName(accountName) == "사용량 계정 " + fixture.LoginAlias,
+                "Usage heading shows the authenticated alias and exposes its full value");
+            if (Environment.GetEnvironmentVariable("MYPAGE_TITLE_CAPTURE") is { Length: > 0 } titleCapture)
+                await WindowsSmoke.RenderElementAsync(dialog, titleCapture);
+            var initialWidth = dialog.Width; dialog.Width = 480; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var accountBounds = accountName.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, accountName.ActualWidth, accountName.ActualHeight));
+            check(accountName.IsVisible && accountName.TextTrimming == TextTrimming.CharacterEllipsis && accountBounds.Left >= 0 && accountBounds.Right <= dialog.ActualWidth + 1,
+                "Long authenticated aliases remain within the narrow usage window");
+            dialog.Width = initialWidth; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             var bars = Descendants(dialog).OfType<ProgressBar>().ToArray();
             var personal = bars.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "내 크레딧 사용률");
             var organization = bars.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "기관 크레딧 사용률");
@@ -73,6 +84,23 @@ internal static class WindowsUsageFeedbackChecks
             var list = Descendants(dialog).OfType<ListBox>().Single(); await Wait(() => list.Items.Count == 10);
             await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "첫 문의 본문"));
             check(list.Items.Count == 10 && fixture.MineOnly, "A long first inquiry page shows only the current user's server results");
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var answerBadge = Descendants(list).OfType<Border>().FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetName(b) == "답변 2건");
+            check(answerBadge is { Height: 18, CornerRadius.TopLeft: 9, BorderThickness.Left: 1 } && answerBadge.IsVisible,
+                "Inquiry rows show actual answer count in a visible neutral rounded badge");
+            var noAnswerBadge = Descendants(list).OfType<Border>().FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetName(b) == "답변 0건");
+            check(noAnswerBadge is { Height: 18, CornerRadius.TopLeft: 9, BorderBrush: SolidColorBrush neutral }
+                && neutral.Color == Color.FromRgb(138, 138, 138) && noAnswerBadge.IsVisible,
+                "An unanswered inquiry uses the same neutral badge instead of an inferred status color");
+            check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("답변 2건", StringComparison.Ordinal))
+                && !Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("답변 완료", StringComparison.Ordinal) || t.Text.Contains("답변 대기", StringComparison.Ordinal)),
+                "Inquiry detail reports the actual answer count rather than inventing a workflow state");
+            if (Environment.GetEnvironmentVariable("MYPAGE_INQUIRY_CAPTURE") is { Length: > 0 } inquiryCapture)
+                await WindowsSmoke.RenderElementAsync(dialog, inquiryCapture);
+            list.SelectedIndex = 2; await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "답변 없는 문의 본문"));
+            check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("답변 없음", StringComparison.Ordinal)),
+                "An inquiry with no returned answers reports no answers without assuming its processing status");
+            list.SelectedIndex = 0; await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "첫 문의 본문"));
             list.SelectedIndex = 1; await Wait(() => fixture.SecondStarted);
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "문의 내용을 불러오는 중입니다.") && !Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "첫 문의 본문"),
                 "Changing the selected inquiry clears the previous detail while the new response is pending");
@@ -109,6 +137,27 @@ internal static class WindowsUsageFeedbackChecks
                 "Returning to a populated page restores valid next-page and selected-detail actions");
         }
         finally { dialog.Close(); }
+
+        var fallbackFixture = new Fixture(); using var fallbackHttp = new HttpClient(fallbackFixture); var fallbackApi = new SemojumApiClient(fallbackHttp);
+        await fallbackApi.LoginAsync("fallback-id", "fixture");
+        var fallbackDialog = new UsageDialog(fallbackApi); fallbackDialog.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); fallbackDialog.UpdateLayout();
+            check(Descendants(fallbackDialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName" && t.Text == "fallback-id"),
+                "Usage heading falls back to the actual login ID when no alias exists");
+        }
+        finally { fallbackDialog.Close(); }
+
+        using var anonymousHttp = new HttpClient(new Fixture()); var anonymousApi = new SemojumApiClient(anonymousHttp);
+        var anonymousDialog = new UsageDialog(anonymousApi); anonymousDialog.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); anonymousDialog.UpdateLayout();
+            check(!Descendants(anonymousDialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName"),
+                "Usage heading never invents a name without an authenticated account");
+        }
+        finally { anonymousDialog.Close(); }
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); yield return child; foreach (var descendant in Descendants(child)) yield return descendant; } }
@@ -117,7 +166,7 @@ internal static class WindowsUsageFeedbackChecks
     private sealed class Fixture : HttpMessageHandler
     {
         private readonly TaskCompletionSource<HttpResponseMessage> second = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal bool MineOnly; internal bool SecondStarted; internal bool PageTwoFails = true; internal int PageTwoRequests;
+        internal bool MineOnly; internal bool SecondStarted; internal bool PageTwoFails = true; internal int PageTwoRequests; internal string? LoginAlias;
         internal void FailSecond() => second.TrySetResult(Json(HttpStatusCode.Forbidden, "{\"isSuccess\":false,\"code\":\"DENIED\",\"message\":\"접근할 수 없습니다\"}"));
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
@@ -131,11 +180,12 @@ internal static class WindowsUsageFeedbackChecks
             }
             object result = path switch
             {
-                "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER" },
+                "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER", alias = LoginAlias },
                 "/api/users/usage/daily" => new { from = "2026-10-01", to = "2026-10-30", orgRemaining = 600, orgAllocated = 1000, usedCredits = 100, usedPercent = 10, daily = Array.Empty<object>(), bySource = Array.Empty<object>() },
                 "/api/users/usage/jobs" => new { items = new[] { new { jobId = "job", fileName = "작업.pdf", mode = "c", status = "COMPLETED", donePages = 1, totalPages = 1, failedPages = 0, credits = 1, finishedAt = "2026-10-30" } } },
                 "/api/board/posts" => Posts(request.RequestUri.Query),
-                "/api/board/posts/1" => new { postId = 1, title = "첫 문의", content = "첫 문의 본문", author = "나", mine = true, secret = false, hidden = false, createdAt = "2026-10-01", updatedAt = "2026-10-01", viewCount = 1, attachments = Array.Empty<object>(), answers = Array.Empty<object>() },
+                "/api/board/posts/1" => new { postId = 1, title = "첫 문의", content = "첫 문의 본문", author = "나", mine = true, secret = false, hidden = false, createdAt = "2026-10-01", updatedAt = "2026-10-01", viewCount = 1, attachments = Array.Empty<object>(), answers = new[] { new { answerId = 1, content = "첫 답변", mine = false, answeredAt = "2026-10-02", updatedAt = "2026-10-02" }, new { answerId = 2, content = "둘째 답변", mine = false, answeredAt = "2026-10-03", updatedAt = "2026-10-03" } } },
+                "/api/board/posts/3" => new { postId = 3, title = "셋째 문의", content = "답변 없는 문의 본문", author = "나", mine = true, secret = false, hidden = false, createdAt = "2026-10-01", updatedAt = "2026-10-01", viewCount = 1, attachments = Array.Empty<object>(), answers = Array.Empty<object>() },
                 _ => new { }
             };
             return Ok(result);
@@ -143,7 +193,7 @@ internal static class WindowsUsageFeedbackChecks
         private object Posts(string query)
         {
             MineOnly = query.Contains("mine=true", StringComparison.OrdinalIgnoreCase);
-            return new { page = 1, totalCount = 11, notices = Array.Empty<object>(), items = Enumerable.Range(1, 10).Select(i => new { postId = i, title = $"문의 {i}", answerCount = 0, author = "나", secret = false, createdAt = "2026-10-01", viewCount = 1 }).ToArray() };
+            return new { page = 1, totalCount = 11, notices = Array.Empty<object>(), items = Enumerable.Range(1, 10).Select(i => new { postId = i, title = $"문의 {i}", answerCount = i == 1 ? 2 : 0, author = "나", secret = false, createdAt = "2026-10-01", viewCount = 1 }).ToArray() };
         }
         private static Task<HttpResponseMessage> Ok(object result) => Task.FromResult(Json(HttpStatusCode.OK, JsonSerializer.Serialize(new { isSuccess = true, result })));
         private static HttpResponseMessage Json(HttpStatusCode status, string text) => new(status) { Content = new StringContent(text, Encoding.UTF8, "application/json") };

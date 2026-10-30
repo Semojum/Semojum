@@ -57,9 +57,14 @@ internal static class AuthRestoreChecks
             return Task.FromResult(Ok(new { value = 1 }));
         }));
         var api = new SemojumApiClient(http); await api.LoginAsync("alice", "pw");
+        var sessionMarker = api.SessionMarker;
         await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/usage");
-        if (api.Account is not { LoginId: "alice", Role: "ROLE_ORG_ADMIN", Alias: "변경된 이름" })
+        if (api.Account is not { LoginId: "alice", Role: "ROLE_ORG_ADMIN", Alias: "변경된 이름" } || sessionMarker is null || api.SessionMarker != sessionMarker)
             throw new Exception("The refreshed account identity was not updated");
+        await api.LogoutAsync();
+        if (api.SessionMarker is not null) throw new Exception("Logout retained the local session marker");
+        await api.LoginAsync("alice", "pw");
+        if (api.SessionMarker is null || api.SessionMarker == sessionMarker) throw new Exception("A new login reused the previous local session marker");
     }
     private static async Task RefreshRejectsChangedRole()
     {

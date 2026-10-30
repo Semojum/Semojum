@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -31,6 +32,46 @@ internal static class WindowsInstitutionDesignChecks
                 "Institution dashboard displays actual server organization and credit values");
             check(window.UsagePercent.Text == "30%" && window.StatusSummary.Text.Contains("테스트 기관") && window.StatusSummary.Text.Contains("700") && window.ContractRemaining.Text != "정보 없음",
                 "Institution percentage, contract days and status line use the actual dashboard response");
+            check(window.Chart.Children.Count == 1 && window.ChartMaximum.Text == "300" && window.ChartAverage.Text == "6개월 평균 정보 없음",
+                "An incomplete monthly response shows its real axis and does not invent a six-month average");
+            var sixMonths = new[] { new InstitutionMonthlyUsage("2026-03", 2100), new("2026-04", 2600), new("2026-05", 3100), new("2026-06", 2800), new("2026-07", 3900), new("2026-08", 4600) };
+            window.RenderMonthlyUsage(sixMonths); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(window.Chart.Children.Count == 6 && window.ChartMaximum.Text == "4,600" && window.ChartMiddle.Text == "3,067" && window.ChartLower.Text == "1,533" && window.ChartAverage.Text == "6개월 평균 3,183",
+                "The monthly chart shows the six real values, proportional axis ticks and calculated Figma average");
+            if (Environment.GetEnvironmentVariable("INSTITUTION_MONTHLY_CAPTURE") is { Length: > 0 } monthlyCapture)
+            {
+                window.Width = 1440; window.Height = 1000; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                await WindowsSmoke.RenderElementAsync(window, monthlyCapture);
+            }
+            window.Width = 480; window.Height = 650; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            var legendLabel = Descendants(window).OfType<TextBlock>().Single(t => t.Text == "월 사용 크레딧");
+            var legendRect = legendLabel.TransformToAncestor(window).TransformBounds(new Rect(0, 0, legendLabel.ActualWidth, legendLabel.ActualHeight));
+            var averageRect = window.ChartAverage.TransformToAncestor(window).TransformBounds(new Rect(0, 0, window.ChartAverage.ActualWidth, window.ChartAverage.ActualHeight));
+            check(window.ChartScroll.ScrollableWidth > 0 && legendLabel.IsVisible && window.ChartAverage.IsVisible
+                && (legendRect.Bottom <= averageRect.Top + .5 || averageRect.Bottom <= legendRect.Top + .5 || legendRect.Right <= averageRect.Left + .5 || averageRect.Right <= legendRect.Left + .5),
+                "At 480px the chart scrolls and the real legend and average remain readable without overlapping");
+            window.Width = 960; window.Height = 650; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(InstitutionWindow.SixMonthAverage([]) is null && InstitutionWindow.SixMonthAverage(sixMonths[..5]) is null
+                && InstitutionWindow.SixMonthAverage([sixMonths[0], sixMonths[0], .. sixMonths[2..]]) is null
+                && InstitutionWindow.SixMonthAverage([.. sixMonths[..5], new("2026-09", 1)]) is null
+                && InstitutionWindow.SixMonthAverage([.. sixMonths[..5], new("invalid", 1)]) is null
+                && InstitutionWindow.SixMonthAverage([.. sixMonths[..5], new("2026-08", -1)]) is null,
+                "The monthly average is unavailable for missing, duplicate, discontinuous, malformed or negative values");
+            var zeroMonths = Enumerable.Range(0, 6).Select(i => new InstitutionMonthlyUsage(new DateTime(2025, 11, 1).AddMonths(i).ToString("yyyy-MM"), 0)).ToArray();
+            var hugeMonths = zeroMonths.Select(m => m with { Credits = long.MaxValue }).ToArray();
+            check(InstitutionWindow.SixMonthAverage(zeroMonths) == 0 && InstitutionWindow.SixMonthAverage(hugeMonths) == long.MaxValue,
+                "Six-month averages handle zero and maximum 64-bit credit amounts without overflow");
+            window.RenderMonthlyUsage(hugeMonths); window.UpdateLayout();
+            check(window.ChartMaximum.Text == long.MaxValue.ToString("N0") && window.ChartAverage.Text.Contains(long.MaxValue.ToString("N0"))
+                && window.Chart.Children.OfType<Grid>().SelectMany(g => g.Children.OfType<Border>()).All(b => b.Height is >= 0 and <= 110),
+                "Large chart values retain exact labels and bounded bar heights");
+            window.ApplyChartContrast(true);
+            check(window.ChartMaximum.Foreground == SystemColors.WindowTextBrush && window.Chart.Children.OfType<Grid>().SelectMany(g => g.Children.OfType<Border>()).All(b => b.Background == SystemColors.HighlightBrush),
+                "The monthly chart uses readable system colors in high contrast");
+            window.ApplyChartContrast(false); window.RenderMonthlyUsage([]);
+            check(window.ChartEmpty.IsVisible && window.ChartArea.Visibility == Visibility.Collapsed && window.ChartAverage.Text == "6개월 평균 정보 없음",
+                "An empty monthly response has an honest empty state");
+            window.RenderMonthlyUsage([new("2026-10", 300)]); window.UpdateLayout();
             check(InstitutionWindow.UsageRatio(0, 0) == "정보 없음" && InstitutionWindow.UsageRatio(-1, 0) == "정보 없음" && InstitutionWindow.UsageRatio(100, -1) == "정보 없음"
                 && InstitutionWindow.UsageRatio(100, 0) == "0%" && InstitutionWindow.UsageRatio(100, 120) == "120%", "Usage percentage handles zero, negative and over-allocation inputs without inventing data");
             var date = new DateOnly(2026, 10, 30);
@@ -43,6 +84,12 @@ internal static class WindowsInstitutionDesignChecks
             check(InstitutionStatusTextConverter.Label("ACTIVE", "account") == "활성" && InstitutionStatusTextConverter.Label("INACTIVE", "account") == "잠김"
                 && InstitutionStatusTextConverter.Label("ORG", "notice") == "우리 기관" && InstitutionStatusTextConverter.Label("FUTURE_STATUS", "account") == "FUTURE_STATUS"
                 && InstitutionStatusTextConverter.Label("FUTURE_SCOPE", "notice") == "FUTURE_SCOPE", "Known institution status labels are translated while unknown server codes remain intact");
+            check(InstitutionStatusTextConverter.Label("PENDING", "invoice") == "발행 대기" && InstitutionStatusTextConverter.Label("ISSUED", "invoice") == "발행 완료"
+                && InstitutionStatusTextConverter.Label("FUTURE_INVOICE", "invoice") == "FUTURE_INVOICE",
+                "Invoice statuses translate only the server's known values without inventing success");
+            check(window.Orders.Columns.LastOrDefault() is DataGridTemplateColumn { Header: "증빙" }
+                && window.Orders.Columns.OfType<DataGridTextColumn>().Single(c => Equals(c.Header, "계산서")).Binding is System.Windows.Data.Binding { Converter: InstitutionStatusTextConverter, ConverterParameter: "invoice" },
+                "The order table has translated invoice status and a dedicated receipt column");
             check(!window.RequestsExpander.IsExpanded && window.Orders.Items.Count == 1, "Request history starts collapsed while the order list retains actual data");
             var peer = UIElementAutomationPeer.CreatePeerForElement(window.RequestsExpander);
             var expand = peer?.GetPattern(PatternInterface.ExpandCollapse) as IExpandCollapseProvider;
@@ -91,6 +138,25 @@ internal static class WindowsInstitutionDesignChecks
             var narrowTop = window.OrderDetail.TransformToAncestor(window).Transform(new Point()).Y;
             check(window.ActualWidth <= 960 && narrowTop >= 32 && narrowTop + window.OrderDetail.ActualHeight <= window.ActualHeight - 28,
                 "At 960px the selected order action can be brought into view without being covered by the status bar");
+            var originalOrders = window.Orders.ItemsSource;
+            var hasReceipt = new InstitutionOrder(Guid.Parse("3f56ae22-d121-48b1-a804-a3b48e3d3b82"), "2026-01-02", "실제 주문", 2000, null, null, "ISSUED", "증빙.pdf");
+            var noReceipt = new InstitutionOrder(Guid.NewGuid(), "2026-01-03", "증빙 없음", 3000, null, null, "PENDING", null);
+            window.Orders.ItemsSource = new[] { hasReceipt, noReceipt }; window.Width = 480; window.Orders.BringIntoView();
+            var receiptColumn = (DataGridTemplateColumn)window.Orders.Columns.Last();
+            window.Orders.ScrollIntoView(hasReceipt, receiptColumn); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            var receiptCell = receiptColumn.GetCellContent(hasReceipt);
+            var rowButton = receiptCell is null ? null : Descendants(receiptCell).OfType<Button>().FirstOrDefault(b => Equals(b.Content, "내려받기"));
+            check(rowButton is { IsVisible: true, IsEnabled: true, Focusable: true } && System.Windows.Automation.AutomationProperties.GetName(rowButton).Contains("실제 주문"),
+                "The row's actual receipt action remains keyboard accessible in a 480px window");
+            rowButton?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitFor(() => handler.LastReceiptPath is not null && window.ErrorText.Text.Contains("증빙을 열지 못했습니다"));
+            check(handler.LastReceiptPath == "/api/org/orders/3f56ae22-d121-48b1-a804-a3b48e3d3b82/receipt",
+                "A row receipt action requests its own order and rejects an unsafe server URL before launching it");
+            window.Orders.ScrollIntoView(noReceipt, receiptColumn); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            var emptyCell = receiptColumn.GetCellContent(noReceipt);
+            check(emptyCell is not null && Descendants(emptyCell).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "—")
+                && !Descendants(emptyCell).OfType<Button>().Any(b => b.IsVisible), "An order without a receipt displays a dash without an actionable link");
+            window.Orders.ItemsSource = originalOrders; window.Width = 960; window.ErrorText.Text = "";
             window.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(30);
             check(logoutCalls == 1 && window.IsVisible && !window.LogoutRequested, "Cancelled or failed logout keeps the institution window open");
 
@@ -112,6 +178,7 @@ internal static class WindowsInstitutionDesignChecks
             check(logoutCalls == 2 && window.LogoutRequested && !window.IsVisible, "The logout callback can return an expired institution session to login");
         }
         finally { if (window.IsVisible) window.Close(); }
+        await ReceiptSessionChecks(check);
 
         var attempts = 0; string? submitted = null;
         var dialog = new InstitutionRequestDialog(true, message => { attempts++; if (attempts == 1) throw new InvalidOperationException("fixture failure"); submitted = message; return Task.CompletedTask; });
@@ -133,19 +200,65 @@ internal static class WindowsInstitutionDesignChecks
         for (var i = 0; i < 100 && !predicate(); i++) await Task.Delay(20);
         if (!predicate()) throw new TimeoutException("Institution fixture did not reach the expected state.");
     }
+    private static async Task ReceiptSessionChecks(Action<bool, string> check)
+    {
+        foreach (var mode in new[] { "same session", "refresh", "logout", "same-account relogin", "close", "relogin before click" })
+        {
+            var fixture = new Fixture { HoldReceipt = true, RefreshProbe = mode == "refresh" };
+            using var http = new HttpClient(fixture) { BaseAddress = new Uri("https://example.invalid") };
+            var api = new SemojumApiClient(http); await api.LoginAsync("org", "fixture");
+            var window = new InstitutionWindow(api, () => Task.FromResult(false)); var launched = 0;
+            window.ReceiptLauncher = _ => launched++; window.Show();
+            try
+            {
+                await WaitFor(() => window.Refresh.IsEnabled);
+                var order = new InstitutionOrder(Guid.Parse("3f56ae22-d121-48b1-a804-a3b48e3d3b82"), "2026-01-01", "증빙", 1, null, null, "ISSUED", "receipt.pdf");
+                var open = typeof(InstitutionWindow).GetMethod("OpenReceiptForAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                if (mode == "relogin before click")
+                {
+                    await api.LogoutAsync(); await api.LoginAsync("org", "fixture");
+                    await ((Task)open.Invoke(window, [order])!).WaitAsync(TimeSpan.FromSeconds(5));
+                    check(fixture.LastReceiptPath is null && launched == 0, "An old institution window cannot request a receipt after the same account logs in again");
+                    continue;
+                }
+                var pending = (Task)open.Invoke(window, [order])!;
+                await WaitFor(() => fixture.HeldReceipt is not null);
+                if (mode == "refresh") await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/org/refresh-probe");
+                if (mode is "logout" or "same-account relogin") await api.LogoutAsync();
+                if (mode == "same-account relogin") await api.LoginAsync("org", "fixture");
+                if (mode == "close") window.Close();
+                fixture.HeldReceipt!.TrySetResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":{\"fileName\":\"receipt.pdf\",\"url\":\"https://example.invalid/receipt\"}}", Encoding.UTF8, "application/json") });
+                await pending.WaitAsync(TimeSpan.FromSeconds(5));
+                check(launched == (mode is "same session" or "refresh" ? 1 : 0), $"Receipt opening respects the {mode} session after an async response");
+            }
+            finally { if (window.IsVisible) window.Close(); }
+        }
+    }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     { yield return root; for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) foreach (var child in Descendants(VisualTreeHelper.GetChild(root, i))) yield return child; }
     private sealed class Fixture : HttpMessageHandler
     {
         internal bool FailAccountsOnRefresh;
         internal bool FailDashboard;
+        internal string? LastReceiptPath;
+        internal bool HoldReceipt, RefreshProbe, ProbeRejected;
+        internal TaskCompletionSource<HttpResponseMessage>? HeldReceipt;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path.EndsWith("/login")) return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"accessToken\":\"old\",\"refreshToken\":\"refresh\",\"role\":\"ROLE_ORG_ADMIN\"}}");
-            if (path.EndsWith("/refresh")) return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"accessToken\":\"new\"}}");
+            if (path.EndsWith("/refresh")) return Json(HttpStatusCode.OK, RefreshProbe
+                ? "{\"isSuccess\":true,\"result\":{\"accessToken\":\"new\",\"loginId\":\"org\",\"role\":\"ROLE_ORG_ADMIN\",\"alias\":\"새 이름\"}}"
+                : "{\"isSuccess\":true,\"result\":{\"accessToken\":\"new\"}}");
+            if (path.EndsWith("/refresh-probe") && !ProbeRejected) { ProbeRejected = true; return Json(HttpStatusCode.Unauthorized, "{\"isSuccess\":false,\"code\":\"AUTH4003\",\"message\":\"expired\"}"); }
             if (path.EndsWith("/dashboard") && FailDashboard) return Json(HttpStatusCode.InternalServerError, "{\"isSuccess\":false,\"code\":\"TEST\",\"message\":\"조회 실패\"}");
             if (path.EndsWith("/accounts") && FailAccountsOnRefresh) return Json(HttpStatusCode.Unauthorized, "{\"isSuccess\":false,\"code\":\"AUTH4003\",\"message\":\"expired\"}");
+            if (path.EndsWith("/receipt"))
+            {
+                LastReceiptPath = path;
+                if (HoldReceipt) { HeldReceipt = new(TaskCreationOptions.RunContinuationsAsynchronously); return HeldReceipt.Task; }
+                return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"fileName\":\"receipt.pdf\",\"url\":\"http://example.invalid/receipt\"}}");
+            }
             var result = path switch
             {
                 "/api/org/dashboard" => "{\"orgName\":\"테스트 기관\",\"orgCode\":\"O1\",\"contractType\":\"ANNUAL\",\"contractStartedAt\":\"2026-01-01\",\"contractExpiresAt\":\"2026-12-31\",\"creditAllocated\":1000,\"creditUsed\":300,\"creditRemaining\":700,\"monthlyUsage\":[{\"month\":\"2026-10\",\"credits\":300}]}",

@@ -37,6 +37,8 @@ public sealed class SemojumApiClient
     private sealed record LoginResult(string AccessToken, string RefreshToken, string Role, string? AdminScope, string? Alias);
     private sealed record RefreshResult(string AccessToken, string? LoginId = null, string? Role = null, string? AdminScope = null, string? Alias = null);
     public AccountIdentity? Account => Volatile.Read(ref session)?.Account;
+    /// <summary>Non-credential local session marker: stable through token refresh, replaced by a new login.</summary>
+    public Guid? SessionMarker => Volatile.Read(ref session)?.Id;
     /// <summary>Optional application policy evaluated before retrying a request with a refreshed identity.</summary>
     public Func<AccountIdentity, bool>? RefreshedIdentityAllowed { get; set; }
     public Func<AccountIdentity, bool>? RefreshRequiresIdentity { get; set; }

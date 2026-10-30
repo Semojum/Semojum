@@ -32,9 +32,12 @@ internal static class WindowsOriginalWheelChecks
             check(!middle.Handled && model.ActiveBlock?.Page == 1, "Wheel inside an original page is left to normal scrolling");
 
             scroll.ScrollToBottom(); window.UpdateLayout();
+            var beforeOffset = scroll.VerticalOffset; var beforeExtent = scroll.ScrollableHeight;
             var next = Wheel(scroll, -120); await SettleAsync(window);
             check(next.Handled && model.ActiveBlock?.Page == 2 && scroll.VerticalOffset < 1,
-                "Wheel beyond the bottom moves to the next available original and starts at its top");
+                $"Wheel beyond the bottom moves to the next available original and starts at its top " +
+                $"(handled={next.Handled}, page={model.ActiveBlock?.Page}, before={beforeOffset:F2}/{beforeExtent:F2}, " +
+                $"after={scroll.VerticalOffset:F2}/{scroll.ScrollableHeight:F2}, modifiers={Keyboard.Modifiers}, status={model.Status})");
             scroll.ScrollToBottom(); window.UpdateLayout();
             var failed = Wheel(scroll, -120); await SettleAsync(window);
             check(!failed.Handled && model.ActiveBlock?.Page == 2,

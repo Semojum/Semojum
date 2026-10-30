@@ -407,7 +407,12 @@ internal static class WindowsSmoke
         IEnumerable<MenuItem> MenuItems(MenuItem root) => root.Items.OfType<MenuItem>().SelectMany(item => new[] { item }.Concat(MenuItems(item)));
         var tags = MenuItems(window.AllTagsMenu).Where(m => m.Tag is string tag && tag.StartsWith("tag:")).Select(m => ((string)m.Tag)[4..]).ToArray();
         Check(window.RuleSearch.IsVisible && tags.Length == 24 && MenuItems(window.AllTagsMenu).Any(m => Equals(m.Tag, "headerInsert")) && !tags.Any(t => t is "상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임"), "Insertion menu retains the dedicated header command and excludes automatic-only tags");
-        Check(window.AllTagsMenu.Items.OfType<MenuItem>().Count(m => m.Items.Count > 0) == 5, "QA4 insertion tags have five named submenus");
+        Check(window.AllTagsMenu.Items.OfType<MenuItem>().Count(m => m.Items.Count > 0) == 4, "QA4 insertion tags have four named submenus");
+        var brailleLines = window.AllTagsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Header, "점자 줄"));
+        var lineTags = brailleLines.Items.OfType<MenuItem>().Select(m => m.Tag as string).ToArray();
+        Check(lineTags.SequenceEqual(new[] { "tag:상단줄", "tag:중단줄", "tag:하단줄", "tag:상단굵은줄", "tag:하단굵은줄", "tag:표시작", "tag:표중앙", "tag:표끝", "tag:표구분선", "tag:표지시작", "tag:표지세로", "tag:표지끝" }) &&
+              !window.AllTagsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Header, "표 테두리")),
+            "The braille-line submenu follows Figma order while retaining the additional supported table-indicator tags");
         var margin = new Controls.MemoMargin(() => memoBlock, "TEXT", _ => { });
         Check(margin.Preview(0).Contains("미해결 회신") && margin.Preview(0).Contains("검수자") && !margin.Preview(0).Contains("해결된 메모"), "QA4 memo hover includes author, body and replies while hiding resolved items");
         Check(thread.Title == "메모", "QA4 memo title omits block and line coordinates");

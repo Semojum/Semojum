@@ -64,8 +64,8 @@ internal sealed class InstitutionOrderDialog : InstitutionDetailsDialog
             ContentPanel.Children.Add(new Border { Background = ExportRangeDialog.Brush("#F9F9F9"), CornerRadius = new(6), Child = rows, Margin = new(0, 0, 0, 16) });
         }
         Section(null, ("내용", order.Description), ("금액", "₩" + order.AmountKrw.ToString("N0")), ("요청한 사람", "정보 없음"), ("요청한 날", order.OrderDate));
-        Section("결제와 증빙", ("결제일", string.IsNullOrWhiteSpace(order.PaidAt) ? "정보 없음" : order.PaidAt), ("세금계산서", order.InvoiceStatus + (string.IsNullOrWhiteSpace(receiptEmail) ? "" : " · " + receiptEmail)));
+        Section("결제와 증빙", ("결제일", string.IsNullOrWhiteSpace(order.PaidAt) ? "정보 없음" : order.PaidAt), ("세금계산서", InstitutionStatusTextConverter.Label(order.InvoiceStatus, "invoice") + (string.IsNullOrWhiteSpace(receiptEmail) ? "" : " · " + receiptEmail)));
         ReceiptButton = Button("증빙 열기", async () => await RunAsync(openReceipt)); ReceiptButton.Width = 138; ReceiptButton.Height = 32;
-        ReceiptButton.IsEnabled = order.ReceiptFileName is not null; ReceiptButton.ToolTip = ReceiptButton.IsEnabled ? "서버가 제공한 증빙을 엽니다." : "제공된 증빙이 없습니다."; Footer.Children.Add(ReceiptButton); Done();
+        ReceiptButton.IsEnabled = !string.IsNullOrWhiteSpace(order.ReceiptFileName); ReceiptButton.ToolTip = ReceiptButton.IsEnabled ? "서버가 제공한 증빙을 엽니다." : "제공된 증빙이 없습니다."; Footer.Children.Add(ReceiptButton); Done();
     }
 }

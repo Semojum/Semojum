@@ -16,7 +16,7 @@ public sealed partial class InstitutionWindow
         AccountRequest.IsEnabled = CreditRequest.IsEnabled = false;
         Identity.Text = "정보 없음"; Allocated.Text = Balance.Text = Contract.Text = "—"; CreditDetail.Text = "사용량 정보 없음"; UsagePercent.Text = "정보 없음";
         ContractDetail.Text = "계약 정보 없음"; ContractRemaining.Text = "정보 없음"; StatusSummary.Text = "기관 정보 없음"; UsageBar.Value = 0; UsageBar.Visibility = Visibility.Collapsed;
-        Chart.Children.Clear(); ChartEmpty.Visibility = Visibility.Visible; Accounts.ItemsSource = Requests.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; receiptEmail = null; ReceiptAddress.Text = "증빙 받는 사람 정보 없음";
+        RenderMonthlyUsage([]); Accounts.ItemsSource = Requests.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; receiptEmail = null; ReceiptAddress.Text = "증빙 받는 사람 정보 없음";
         SessionIdentity.Text = api.Account?.LoginId ?? "로그인 정보 없음";
     }
     private async Task RefreshAsync()
@@ -46,17 +46,7 @@ public sealed partial class InstitutionWindow
                 ContractDetail.Text = ValidDate(value.ContractStartedAt) ? "시작 " + value.ContractStartedAt : "시작일 정보 없음";
                 ContractRemaining.Text = RemainingDays(value.ContractExpiresAt, TodayInKorea());
                 StatusSummary.Text = $"기관 {value.OrgName}  |  남은 크레딧 {value.CreditRemaining:N0}  |  계약 만료 {ContractRemaining.Text}";
-                Chart.Children.Clear(); ChartEmpty.Visibility = value.MonthlyUsage.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-                var maximum = value.MonthlyUsage.Select(m => m.Credits).DefaultIfEmpty(0).Max();
-                foreach (var month in value.MonthlyUsage)
-                {
-                    var column = new Grid { Width = 72, Height = 170, Margin = new(0, 0, 4, 0) };
-                    column.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); column.RowDefinitions.Add(new() { Height = new(22) });
-                    var bar = new Border { Height = maximum > 0 ? Math.Clamp(110d * month.Credits / maximum, 0, 110) : 0, Background = ExportRangeDialog.Brush("#5B8DEF"), CornerRadius = new(3), Width = 42, VerticalAlignment = VerticalAlignment.Bottom, ToolTip = month.Month + " · " + month.Credits.ToString("N0") };
-                    System.Windows.Automation.AutomationProperties.SetName(bar, month.Month + " 사용 크레딧 " + month.Credits.ToString("N0")); column.Children.Add(bar);
-                    var amount = new TextBlock { Text = month.Credits.ToString("N0"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0, 0, 0, bar.Height + 2) }; column.Children.Add(amount);
-                    var label = new TextBlock { Text = month.Month, HorizontalAlignment = HorizontalAlignment.Center }; Grid.SetRow(label, 1); column.Children.Add(label); Chart.Children.Add(column);
-                }
+                RenderMonthlyUsage(value.MonthlyUsage);
                 AccountRequest.IsEnabled = CreditRequest.IsEnabled = true; AccountRequest.ToolTip = CreditRequest.ToolTip = "운영자에게 요청을 보냅니다.";
             });
             await Load("소속 계정", async () => Accounts.ItemsSource = (await Client.AccountsAsync(Lifetime.Token)).Items);
@@ -78,6 +68,77 @@ public sealed partial class InstitutionWindow
     }
     internal static string UsageRatio(long allocated, long used) => allocated <= 0 || used < 0 ? "정보 없음"
         : decimal.Round((decimal)used * 100 / allocated, 0, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture) + "%";
+    internal static decimal? SixMonthAverage(IReadOnlyList<InstitutionMonthlyUsage> months)
+    {
+        if (months.Count != 6 || months.Any(m => m.Credits < 0)) return null;
+        var parsed = new List<DateTime>(6);
+        foreach (var month in months.OrderBy(m => m.Month, StringComparer.Ordinal))
+        {
+            if (!DateTime.TryParseExact(month.Month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)) return null;
+            parsed.Add(date);
+        }
+        parsed.Sort();
+        if (parsed.Zip(parsed.Skip(1), (a, b) => (long)a.Year * 12 + a.Month + 1 == (long)b.Year * 12 + b.Month).Any(consecutive => !consecutive)) return null;
+        return decimal.Round(months.Sum(m => (decimal)m.Credits) / 6m, 0, MidpointRounding.AwayFromZero);
+    }
+    internal void RenderMonthlyUsage(IReadOnlyList<InstitutionMonthlyUsage> months)
+    {
+        Chart.Children.Clear();
+        var usable = months.Count > 0 && months.All(m => m.Credits >= 0);
+        ChartArea.Visibility = usable ? Visibility.Visible : Visibility.Collapsed;
+        ChartEmpty.Text = months.Count == 0 ? "월별 사용량 정보 없음" : "월별 사용량을 표시할 수 없습니다.";
+        ChartEmpty.Visibility = usable ? Visibility.Collapsed : Visibility.Visible;
+        var average = SixMonthAverage(months);
+        ChartAverage.Text = average.HasValue ? $"6개월 평균 {average.Value:N0}" : "6개월 평균 정보 없음";
+        ChartAverage.ToolTip = ChartAverage.Text;
+        if (!usable) { ChartMaximum.Text = ChartMiddle.Text = ChartLower.Text = ""; return; }
+        var maximum = months.Max(m => m.Credits);
+        ChartMaximum.Text = maximum.ToString("N0");
+        ChartMiddle.Text = decimal.Round((decimal)maximum * 2m / 3m, 0, MidpointRounding.AwayFromZero).ToString("N0");
+        ChartLower.Text = decimal.Round((decimal)maximum / 3m, 0, MidpointRounding.AwayFromZero).ToString("N0");
+        ChartMaximum.ToolTip = ChartMaximum.Text; ChartMiddle.ToolTip = ChartMiddle.Text; ChartLower.ToolTip = ChartLower.Text;
+        foreach (var month in months.OrderBy(m => m.Month, StringComparer.Ordinal))
+        {
+            var column = new Grid { Width = 72, Height = 152, Margin = new(0, 0, 4, 0) };
+            column.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) }); column.RowDefinitions.Add(new() { Height = new(22) });
+            var bar = new Border { Height = maximum > 0 ? Math.Clamp(110d * month.Credits / maximum, 0, 110) : 0, Background = ChartBarBrush(), CornerRadius = new(3), Margin = new(5, 0, 5, 0), VerticalAlignment = VerticalAlignment.Bottom, ToolTip = month.Month + " · " + month.Credits.ToString("N0") };
+            System.Windows.Automation.AutomationProperties.SetName(bar, month.Month + " 사용 크레딧 " + month.Credits.ToString("N0")); column.Children.Add(bar);
+            var amount = new TextBlock { Text = month.Credits.ToString("N0"), FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = month.Credits.ToString("N0"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0, 0, 0, bar.Height + 2) }; column.Children.Add(amount);
+            var monthLabel = DateTime.TryParseExact(month.Month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date) ? date.Month + "월" : month.Month;
+            var label = new TextBlock { Text = monthLabel, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = month.Month, HorizontalAlignment = HorizontalAlignment.Center }; Grid.SetRow(label, 1); column.Children.Add(label); Chart.Children.Add(column);
+        }
+        SizeChartColumns(); ApplyChartContrast(chartHighContrast);
+    }
+    private System.Windows.Media.Brush ChartBarBrush() => chartHighContrast ? SystemColors.HighlightBrush : ExportRangeDialog.Brush("#5B8DEF");
+    internal void ApplyChartContrast(bool highContrast)
+    {
+        chartHighContrast = highContrast;
+        if (chartCard is not null)
+        {
+            chartCard.Background = highContrast ? SystemColors.WindowBrush : System.Windows.Media.Brushes.White;
+            chartCard.BorderBrush = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#EAEAEA");
+            if (chartCard.Child is StackPanel { Children.Count: > 0 } panel && panel.Children[0] is TextBlock title)
+                title.Foreground = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#1A1A1A");
+        }
+        var text = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#5F5F5F");
+        var axis = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#8A8A8A");
+        ChartMaximum.Foreground = ChartMiddle.Foreground = ChartLower.Foreground = axis;
+        ChartAverage.Foreground = ChartEmpty.Foreground = chartLegendText.Foreground = text;
+        chartLegendDot.Background = ChartBarBrush();
+        foreach (var column in Chart.Children.OfType<Grid>())
+        foreach (var child in column.Children)
+        {
+            if (child is Border bar) bar.Background = ChartBarBrush();
+            else if (child is TextBlock label) label.Foreground = text;
+        }
+    }
+    private void SizeChartColumns()
+    {
+        if (Chart.Children.Count == 0) return;
+        var available = ChartScroll.ActualWidth > 0 ? ChartScroll.ActualWidth : ChartScroll.ViewportWidth;
+        var width = Math.Clamp(available / Chart.Children.Count - 4, 60, 100);
+        foreach (var column in Chart.Children.OfType<FrameworkElement>()) column.Width = width;
+    }
     private static bool ValidDate(string? date) => DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
     private static DateOnly TodayInKorea() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time")).DateTime);
     internal static string RemainingDays(string? date, DateOnly today)
@@ -122,17 +183,26 @@ public sealed partial class InstitutionWindow
     }
     private async Task OpenReceiptAsync()
     {
-        if (Orders.SelectedItem is not InstitutionOrder order || order.ReceiptFileName is null) return;
+        if (Orders.SelectedItem is not InstitutionOrder order || string.IsNullOrWhiteSpace(order.ReceiptFileName)) return;
         await OpenReceiptForAsync(order);
     }
+    internal Action<string> ReceiptLauncher { get; set; } = url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     private async Task OpenReceiptForAsync(InstitutionOrder order)
     {
-        if (order.ReceiptFileName is null) return;
+        if (string.IsNullOrWhiteSpace(order.ReceiptFileName)) return;
+        var marker = api.SessionMarker;
+        var owner = api.Account;
+        if (marker is null || marker != institutionSessionMarker || owner?.Role != "ROLE_ORG_ADMIN" || api.SessionMarker != marker) return;
+        var lifetime = Lifetime.Token;
         try
         {
-            var receipt = await Client.ReceiptAsync(order.Id, Lifetime.Token);
-            Process.Start(new ProcessStartInfo(receipt.Url) { UseShellExecute = true });
+            var receipt = await Client.ReceiptAsync(order.Id, lifetime);
+            // A late response from a closed window or an earlier login must never launch a URL.
+            // A token refresh retains the marker; logout and even a same-account login replace it.
+            if (lifetime.IsCancellationRequested || !IsVisible || api.SessionMarker != marker || api.Account is not { Role: "ROLE_ORG_ADMIN" } current || current.LoginId != owner.LoginId) return;
+            ReceiptLauncher(receipt.Url);
         }
-        catch (Exception ex) { ErrorText.Text = "증빙을 열지 못했습니다. " + ex.Message; }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { if (!lifetime.IsCancellationRequested && IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = "증빙을 열지 못했습니다. " + ex.Message; }
     }
 }

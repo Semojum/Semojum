@@ -12,6 +12,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed partial class InstitutionWindow : CompactDialog
 {
     private readonly SemojumApiClient api;
+    private readonly Guid? institutionSessionMarker;
     private readonly Func<Task<bool>> logout;
     private bool loggingOut;
     public bool LogoutRequested { get; private set; }
@@ -39,6 +40,16 @@ public sealed partial class InstitutionWindow : CompactDialog
     internal TextBlock StatusSummary { get; } = new() { Text = "기관 정보 없음", Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     internal StackPanel Chart { get; } = new() { Orientation = Orientation.Horizontal };
     internal TextBlock ChartEmpty { get; } = new() { Text = "월별 사용량 정보 없음", Foreground = ExportRangeDialog.Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap };
+    internal TextBlock ChartMaximum { get; } = new() { Foreground = ExportRangeDialog.Brush("#8A8A8A"), FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
+    internal TextBlock ChartMiddle { get; } = new() { Foreground = ExportRangeDialog.Brush("#8A8A8A"), FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
+    internal TextBlock ChartLower { get; } = new() { Foreground = ExportRangeDialog.Brush("#8A8A8A"), FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis };
+    internal TextBlock ChartAverage { get; } = new() { Text = "6개월 평균 정보 없음", Foreground = ExportRangeDialog.Brush("#5F5F5F"), FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Right };
+    internal ScrollViewer ChartScroll { get; } = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+    internal Grid ChartArea { get; } = new();
+    private Border? chartCard;
+    private readonly Border chartLegendDot = new() { Width = 8, Height = 8, CornerRadius = new(4), VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 6, 0) };
+    private readonly TextBlock chartLegendText = new() { Text = "월 사용 크레딧", FontSize = 12 };
+    private bool chartHighContrast;
     internal Button AccountRequest { get; }
     internal Button AccountDetail { get; }
     internal Button CreditRequest { get; }
@@ -47,7 +58,7 @@ public sealed partial class InstitutionWindow : CompactDialog
 
     public InstitutionWindow(SemojumApiClient api, Func<Task<bool>> logout) : base("기관 관리 - 세모점", 1440, 1000, editor: true)
     {
-        this.api = api; this.logout = logout;
+        this.api = api; this.logout = logout; institutionSessionMarker = api.SessionMarker;
         MinWidth = 480; MinHeight = 360; ApplyCaption();
         var menu = new Menu { Height = 32, Padding = new(4, 0, 0, 0) };
         var file = new MenuItem { Header = "파일(_F)", Width = 64 }; menu.Items.Add(file);
@@ -74,8 +85,32 @@ public sealed partial class InstitutionWindow : CompactDialog
         summary.Children.Add(SummaryCard("할당 크레딧", allocatedContent)); summary.Children.Add(creditCard);
         var contractContent = new StackPanel(); contractContent.Children.Add(Contract); contractContent.Children.Add(ContractRemaining); contractContent.Children.Add(ContractDetail); var contractCard = SummaryCard("계약", contractContent); Grid.SetColumn(contractCard, 2); summary.Children.Add(contractCard);
         var middle = new Grid { Margin = new(0, 0, 0, 16) }; middle.ColumnDefinitions.Add(new()); middle.ColumnDefinitions.Add(new()); content.Children.Add(middle);
-        var graph = new StackPanel(); graph.Children.Add(new ScrollViewer { Content = Chart, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled }); graph.Children.Add(ChartEmpty);
-        var graphCard = Card("월별 사용 추이", graph); graphCard.Margin = new(0, 0, 8, 0); graphCard.MinHeight = 230; middle.Children.Add(graphCard);
+        var graph = new StackPanel();
+        ChartArea.ColumnDefinitions.Add(new() { Width = new(46) }); ChartArea.ColumnDefinitions.Add(new());
+        var axis = new Grid { Height = 132, VerticalAlignment = VerticalAlignment.Top };
+        axis.RowDefinitions.Add(new()); axis.RowDefinitions.Add(new()); axis.RowDefinitions.Add(new());
+        axis.Children.Add(ChartMaximum); Grid.SetRow(ChartMiddle, 1); axis.Children.Add(ChartMiddle); Grid.SetRow(ChartLower, 2); axis.Children.Add(ChartLower);
+        ChartArea.Children.Add(axis); ChartScroll.Content = Chart; Grid.SetColumn(ChartScroll, 1); ChartArea.Children.Add(ChartScroll); graph.Children.Add(ChartArea); graph.Children.Add(ChartEmpty);
+        ChartScroll.SizeChanged += (_, _) => SizeChartColumns();
+        var legend = new Grid { Margin = new(0, 6, 0, 0) };
+        legend.ColumnDefinitions.Add(new()); legend.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        legend.RowDefinitions.Add(new() { Height = GridLength.Auto }); legend.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        var legendText = new StackPanel { Orientation = Orientation.Horizontal };
+        legendText.Children.Add(chartLegendDot); legendText.Children.Add(chartLegendText);
+        legend.Children.Add(legendText); Grid.SetColumn(ChartAverage, 1); legend.Children.Add(ChartAverage);
+        legend.SizeChanged += (_, e) =>
+        {
+            var narrow = e.NewSize.Width < 245;
+            Grid.SetColumn(ChartAverage, narrow ? 0 : 1); Grid.SetRow(ChartAverage, narrow ? 1 : 0); Grid.SetColumnSpan(ChartAverage, narrow ? 2 : 1);
+        };
+        graph.Children.Add(legend);
+        var graphCard = Card("월별 사용 추이", graph); chartCard = graphCard; graphCard.Margin = new(0, 0, 8, 0); graphCard.MinHeight = 230; middle.Children.Add(graphCard);
+        ApplyChartContrast(SystemParameters.HighContrast);
+        System.ComponentModel.PropertyChangedEventHandler contrastChanged = (_, e) =>
+        {
+            if (e.PropertyName == nameof(SystemParameters.HighContrast)) Dispatcher.BeginInvoke(new Action(() => ApplyChartContrast(SystemParameters.HighContrast)));
+        };
+        SystemParameters.StaticPropertyChanged += contrastChanged; Closed += (_, _) => SystemParameters.StaticPropertyChanged -= contrastChanged;
         Notices = Table(("받은 날", "CreatedAt"), ("제목", "Title")); Notices.Columns.Insert(1, StatusColumn("분류", "Scope", "notice"));
         Notices.MouseDoubleClick += async (_, _) => { if (Notices.SelectedItem is InstitutionNotice n) await OpenNoticeAsync(n); };
         NoticeDetail = Button("선택한 공지 보기", async () => { if (Notices.SelectedItem is InstitutionNotice n) await OpenNoticeAsync(n); }); NoticeDetail.Height = 32; NoticeDetail.IsEnabled = false;
@@ -100,10 +135,24 @@ public sealed partial class InstitutionWindow : CompactDialog
         RequestsExpander = new Expander { Header = "요청 내역", Content = requestsCard, IsExpanded = false, Style = new Style(typeof(Expander)), Margin = new(0, 0, 0, 16) };
         AutomationProperties.SetName(RequestsExpander, "기관 요청 내역");
         Orders = Table(("일자", "OrderDate"), ("내용", "Description"), ("금액", "AmountKrw"), ("결제일", "PaidAt"), ("계산서", "InvoiceStatus"));
+        ((DataGridTextColumn)Orders.Columns[^1]).Binding = new Binding("InvoiceStatus") { Converter = new InstitutionStatusTextConverter(), ConverterParameter = "invoice" };
+        var receiptCell = new FrameworkElementFactory(typeof(Grid));
+        var receiptLink = new FrameworkElementFactory(typeof(Button)); receiptLink.SetValue(ContentProperty, "내려받기"); receiptLink.SetValue(HeightProperty, 28d); receiptLink.SetValue(MinHeightProperty, 0d); receiptLink.SetValue(MinWidthProperty, 0d);
+        receiptLink.SetValue(PaddingProperty, new Thickness(2, 0, 2, 0)); receiptLink.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Left);
+        receiptLink.SetValue(Control.ForegroundProperty, ExportRangeDialog.Brush("#005FB8")); receiptLink.SetValue(Control.BackgroundProperty, Brushes.Transparent); receiptLink.SetValue(Control.BorderThicknessProperty, new Thickness(0));
+        receiptLink.SetValue(Control.TemplateProperty, ExportRangeDialog.SurfaceTemplate(0));
+        receiptLink.SetBinding(VisibilityProperty, new Binding("ReceiptFileName") { Converter = new InstitutionReceiptVisibilityConverter() });
+        receiptLink.SetBinding(ToolTipProperty, new Binding("ReceiptFileName"));
+        receiptLink.SetBinding(AutomationProperties.NameProperty, new Binding("Description") { StringFormat = "주문 {0} 증빙 내려받기" });
+        receiptLink.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler(async (sender, e) => { e.Handled = true; if (sender is FrameworkElement { DataContext: InstitutionOrder order }) await OpenReceiptForAsync(order); }));
+        receiptCell.AppendChild(receiptLink);
+        var noReceipt = new FrameworkElementFactory(typeof(TextBlock)); noReceipt.SetValue(TextBlock.TextProperty, "—"); noReceipt.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        noReceipt.SetBinding(VisibilityProperty, new Binding("ReceiptFileName") { Converter = new InstitutionReceiptVisibilityConverter(), ConverterParameter = "missing" }); receiptCell.AppendChild(noReceipt);
+        Orders.Columns.Add(new DataGridTemplateColumn { Header = "증빙", Width = 94, CanUserSort = false, CellTemplate = new DataTemplate { VisualTree = receiptCell } });
         Orders.MouseDoubleClick += async (_, _) => { if (Orders.SelectedItem is InstitutionOrder order) await OpenOrderAsync(order); };
         OrderDetail = Button("선택한 주문 상세", async () => { if (Orders.SelectedItem is InstitutionOrder order) await OpenOrderAsync(order); }); OrderDetail.Height = 32; OrderDetail.IsEnabled = false;
         Receipt = Button("선택한 증빙 열기", () => OpenReceiptAsync()); Receipt.Height = 32; Receipt.IsEnabled = false;
-        Orders.SelectionChanged += (_, _) => { OrderDetail.IsEnabled = Orders.SelectedItem is InstitutionOrder; Receipt.IsEnabled = Orders.SelectedItem is InstitutionOrder { ReceiptFileName: not null }; };
+        Orders.SelectionChanged += (_, _) => { OrderDetail.IsEnabled = Orders.SelectedItem is InstitutionOrder; Receipt.IsEnabled = Orders.SelectedItem is InstitutionOrder selected && !string.IsNullOrWhiteSpace(selected.ReceiptFileName); };
         var orderActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         OrderDetail.Width = 144; Receipt.Width = 144; orderActions.Children.Add(OrderDetail); orderActions.Children.Add(Receipt);
         var orderCard = Card("주문 내역", Orders, ReceiptAddress, orderActions); orderCard.MinHeight = 202; content.Children.Add(orderCard);

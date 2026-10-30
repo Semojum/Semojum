@@ -38,7 +38,18 @@ public sealed class UsageDialog : CompactDialog
         var panel = new StackPanel { Margin = new(24, 20, 24, 24) }; TextElement.SetFontWeight(panel, FontWeights.Normal);
         var usageScroll = new ScrollViewer { Content = panel, Background = ColorBrush("#F4F6F9"), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         var usageTab = new TabItem { Header = "사용량", Content = usageScroll }; tabs.Items.Add(usageTab);
-        panel.Children.Add(new TextBlock { Text = "사용량", FontSize = 20, FontWeight = FontWeights.SemiBold, Height = 28 });
+        var usageHeading = new Grid { Height = 28 };
+        usageHeading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        usageHeading.ColumnDefinitions.Add(new ColumnDefinition());
+        usageHeading.Children.Add(new TextBlock { Text = "사용량", FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        if (api.Account?.DisplayName is { } displayName && !string.IsNullOrWhiteSpace(displayName))
+        {
+            var accountName = new TextBlock { Text = displayName, FontSize = 14, Foreground = (Brush)FindResource("Muted"), Margin = new(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Bottom, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = displayName };
+            System.Windows.Automation.AutomationProperties.SetAutomationId(accountName, "UsageAccountName");
+            System.Windows.Automation.AutomationProperties.SetName(accountName, "사용량 계정 " + displayName);
+            Grid.SetColumn(accountName, 1); usageHeading.Children.Add(accountName);
+        }
+        panel.Children.Add(usageHeading);
         var periodText = new TextBlock { Height = 16, Margin = new(0, 2, 0, 8), Foreground = (Brush)FindResource("Muted") }; panel.Children.Add(periodText);
         Border Card(UIElement child, double height) => new() { Child = child, Height = height, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8), Background = Brushes.White };
         var summaryPanel = new StackPanel { Margin = new(15, 11, 15, 0) };
@@ -174,7 +185,7 @@ public sealed class UsageDialog : CompactDialog
         {
             var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token);
             if (Lifetime.IsCancellationRequested || request != selectionRequest || !ReferenceEquals(inquiryList.SelectedItem, row)) return;
-            detailTitle.Text = post.Title; detailMetadata.Text = $"{post.CreatedAt}  ·  {(post.Answers.Length > 0 ? "답변 완료" : "답변 대기")}"; detailBody.Children.Clear(); ClearInquiryError();
+            detailTitle.Text = post.Title; detailMetadata.Text = $"{post.CreatedAt}  ·  {(post.Answers.Length > 0 ? $"답변 {post.Answers.Length}건" : "답변 없음")}"; detailBody.Children.Clear(); ClearInquiryError();
             void AddMessage(string title, string text)
             {
                 detailBody.Children.Add(new TextBlock { Text = title, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 0, 0, 6) });
@@ -335,7 +346,15 @@ public sealed class UsageDialog : CompactDialog
         var panel = new FrameworkElementFactory(typeof(StackPanel)); panel.SetValue(MarginProperty, new Thickness(8, 8, 8, 8));
         var title = new FrameworkElementFactory(typeof(TextBlock)); title.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.DisplayTitle))); title.SetValue(FontSizeProperty, 14d); title.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); panel.AppendChild(title);
         var metadata = new FrameworkElementFactory(typeof(DockPanel)); metadata.SetValue(MarginProperty, new Thickness(0, 5, 0, 0));
-        var count = new FrameworkElementFactory(typeof(TextBlock)); count.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.AnswerCount)) { StringFormat = "답변 {0}건" }); count.SetValue(TextBlock.ForegroundProperty, ColorBrush("#5F5F5F")); count.SetValue(DockPanel.DockProperty, Dock.Right); metadata.AppendChild(count);
+        var badge = new FrameworkElementFactory(typeof(Border)); badge.SetValue(DockPanel.DockProperty, Dock.Right);
+        badge.SetValue(FrameworkElement.HeightProperty, 18d); badge.SetValue(FrameworkElement.MinWidthProperty, 69d);
+        badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(9)); badge.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        badge.SetValue(Border.BorderBrushProperty, ColorBrush("#8A8A8A")); badge.SetValue(Border.BackgroundProperty, Brushes.White);
+        badge.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty, new Binding(nameof(BoardRow.AnswerCount)) { StringFormat = "답변 {0}건" });
+        var count = new FrameworkElementFactory(typeof(TextBlock)); count.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.AnswerCount)) { StringFormat = "답변 {0}건" });
+        count.SetValue(TextBlock.ForegroundProperty, ColorBrush("#5F5F5F")); count.SetValue(TextBlock.FontSizeProperty, 12d);
+        count.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Center); count.SetValue(FrameworkElement.MarginProperty, new Thickness(6, 0, 6, 0));
+        count.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); badge.AppendChild(count); metadata.AppendChild(badge);
         var date = new FrameworkElementFactory(typeof(TextBlock)); date.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.CreatedAt))); date.SetValue(TextBlock.ForegroundProperty, ColorBrush("#8A8A8A")); metadata.AppendChild(date); panel.AppendChild(metadata);
         return new DataTemplate(typeof(BoardRow)) { VisualTree = panel };
     }
