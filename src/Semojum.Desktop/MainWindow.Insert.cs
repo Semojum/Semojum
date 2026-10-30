@@ -217,7 +217,7 @@ public partial class MainWindow
                     Rules = string.Equals(previousSource, selectedSource, StringComparison.Ordinal) ? block.Metadata.Rules : null };
                 block.Source = selectedSource;
                 if (decision == ManualEditDecision.Overwrite)
-                { block.Braille = translation.Cells; block.Translation = translation; block.HasManualBraille = false; block.State = "선택한 대체 초안"; }
+                { block.InvalidateBrailleConfirmations(); block.Braille = translation.Cells; block.Translation = translation; block.HasManualBraille = false; block.State = "선택한 대체 초안"; }
                 else if (!string.Equals(previousSource, selectedSource, StringComparison.Ordinal))
                 { block.Translation = null; block.State = "직접 수정 점자 유지"; }
             });
@@ -258,7 +258,7 @@ public partial class MainWindow
                 latex = full.Latex;
             }
         }
-        var owner = session; var sourceRevision = active.SourceRevision; var brailleRevision = active.BrailleRevision; var metadataRevision = active.MetadataRevision; var options = owner.Options;
+        var owner = session; var sourceRevision = active.SourceRevision; var brailleRevision = active.BrailleRevision; var metadataRevision = active.MetadataRevision; var manual = active.HasManualBraille; var options = owner.Options;
         var dialog = new MathDialog((value, ct) => local.TranslateElementAsync(value, new(Type: "formula"), session.Options, ct), latex,
             existing && active.HasManualBraille ? active.Braille : null) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Translation is null) return;
@@ -266,7 +266,7 @@ public partial class MainWindow
         { owner.Status = "수식 안에 수식 태그를 중첩할 수 없습니다."; return; }
         var decision = existing ? ChooseTranslation(active) : ManualEditDecision.Overwrite;
         if (decision == ManualEditDecision.Cancel) return;
-        if (resourcesReleased || owner.IsReadOnly || !ReferenceEquals(owner, session) || !ReferenceEquals(owner.ActiveBlock, active) || !owner.Blocks.Contains(active) || active.SourceRevision != sourceRevision
+        if (resourcesReleased || owner.IsReadOnly || !ReferenceEquals(owner, session) || !ReferenceEquals(owner.ActiveBlock, active) || !owner.Blocks.Contains(active) || active.IsBrailleLocked || active.Metadata.IsBlocked || active.HasManualBraille != manual || active.SourceRevision != sourceRevision
             || active.BrailleRevision != brailleRevision || active.MetadataRevision != metadataRevision || owner.Options != options)
         { owner.Status = "수식 편집 중 문서가 바뀌어 적용하지 않았습니다."; return; }
         EditorBlock block = active;
@@ -288,6 +288,7 @@ public partial class MainWindow
             }
             else
             {
+                block.InvalidateBrailleConfirmations();
                 block.Braille = dialog.BrailleInput.Text;
                 block.Translation = dialog.Translation with { Cells = block.Braille, SourceText = block.Source,
                     RuleTrail = dialog.Edited ? null : dialog.Translation.RuleTrail, Breaks = dialog.Edited ? [] : dialog.Translation.Breaks };
@@ -395,17 +396,23 @@ public partial class MainWindow
     }
     private async Task EditTableAsync()
     {
-        if (session.ActiveBlock is not { } block || block.Metadata.IsBlocked || engine is not LocalBrailleEngine local) return;
+        if (session.IsReadOnly || session.ActiveBlock is not { } block || block.Metadata.IsBlocked || block.IsBrailleLocked || engine is not LocalBrailleEngine local) return;
         var source = block.Source.Contains("<!표>") ? block.Source : block.Metadata.TableSource;
         if (source is null) throw new ArgumentException("현재 블록에는 편집할 표 구조가 없습니다.");
-        var dialog = new TableDialog(source, block.Metadata, session.Options, local) { Owner = this };
+        var owner = session; var sourceRevision = block.SourceRevision; var brailleRevision = block.BrailleRevision;
+        var metadataRevision = block.MetadataRevision; var manual = block.HasManualBraille; var options = owner.Options;
+        var dialog = new TableDialog(source, block.Metadata, options, local) { Owner = this };
         if (dialog.ShowDialog() != true || dialog.Translation is null) return;
         var choice = ChooseTranslation(block); if (choice == ManualEditDecision.Cancel) return;
+        if (resourcesReleased || !ReferenceEquals(owner, session) || !ReferenceEquals(owner.ActiveBlock, block) || !owner.Blocks.Contains(block)
+            || owner.IsReadOnly || block.IsBrailleLocked || block.Metadata.IsBlocked || block.HasManualBraille != manual || owner.Options != options
+            || block.SourceRevision != sourceRevision || block.BrailleRevision != brailleRevision || block.MetadataRevision != metadataRevision)
+        { owner.Status = "표 편집 중 문서가 바뀌어 적용하지 않았습니다."; return; }
         EditStructure(() =>
         {
             block.Metadata = block.Metadata with { Type = "table", TableSource = dialog.SourceText, TableDisplayText = dialog.SourceText, OriginalSource = block.Metadata.OriginalSource ?? block.Source };
             block.Source = dialog.SourceText;
-            if (choice == ManualEditDecision.Overwrite) { block.Braille = dialog.Translation.Cells; block.Translation = dialog.Translation; block.HasManualBraille = false; }
+            if (choice == ManualEditDecision.Overwrite) { block.InvalidateBrailleConfirmations(); block.Braille = dialog.Translation.Cells; block.Translation = dialog.Translation; block.HasManualBraille = false; }
         });
         translatedRevisions[block] = block.SourceRevision;
         session.Status = "표를 반영했습니다. Ctrl+S로 저장해 주세요.";
@@ -516,6 +523,7 @@ public partial class MainWindow
         EditStructure(() =>
         {
             block.Metadata = block.Metadata with { RenderMode = draft.RenderMode };
+            block.InvalidateBrailleConfirmations();
             block.Braille = draft.Cells; block.Translation = translation with { Cells = draft.Cells, Breaks = draft.Breaks, RenderMode = draft.RenderMode,
                 RuleTrail = sameResult ? translation.RuleTrail : null, Spacing = sameResult ? translation.Spacing : null };
             block.HasManualBraille = false; block.State = "표 초안 · " + draft.Label;

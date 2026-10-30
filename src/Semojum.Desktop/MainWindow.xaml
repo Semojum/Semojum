@@ -27,6 +27,14 @@
             <Separator/>
             <MenuItem Header="찾기 · 바꾸기" InputGestureText="Ctrl+F" Tag="find" Click="Action_Click"/>
             <MenuItem Header="이동" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
+            <Separator/>
+            <MenuItem Header="검토 표시">
+              <MenuItem Header="고침 제안" Tag="reviewCorrection" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
+              <MenuItem Header="지울 제안" Tag="reviewDeletion" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
+              <MenuItem Header="사람이 확인함" Tag="reviewConfirmed" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
+              <MenuItem Header="선택과 겹친 표시 지우기" Tag="reviewRemove" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
+              <MenuItem Header="검토 표시 목록" Tag="reviewList" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
+            </MenuItem>
           </MenuItem>
           <MenuItem Header="보기(_V)" Width="64">
             <MenuItem Header="글자 크기">

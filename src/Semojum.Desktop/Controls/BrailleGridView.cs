@@ -16,16 +16,22 @@ public sealed partial class BrailleGridView : ListBox
     public bool ShowOutlines { get; set; } = true;
     public bool HighContrast { get; set; }
     public Brush CurrentLineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(242, 246, 251));
+    public Brush SelectionHighlightBrush { get; set; } = new SolidColorBrush(Color.FromRgb(204, 228, 247));
+    public Brush SelectionTextBrush { get; set; } = new SolidColorBrush(Color.FromRgb(31, 31, 31));
     public bool ShowLineNumbers { get; set; } = true;
     private bool showMemos = true, showReviews = true;
     public bool ShowMemos { get => showMemos; set { if (showMemos != value) { showMemos = value; InvalidateMarkerCache(); InvalidateFaces(); } } }
     public bool ShowReviews { get => showReviews; set { if (showReviews != value) { showReviews = value; InvalidateMarkerCache(); InvalidateFaces(); } } }
     public Action<EditorBlock, int>? MemoRequested { get; set; }
     public Action<EditorBlock>? ReviewRequested { get; set; }
+    public Action? ManualReviewRequested { get; set; }
     internal sealed record RowMarker(EditorBlock Block, int Line, bool Memo, bool Review, string Description);
     private Dictionary<BrailleGridFace, Dictionary<int, RowMarker>>? markerCache;
+    private sealed record ManualFaceReviews(ReviewKind[][] Kinds, Dictionary<GridCell, ReviewMark> LastByCell);
+    private Dictionary<BrailleGridFace, ManualFaceReviews>? manualReviewCache;
     internal int MarkerCacheBuildCount { get; private set; }
-    private void InvalidateMarkerCache() => markerCache = null;
+    internal int ManualReviewCacheBuildCount { get; private set; }
+    private void InvalidateMarkerCache() { markerCache = null; manualReviewCache = null; }
     private void MarkerMemosChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) { InvalidateMarkerCache(); InvalidateFaces(); }
     private void MarkerBlockChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -34,12 +40,82 @@ public sealed partial class BrailleGridView : ListBox
     protected override void OnItemsChanged(System.Collections.Specialized.NotifyCollectionChangedEventArgs e) { InvalidateMarkerCache(); base.OnItemsChanged(e); }
     internal bool ActivateMarker(BrailleGridFace face, int row, double x)
     {
-        if (!CoordinatesCurrent || x < 40 || !MarkersFor(face).TryGetValue(row, out var marker)) return false;
-        var width = (marker.Memo && marker.Review) ? 32 : 16;
-        if (x >= 40 + width) return false;
-        if (marker.Review && (!marker.Memo || x >= 56)) ReviewRequested?.Invoke(marker.Block);
-        else if (marker.Memo) MemoRequested?.Invoke(marker.Block, marker.Line);
+        if (!CoordinatesCurrent || x < 40 || row < 0 || row >= face.Rows.Length) return false;
+        MarkersFor(face).TryGetValue(row, out var marker);
+        var baseSlots = (marker?.Memo == true ? 1 : 0) + (marker?.Review == true ? 1 : 0);
+        var manual = ManualReviewKinds(face, row);
+        var slot = (int)((x - 40) / 16);
+        if (slot < 0 || slot >= baseSlots + manual.Length) return false;
+        if (marker?.Memo == true && slot == 0) MemoRequested?.Invoke(marker.Block, marker.Line);
+        else if (marker?.Review == true && slot == (marker.Memo ? 1 : 0)) ReviewRequested?.Invoke(marker.Block);
+        else ManualReviewRequested?.Invoke();
         return true;
+    }
+    internal ReviewKind[] ManualReviewKinds(BrailleGridFace face, int row)
+    {
+        if (!ShowReviews || !CoordinatesCurrent || row < 0 || row >= face.Rows.Length) return [];
+        return ManualReviewsFor(face).Kinds[row];
+    }
+    internal ReviewMark? ManualReviewForCell(BrailleGridFace face, GridCell cell)
+    {
+        if (!ShowReviews || !CoordinatesCurrent) return null;
+        return ManualReviewsFor(face).LastByCell.TryGetValue(cell, out var mark) ? mark : null;
+    }
+    private ManualFaceReviews ManualReviewsFor(BrailleGridFace face)
+    {
+        manualReviewCache ??= new();
+        if (manualReviewCache.TryGetValue(face, out var existing)) return existing;
+        ManualReviewCacheBuildCount++;
+        // Index each block's marks once per visible face. Sorting interval boundaries
+        // avoids rescanning all marks for every cell in a heavily annotated document.
+        var indexed = new Dictionary<EditorBlock, Dictionary<int, (ReviewMark Last, ReviewKind[] Kinds)>>();
+        foreach (var group in face.Rows.SelectMany(row => row.OfType<GridCell>()).GroupBy(cell => cell.Block))
+        {
+            var marks = group.Key.ReviewMarks.Where(m => !m.IsStale && m.Panel == ReviewPanel.Braille).ToArray();
+            if (marks.Length == 0) continue;
+            var starts = Enumerable.Range(0, marks.Length).OrderBy(i => marks[i].Start).ToArray();
+            var ends = Enumerable.Range(0, marks.Length).OrderBy(i => marks[i].Start + marks[i].Length).ToArray();
+            var active = new SortedSet<int>();
+            var byKind = new[] { new SortedSet<int>(), new SortedSet<int>(), new SortedSet<int>() };
+            var positions = new Dictionary<int, (ReviewMark Last, ReviewKind[] Kinds)>();
+            var startIndex = 0; var endIndex = 0;
+            foreach (var offset in group.Select(cell => cell.Offset).Distinct().OrderBy(offset => offset))
+            {
+                while (startIndex < starts.Length && marks[starts[startIndex]].Start <= offset)
+                {
+                    var index = starts[startIndex++]; active.Add(index); byKind[(int)marks[index].Kind].Add(index);
+                }
+                while (endIndex < ends.Length && marks[ends[endIndex]].Start + marks[ends[endIndex]].Length <= offset)
+                {
+                    var index = ends[endIndex++]; active.Remove(index); byKind[(int)marks[index].Kind].Remove(index);
+                }
+                if (active.Count == 0) continue;
+                var kinds = Enumerable.Range(0, byKind.Length).Where(i => byKind[i].Count > 0)
+                    .OrderBy(i => byKind[i].Min).Select(i => (ReviewKind)i).ToArray();
+                positions[offset] = (marks[active.Max], kinds);
+            }
+            indexed[group.Key] = positions;
+        }
+        var cells = new Dictionary<GridCell, ReviewMark>();
+        var rows = new ReviewKind[face.Rows.Length][];
+        for (var row = 0; row < face.Rows.Length; row++)
+        {
+            var kinds = new List<ReviewKind>();
+            foreach (var cell in face.Rows[row].OfType<GridCell>())
+            {
+                if (!indexed.TryGetValue(cell.Block, out var positions) || !positions.TryGetValue(cell.Offset, out var found)) continue;
+                cells[cell] = found.Last; // Preserve LastOrDefault priority for overlapping marks.
+                if (!cell.IsInsertion)
+                    foreach (var kind in found.Kinds) if (!kinds.Contains(kind)) kinds.Add(kind);
+            }
+            rows[row] = kinds.ToArray();
+        }
+        return manualReviewCache[face] = new(rows, cells);
+    }
+    private string MarkerDescription(BrailleGridFace face, int row)
+    {
+        MarkersFor(face).TryGetValue(row, out var marker);
+        return string.Join("\n\n", new[] { marker?.Description ?? "", string.Join("\n", ManualReviewKinds(face, row).Select(ReviewVisuals.Label)) }.Where(s => s.Length > 0));
     }
     internal IReadOnlyDictionary<int, RowMarker> MarkersFor(BrailleGridFace face)
     {
@@ -133,14 +209,15 @@ public sealed partial class BrailleGridView : ListBox
         private EditorBlock? dragBlock;
         private Point dragStart;
         public Face() { AllowDrop = true; }
-        private double TextLeft => 40 + Math.Max(12, (Owner is { } owner && Data is { } face ? owner.MarkersFor(face).Values.Select(m => (m.Memo ? 1 : 0) + (m.Review ? 1 : 0)).DefaultIfEmpty(0).Max() : 0) * 16);
+        private double TextLeft => 40 + Math.Max(12, (Owner is { } owner && Data is { } face ? Enumerable.Range(0, face.Rows.Length).Select(row =>
+            (owner.MarkersFor(face).TryGetValue(row, out var m) ? (m.Memo ? 1 : 0) + (m.Review ? 1 : 0) : 0) + owner.ManualReviewKinds(face, row).Length).DefaultIfEmpty(0).Max() : 0) * 16);
         private double CellWidth => (Owner?.FontSize ?? 22) * 16 / 22;
         private double CellHeight => (Owner?.FontSize ?? 22) * 28 / 22;
         protected override Size MeasureOverride(Size availableSize) => new(Math.Max(120, TextLeft + (Data?.Rows[0].Length ?? 32) * CellWidth + 1), (Data?.Rows.Length ?? 26) * CellHeight + 1);
         protected override void OnRender(DrawingContext dc)
         {
             if (Data is not { } face) return;
-            var owner = Owner; if (owner is not null) owner.drawSelection = owner.Selection; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length;
+            var owner = Owner; if (owner is not null) owner.drawSelection = owner.Selection; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length; var textLeft = TextLeft;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : Brushes.White, null, new Rect(RenderSize));
             void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : new SolidColorBrush(Color.FromRgb(250, 250, 250)), null, new Rect(0, 0, 40, RenderSize.Height));
@@ -152,7 +229,10 @@ public sealed partial class BrailleGridView : ListBox
                         new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
                         12, Brushes.Gray, VisualTreeHelper.GetDpi(this).PixelsPerDip), new(12, 14 + y * ch));
                 if (owner is not null && face.Rows[y].Any(c => c is not null && owner.IsCaret(c)))
+                {
                     dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : owner.CurrentLineBrush, null, new Rect(40, y * ch, Math.Max(0, RenderSize.Width - 40), ch));
+                    dc.DrawRectangle(owner.HighContrast ? Brushes.White : new SolidColorBrush(Color.FromRgb(0, 95, 184)), null, new Rect(40, y * ch, 2, ch));
+                }
                 if (owner is not null && owner.MarkersFor(face).TryGetValue(y, out var marker))
                 {
                     var top = y * ch + (ch - 16) / 2;
@@ -160,15 +240,43 @@ public sealed partial class BrailleGridView : ListBox
                     if (marker.Memo) Icon(MemoMargin.MemoDrawing, 40);
                     if (marker.Review) Icon(MemoMargin.WarningDrawing, marker.Memo ? 56 : 40);
                 }
+                if (owner is not null)
+                {
+                    owner.MarkersFor(face).TryGetValue(y, out var rowMarker);
+                    var xIcon = 40 + ((rowMarker?.Memo == true ? 1 : 0) + (rowMarker?.Review == true ? 1 : 0)) * 16;
+                    var kinds = owner.ManualReviewKinds(face, y);
+                    foreach (var kind in kinds)
+                    {
+                        var top = y * ch + (ch - 16) / 2;
+                        dc.PushTransform(new TranslateTransform(xIcon, top)); dc.DrawDrawing(ReviewVisuals.Icon(kind)); dc.Pop();
+                        xIcon += 16;
+                    }
+                    if (kinds.Length > 0) dc.DrawRectangle(owner.HighContrast ? Brushes.White : ReviewVisuals.Ink(kinds[^1]), null, new Rect(40, y * ch, 2, ch));
+                }
                 for (var x = 0; x < cols; x++)
                 {
-                    var box = new Rect(TextLeft + x * cw, y * ch, cw, ch); var cell = face.Rows[y][x];
+                    var box = new Rect(textLeft + x * cw, y * ch, cw, ch); var cell = face.Rows[y][x];
                     if (cell is not null)
                     {
-                        if (owner?.IsLinkedCell(cell) == true) dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : new SolidColorBrush(Color.FromRgb(255, 245, 163)), null, box);
-                        if (owner?.IsSelected(cell) == true) dc.DrawRectangle(Brushes.LightSkyBlue, null, box);
-                        Text(cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick) : owner?.HighContrast == true ? Brushes.White : Brushes.Black);
-                        if (owner?.IsCaret(cell) == true && owner.IsKeyboardFocusWithin) dc.DrawLine(new Pen(Brushes.Black, 1), box.TopLeft, box.BottomLeft);
+                        var mark = owner?.ManualReviewForCell(face, cell);
+                        if (mark is not null && owner?.HighContrast != true) dc.DrawRectangle(ReviewVisuals.Background(mark.Kind), null, box);
+                        var highlighted = owner is not null && (owner.IsLinkedCell(cell) || owner.IsSelected(cell));
+                        if (highlighted) dc.DrawRectangle(owner!.HighContrast ? Brushes.DarkBlue : owner.SelectionHighlightBrush, null, box);
+                        var textBrush = highlighted ? owner!.HighContrast ? Brushes.White : owner.SelectionTextBrush
+                            : cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick)
+                            : owner?.HighContrast == true ? Brushes.White : Brushes.Black;
+                        Text(cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, textBrush);
+                        if (mark is not null && mark.Kind != ReviewKind.HumanConfirmed)
+                        {
+                            var lineY = mark.Kind == ReviewKind.SuggestCorrection ? box.Bottom - 2 : box.Top + box.Height / 2;
+                            dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : ReviewVisuals.Ink(mark.Kind), 1), new Point(box.Left, lineY), new Point(box.Right, lineY));
+                        }
+                        if (owner?.IsCaret(cell) == true && owner.IsKeyboardFocusWithin)
+                        {
+                            // A two-tone caret remains visible against both user-selected dark and light colors.
+                            dc.DrawRectangle(Brushes.Black, null, new Rect(box.Left - 1, box.Top, 3, box.Height));
+                            dc.DrawRectangle(Brushes.White, null, new Rect(box.Left, box.Top, 1, box.Height));
+                        }
                     }
                     else if (face.Text is not null && x < face.Text[y].Length)
                         Text(face.Text[y][x].ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, Brushes.Gray);
@@ -207,8 +315,9 @@ public sealed partial class BrailleGridView : ListBox
         }
         private void UpdateMarkerToolTip(Point point)
         {
-            ToolTip = Owner is { } markerOwner && Data is { } markerFace && point.X >= 40 && point.X < TextLeft && markerOwner.MarkersFor(markerFace).TryGetValue((int)Math.Floor(point.Y / CellHeight), out var marker)
-                ? marker.Description : point.X is >= 26 and < 40 ? "드래그·Shift 선택 · 6점 입력 · Ctrl+Z · 줄 번호 옆에서 블록 이동" : null;
+            var description = Owner is { } markerOwner && Data is { } markerFace && point.X >= 40 && point.X < TextLeft
+                ? markerOwner.MarkerDescription(markerFace, (int)Math.Floor(point.Y / CellHeight)) : "";
+            ToolTip = description.Length > 0 ? description : point.X is >= 26 and < 40 ? "드래그·Shift 선택 · 6점 입력 · Ctrl+Z · 줄 번호 옆에서 블록 이동" : null;
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {

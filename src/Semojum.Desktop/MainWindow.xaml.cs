@@ -84,8 +84,10 @@ public partial class MainWindow : Window
         }
         StyleSeparators(ApplicationMenu);
         InitializeContinuousEditor();
-        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)));
-        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
+        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)) { ManualReviewRequested = ShowReviewList });
+        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { ManualReviewRequested = ShowReviewList });
+        SourceEditor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Text), () => ReviewToggle.IsChecked, () => (SourceEditor.SelectionStart, SourceEditor.SelectionLength)));
+        Braille.Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Braille), () => ReviewToggle.IsChecked, () => (Braille.Editor.SelectionStart, Braille.Editor.SelectionLength)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
         InstallEditorMenu(SourceEditor); InstallEditorMenu(Braille.Editor);
         SourceEditor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
@@ -307,6 +309,7 @@ public partial class MainWindow : Window
                     detachedWindow?.Close(); OriginalToggle.IsChecked = SourceToggle.IsChecked = BrailleToggle.IsChecked = true;
                     UpdatePanelLayout(); break;
                 case "showReviews":
+                    PageEditor.ShowReviews = ReviewToggle.IsChecked;
                     foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowReviews = ReviewToggle.IsChecked; margin.InvalidateVisual(); }
                     foreach (var grid in new[] { Braille.GridView, detachedPane?.GridView }.OfType<BrailleGridView>()) { grid.ShowReviews = ReviewToggle.IsChecked; grid.InvalidateFaces(); }
@@ -401,6 +404,11 @@ public partial class MainWindow : Window
                     if (footer.ShowDialog() == true) { session.FooterText = footer.Footer; session.FooterRanges = footer.Ranges; session.Layout = session.Layout with { FooterAlign = footer.Alignment }; }
                     break;
                 case "memo": ShowLineMemos(ActiveSearchPanel); break;
+                case "reviewCorrection": SetReviewSelection(ReviewKind.SuggestCorrection); break;
+                case "reviewDeletion": SetReviewSelection(ReviewKind.SuggestDeletion); break;
+                case "reviewConfirmed": SetReviewSelection(ReviewKind.HumanConfirmed); break;
+                case "reviewRemove": RemoveSelectedReviews(); break;
+                case "reviewList": ShowReviewList(); break;
                 case "memos": await ShowMemoListAsync(); break;
                 case "drafts": await ShowAlternativesAsync(); break;
                 case "rules": ShowRules(); break;

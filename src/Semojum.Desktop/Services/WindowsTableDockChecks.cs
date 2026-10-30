@@ -68,8 +68,12 @@ internal static class WindowsTableDockChecks
             check(window.DraftDock.IsVisible && window.DraftTextPreview.Text == transposed && window.DraftBraillePreview.Text == "⠉"
                 && window.Session.ActiveBlock!.Source == source, "Reopened SMJ restores the selected table dock preview without changing the original table");
             var stable = window.Session.ActiveBlock!; stable.Translation = stable.Translation! with { RuleTrail = [localRule], Spacing = spacing };
+            stable.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Braille, 0, 1);
             var unchanged = window.CaptureTableDraft(stable); window.ApplyTableDraft(unchanged, 1, _ => ManualEditDecision.Overwrite);
             check(stable.Translation is { RuleTrail: [{ RuleId: "local" }], Spacing: not null }, "Applying the unchanged draft preserves its valid local evidence and spacing");
+            check(stable.Braille == "⠉" && stable.ReviewMarks.Single().IsStale, "Applying an identical table draft invalidates the prior braille confirmation");
+            window.ReplayHistory(); check(stable.ReviewMarks.Single() is { IsStale: false, OriginalText: "⠉" }, "Undo of an identical table draft restores the prior confirmation");
+            window.ReplayHistory(true); check(stable.ReviewMarks.Single().IsStale, "Redo of an identical table draft restores the stale state");
         }
         finally { timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); if (File.Exists(path)) File.Delete(path); }
     }

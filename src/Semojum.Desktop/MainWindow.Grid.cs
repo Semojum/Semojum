@@ -19,6 +19,7 @@ public partial class MainWindow
     private void ConnectGrid(BraillePane pane)
     {
         pane.GridView.ShowMemos = MemoToggle.IsChecked; pane.GridView.ShowReviews = ReviewToggle.IsChecked;
+        pane.GridView.ManualReviewRequested = ShowReviewList;
         async Task<bool> NavigateMarkerAsync(EditorBlock block, int line, DocumentSession owner)
         {
             if (resourcesReleased || session != owner || !owner.Blocks.Contains(block)) return false;

@@ -34,7 +34,7 @@ public partial class MainWindow
             if (resolved.Block is null) return;
             session.ActiveBlock = resolved.Block;
             ShowLineMemos(SearchPanel.Text, resolved.Line);
-        }) { ResolveLine = PageEditor.ResolveLine, ReviewRequested = line =>
+        }) { ResolveLine = PageEditor.ResolveLine, ManualReviewRequested = ShowReviewList, ReviewRequested = line =>
         {
             if (PageEditor.ResolveLine(line).Block is not { } block) return;
             session.ActiveBlock = block; ShowLocalTranslationReview(block, this);
@@ -66,6 +66,9 @@ public partial class MainWindow
             RefreshSourcePosition();
         };
         PageEditor.Editor.TextArea.SelectionChanged += (_, _) => RefreshLinkedSource();
+        // Selection and caret callbacks can run while the page projection is
+        // temporarily suppressed. Recompute linkage once its offsets are valid.
+        PageEditor.ProjectionRestored += RefreshLinkedSource;
     }
     private void InstallEditorMenu(TextEditor editor)
     {
@@ -185,7 +188,13 @@ public partial class MainWindow
         var blocks = SelectedBlocks(); if (blocks.Length == 0) return false;
         if (selectionPanel == SearchPanel.Braille && cut && blocks.Any(b => b.IsBrailleLocked)) return true;
         Clipboard.SetText(string.Join("\n", blocks.Select(b => selectionPanel == SearchPanel.Text ? b.Source : b.Braille)));
-        if (cut) EditStructure(() => { if (selectionPanel == SearchPanel.Braille) foreach (var block in blocks) block.EditBraille(""); else BlockEditing.Delete(session, blocks); }); return true;
+        if (cut)
+        {
+            var removesReviews = selectionPanel == SearchPanel.Text && blocks.Any(b => b.ReviewMarks.Count > 0);
+            EditStructure(() => { if (selectionPanel == SearchPanel.Braille) foreach (var block in blocks) block.EditBraille(""); else BlockEditing.Delete(session, blocks); });
+            if (removesReviews) session.Status = "삭제한 블록의 검토 표시도 함께 지워졌습니다. 실행 취소로 복원할 수 있습니다.";
+        }
+        return true;
     }
     private async Task<bool> PasteSelectedBlocksAsync()
     {
@@ -233,6 +242,7 @@ public partial class MainWindow
         }
         var blocks = SelectedBlocks(); if (blocks.Length == 0 && session.ActiveBlock is { } active) blocks = [active];
         if (blocks.Length == 0 || blocks.Any(b => b.IsBrailleLocked)) return;
+        var deletingReviews = action == "deleteBlock" && blocks.Any(b => b.ReviewMarks.Count > 0);
         EditStructure(() =>
         {
             if (action == "deleteBlock") { BlockEditing.Delete(session, blocks); return; }
@@ -252,6 +262,7 @@ public partial class MainWindow
                 if (selectionPanel == SearchPanel.Text) b.Source = text; else b.EditBraille(text);
             }
         });
+        if (deletingReviews) session.Status = "삭제한 블록의 검토 표시도 함께 지워졌습니다. 실행 취소로 복원할 수 있습니다.";
     }
     private void ClearCurrentLine()
     {

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -151,6 +152,32 @@ internal static class WindowsMenuDesignChecks
                     "Memo input uses Figma's dimensions and 14-pixel bold author");
                 check(Descendants(memo).OfType<Button>().Any(b => Equals(b.Content, "저장") && b.Width == 56) && Descendants(memo).OfType<Button>().Any(b => Equals(b.Content, "취소") && b.Width == 56),
                     "Memo input retains separate save and cancel actions");
+                memo.Input.Focus(); memo.UpdateLayout();
+                var inputSurface = memo.Input.Template.FindName("Surface", memo.Input) as Border;
+                check(memo.Input.IsKeyboardFocusWithin && inputSurface?.BorderBrush is SolidColorBrush focus && focus.Color == Color.FromRgb(0, 95, 184) && inputSurface.BorderThickness == new Thickness(1),
+                    "Focused memo input shows the complete Figma blue outline");
+                check(AutomationProperties.GetName(memo.Input) == "메모 내용", "Memo input retains its accessible name");
+                memo.Input.SelectionBrush = Brushes.Purple;
+                check(memo.Input.SelectionBrush == Brushes.Purple, "Memo input template preserves an explicitly supplied selection color");
+                memo.ApplyInputAppearance(true); memo.ApplyInputAppearance(false);
+                check(memo.Input.SelectionBrush == Brushes.Purple, "Memo input retains an explicit selection color after a contrast-mode transition");
+                memo.Input.ClearValue(TextBox.SelectionBrushProperty);
+                memo.ApplyInputAppearance(true); memo.UpdateLayout();
+                var highContrastSurface = memo.Input.Template.FindName("Surface", memo.Input) as Border;
+                check(memo.Input.Background is SolidColorBrush systemBackground && systemBackground.Color == SystemColors.WindowColor &&
+                    memo.Input.Foreground is SolidColorBrush systemText && systemText.Color == SystemColors.WindowTextColor &&
+                    memo.Input.SelectionBrush is SolidColorBrush systemSelection && systemSelection.Color == SystemColors.HighlightColor &&
+                    highContrastSurface?.Background is SolidColorBrush surfaceBackground && surfaceBackground.Color == SystemColors.WindowColor,
+                    "Memo input follows system background, text and selection colors in high contrast");
+                memo.Input.Focus(); memo.UpdateLayout();
+                check(memo.Input.IsKeyboardFocusWithin && highContrastSurface?.BorderBrush is SolidColorBrush highContrastFocus && highContrastFocus.Color == SystemColors.HighlightColor,
+                    "Focused memo input uses the system highlight outline in high contrast");
+                memo.ApplyInputAppearance(false); memo.Input.Focus(); memo.UpdateLayout();
+                memo.Input.Text = string.Join("\n", Enumerable.Repeat("긴 메모 내용", 20)); memo.UpdateLayout(); memo.Input.ScrollToEnd(); memo.UpdateLayout();
+                var contentHost = memo.Input.Template.FindName("PART_ContentHost", memo.Input) as ScrollViewer;
+                check(contentHost is { ScrollableHeight: > 0, VerticalOffset: > 0 } && memo.Input.Text.Contains("긴 메모 내용"),
+                    "Long memo input remains editable and scrolls inside its focus outline");
+                memo.Input.Text = "여기 그래프랑 본문이 안 맞는 것 같은데"; memo.UpdateLayout();
                 if (Environment.GetEnvironmentVariable("MENU_MEMO_CAPTURE") is { Length: > 0 } memoCapture) await WindowsSmoke.RenderElementAsync(memo, memoCapture);
             }
             finally { memo.Close(); }

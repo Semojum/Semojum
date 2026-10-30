@@ -17,11 +17,14 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     public Action<BlockSpan[], string>? Replace { get; set; }
     public Action<bool>? Replay { get; set; }
     public Action? InsertPageBreak { get; set; }
+    public event Action? ProjectionRestored;
     public bool IsSynchronizing => syncing || followingCaret;
     private bool followingCaret;
     private DocumentSession? model;
     private readonly HashSet<EditorBlock> observed = [];
-    private bool syncing, queued, selectedBlock;
+    private bool syncing, queued, selectedBlock, projectionSuppressed;
+    private bool showReviews = true;
+    public bool ShowReviews { get => showReviews; set { showReviews = value; Editor.TextArea.TextView.Redraw(); } }
     private int page;
     public ContinuousSourceEditor()
     {
@@ -32,6 +35,7 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         Editor.TextArea.TextView.CurrentLineBorder = null;
         Editor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
         Editor.TextArea.TextView.ElementGenerators.Add(new IndentTagGenerator());
+        Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(ReviewRanges, () => ShowReviews, () => (Editor.SelectionStart, Editor.SelectionLength)));
         Editor.Document.UndoStack.SizeLimit = 0;
         Editor.PreviewKeyDown += (_, e) =>
         {
@@ -76,9 +80,25 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         }));
     }
     private EditorBlock[] Blocks() => model?.Blocks.Where(b => b.Page == page).ToArray() ?? [];
+    private IReadOnlyList<(int Start, ReviewMark Mark)> ReviewRanges()
+    {
+        // The page model can change before its queued editor refresh runs. Its
+        // offsets must not be rendered against the previous document snapshot.
+        if (ProjectionPending()) return [];
+        var result = new List<(int, ReviewMark)>(); var offset = 0;
+        foreach (var block in Blocks())
+        {
+            result.AddRange(block.ReviewMarks.Where(m => m.Panel == ReviewPanel.Text && !m.IsStale)
+                .Select(m => (offset + m.Start, m)));
+            offset += block.Source.Length + 1;
+        }
+        return result;
+    }
     public (EditorBlock? Block, int Line) ResolveLine(int line)
     {
-        if (line < 0 || line >= Editor.Document.LineCount) return (null, 0);
+        // Visual lines may still belong to the previous document while the
+        // model is being replaced or a refresh is waiting on the dispatcher.
+        if (ProjectionPending() || line < 0 || line >= Editor.Document.LineCount) return (null, 0);
         var span = BlockRange.Select(Blocks(), SearchPanel.Text, Editor.Document.GetLineByNumber(line + 1).Offset, 0).FirstOrDefault();
         return span is null ? (null, 0) : (span.Block, span.Block.Source[..span.Start].Count(c => c == '\n'));
     }
@@ -95,9 +115,35 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
             Editor.CaretOffset = start + local + Math.Clamp(length, 0, block.Source.Length - local);
             Editor.ScrollToLine(Editor.Document.GetLineByOffset(start + local).LineNumber);
         }
-        finally { syncing = false; }
+        finally { syncing = false; RestoreProjectionIfReady(); }
     }
-    public BlockSpan[] Selection => BlockRange.Select(Blocks(), SearchPanel.Text, Editor.SelectionStart, Editor.SelectionLength);
+    public BlockSpan[] Selection
+    {
+        get
+        {
+            if (syncing || model is null) return [];
+            var blocks = Blocks();
+            // A refresh can still be queued after an explicit Refresh has already
+            // synchronized the editor. Conversely, matching lengths alone cannot
+            // prove that a queued refresh is safe to map to the current blocks.
+            if (Editor.Text != BlockRange.Text(blocks, SearchPanel.Text)) return [];
+            return BlockRange.Select(blocks, SearchPanel.Text, Editor.SelectionStart, Editor.SelectionLength);
+        }
+    }
+    private bool ProjectionPending()
+    {
+        if (!syncing && !queued) return false;
+        projectionSuppressed = true;
+        return true;
+    }
+    private void RestoreProjectionIfReady()
+    {
+        if (syncing || queued || !projectionSuppressed) return;
+        projectionSuppressed = false;
+        Editor.TextArea.TextView.Redraw();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.InvalidateVisual();
+        ProjectionRestored?.Invoke();
+    }
     internal void SelectContext()
     {
         if (selectedBlock) { Editor.SelectAll(); return; }
@@ -127,8 +173,13 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     }
     private void Observe()
     {
-        foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; observed.Remove(b); }
-        if (model is not null) foreach (var b in model.Blocks.Where(b => !observed.Contains(b))) { b.PropertyChanged += Changed; observed.Add(b); }
+        foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; observed.Remove(b); }
+        if (model is not null) foreach (var b in model.Blocks.Where(b => !observed.Contains(b))) { b.PropertyChanged += Changed; b.ReviewMarks.CollectionChanged += ReviewsChanged; observed.Add(b); }
+    }
+    private void ReviewsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        Editor.TextArea.TextView.Redraw();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.InvalidateVisual();
     }
     private void Changed(object? sender, PropertyChangedEventArgs e)
     { if (!syncing && e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Metadata)) QueueRefresh(); }
@@ -151,12 +202,16 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
             }
             Editor.IsReadOnly = model.IsReadOnly;
         }
-        finally { syncing = false; }
+        finally
+        {
+            syncing = false;
+            RestoreProjectionIfReady();
+        }
     }
     public void Dispose()
     {
         if (model is not null) { model.PropertyChanged -= SessionChanged; model.Blocks.CollectionChanged -= BlocksChanged; }
-        foreach (var b in observed) b.PropertyChanged -= Changed;
+        foreach (var b in observed) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; }
         observed.Clear(); model = null;
     }
 }

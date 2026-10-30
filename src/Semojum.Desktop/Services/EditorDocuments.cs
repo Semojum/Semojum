@@ -25,11 +25,52 @@ public sealed class EditorDocuments : IDisposable
         public void Undo() => before();
         public void Redo() => after();
     }
-    private sealed record BrailleState(string Text, bool Manual, BrailleTranslation? Translation, string State)
+    internal sealed record ReviewSnapshot(ReviewMark[] Marks, int SourceRevision, int BrailleRevision, int ConfirmationRevision, BrailleTranslation? Translation)
     {
-        public static BrailleState Capture(EditorBlock block) => new(block.Braille, block.HasManualBraille, block.Translation, block.State);
+        internal static ReviewSnapshot Capture(EditorBlock block) => new(block.ReviewMarks.ToArray(), block.SourceRevision, block.BrailleRevision, block.BrailleConfirmationRevision, block.Translation);
+        internal bool BrailleContextChanged(EditorBlock block) => block.SourceRevision != SourceRevision || block.BrailleRevision != BrailleRevision
+            || block.BrailleConfirmationRevision != ConfirmationRevision || !ReferenceEquals(block.Translation, Translation);
+    }
+    internal static void RestoreReviews(EditorBlock block, IEnumerable<ReviewMark> marks, bool invalidateBrailleConfirmations = false,
+        bool invalidateText = false, bool invalidateBraille = false)
+    {
+        block.ReviewMarks.Clear();
+        foreach (var mark in marks)
+        {
+            var text = mark.Panel == ReviewPanel.Text ? block.Source : block.Braille;
+            var start = Math.Clamp(mark.Start, 0, text.Length);
+            if (start > 0 && start < text.Length && char.IsHighSurrogate(text[start - 1]) && char.IsLowSurrogate(text[start])) start--;
+            var matches = mark.Length > 0 && mark.Start == start && mark.Length <= text.Length - start
+                && text.AsSpan(start, mark.Length).SequenceEqual(mark.OriginalText.AsSpan());
+            var stale = mark.IsStale || !matches || invalidateText && mark.Panel == ReviewPanel.Text || invalidateBraille && mark.Panel == ReviewPanel.Braille
+                || invalidateBrailleConfirmations && mark.Panel == ReviewPanel.Braille && mark.Kind == ReviewKind.HumanConfirmed;
+            block.ReviewMarks.Add(stale ? mark with { Start = start, Length = 0, IsStale = true } : mark);
+        }
+    }
+    internal void RecordReviewEdit(EditorBlock focus, IReadOnlyDictionary<EditorBlock, ReviewMark[]> before,
+        IReadOnlyDictionary<EditorBlock, ReviewMark[]> after)
+    {
+        var contexts = before.Keys.ToDictionary(block => block, ReviewSnapshot.Capture);
+        void Restore(IReadOnlyDictionary<EditorBlock, ReviewMark[]> snapshot)
+        {
+            foreach (var (block, marks) in snapshot)
+            {
+                var context = contexts[block];
+                RestoreReviews(block, marks, context.BrailleContextChanged(block), block.SourceRevision != context.SourceRevision, block.BrailleRevision != context.BrailleRevision);
+            }
+            replayedBlock = focus;
+        }
+        History(focus.Page).Push(new EditUndo(() => Restore(before), () => Restore(after)));
+    }
+    private sealed record BrailleState(string Text, bool Manual, BrailleTranslation? Translation, string State, ReviewSnapshot Reviews)
+    {
+        public static BrailleState Capture(EditorBlock block) => new(block.Braille, block.HasManualBraille, block.Translation, block.State, ReviewSnapshot.Capture(block));
         public void Restore(EditorBlock block)
-        { block.Braille = Text; block.HasManualBraille = Manual; block.Translation = Translation; block.State = State; }
+        {
+            var sourceChanged = block.SourceRevision != Reviews.SourceRevision || block.BrailleConfirmationRevision != Reviews.ConfirmationRevision;
+            block.Braille = Text; block.HasManualBraille = Manual; block.Translation = Translation; block.State = State;
+            RestoreReviews(block, Reviews.Marks, sourceChanged);
+        }
     }
     private static void Sync(TextDocument document, string text) => document.Replace(0, document.TextLength, text);
     private sealed class Buffers
@@ -64,12 +105,24 @@ public sealed class EditorDocuments : IDisposable
             entry.Updating = true;
             try
             {
-                var before = block.Source; var after = entry.Source.Text;
+                var before = block.Source; var after = entry.Source.Text; var beforeReviews = ReviewSnapshot.Capture(block);
                 if (before == after) return;
                 block.Source = after;
+                var afterReviews = ReviewSnapshot.Capture(block);
+                var expected = afterReviews;
+                var expectedText = after;
+                void RestoreSource(string text, ReviewSnapshot target)
+                {
+                    var textChanged = block.Source != expectedText || block.SourceRevision != expected.SourceRevision;
+                    var changed = block.BrailleRevision != expected.BrailleRevision || block.BrailleConfirmationRevision != expected.ConfirmationRevision
+                        || !ReferenceEquals(block.Translation, expected.Translation);
+                    block.Source = text;
+                    RestoreReviews(block, target.Marks, changed, textChanged);
+                    expected = ReviewSnapshot.Capture(block); expectedText = text; replayedBlock = block;
+                }
                 History(block.Page).Push(new EditUndo(
-                    () => { block.Source = before; replayedBlock = block; },
-                    () => { block.Source = after; replayedBlock = block; }));
+                    () => RestoreSource(before, beforeReviews),
+                    () => RestoreSource(after, afterReviews)));
             }
             finally { entry.Updating = false; }
         };
@@ -82,7 +135,8 @@ public sealed class EditorDocuments : IDisposable
                 var before = BrailleState.Capture(block);
                 block.EditBraille(entry.Braille.Text);
                 var after = BrailleState.Capture(block);
-                if (before == after) return;
+                if (before.Text == after.Text && before.Manual == after.Manual && before.Translation == after.Translation
+                    && before.State == after.State && before.Reviews.Marks.SequenceEqual(after.Reviews.Marks)) return;
                 History(block.Page).Push(new EditUndo(
                     () => { before.Restore(block); replayedBlock = block; },
                     () => { after.Restore(block); replayedBlock = block; }));

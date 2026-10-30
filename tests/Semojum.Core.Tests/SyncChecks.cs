@@ -50,7 +50,10 @@ internal static class SyncChecks
     private static async Task SavePlan()
     {
         var session = MixedDocument();
+        var reviewed = session.Blocks.First(b => b.Source.Length > 0 && !b.Metadata.IsBlocked);
+        reviewed.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Text, 0, 1);
         var plan = JobClient.PlanSave(SmjFile.Snapshot(session).Manifest);
+        True(plan.LocalOnly.Any(n => n.Contains("검토 표시") && n.Contains("서버에서 다시 열면")));
         Equal("1,2,4,6", string.Join(",", plan.Pages.Select(p => p.PageNo)));
         var first = plan.Pages[0];
         Equal("t1,t2", string.Join(",", first.Text!.Select(t => t.Id)));
@@ -73,6 +76,9 @@ internal static class SyncChecks
         }));
         var api = new SemojumApiClient(http); await api.LoginAsync("test", "pw");
         var result = await new JobClient(api).SaveAsync(SmjFile.Snapshot(session));
+        True(!body!.Contains("reviewMarks", StringComparison.OrdinalIgnoreCase));
+        var appliedSnapshot = JobClient.ApplySaved(SmjFile.Snapshot(session), result);
+        True(appliedSnapshot.Manifest.Blocks.Any(b => b.ReviewMarks is [{ Kind: ReviewKind.HumanConfirmed }]));
         using var json = JsonDocument.Parse(body!);
         var pages = json.RootElement.GetProperty("pages");
         Equal(4, pages.GetArrayLength());
@@ -81,6 +87,7 @@ internal static class SyncChecks
         True(pages[0].GetProperty("memos")[0].GetProperty("resolved").GetBoolean());
         True(!result.Complete); Equal(4, result.Plan.ExpectedPages);
         JobClient.ApplySaved(session, result);
+        True(reviewed.ReviewMarks.Count == 1 && reviewed.ReviewMarks[0].Kind == ReviewKind.HumanConfirmed);
         Equal("t1:True,t2:True", string.Join(",", session.ServerPages[1].Select(r => $"{r.Id}:{r.HasBraille}")));
         Equal("t4:True", string.Join(",", session.ServerPages[4].Select(r => $"{r.Id}:{r.HasBraille}")));
         Equal("t6:True", string.Join(",", session.ServerPages[6].Select(r => $"{r.Id}:{r.HasBraille}")));

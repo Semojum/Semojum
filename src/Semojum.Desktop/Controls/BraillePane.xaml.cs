@@ -103,9 +103,10 @@ public partial class BraillePane : UserControl, IDisposable
     private void GridBlocksChanged(object? sender, NotifyCollectionChangedEventArgs e) { ObserveGridBlocks(); QueueGrid(); }
     private void ObserveGridBlocks()
     {
-        foreach (var b in gridBlocks.Where(b => session?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= GridBlockChanged; gridBlocks.Remove(b); }
-        if (session is not null) foreach (var b in session.Blocks.Where(b => !gridBlocks.Contains(b))) { b.PropertyChanged += GridBlockChanged; gridBlocks.Add(b); }
+        foreach (var b in gridBlocks.Where(b => session?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= GridBlockChanged; b.ReviewMarks.CollectionChanged -= GridReviewsChanged; gridBlocks.Remove(b); }
+        if (session is not null) foreach (var b in session.Blocks.Where(b => !gridBlocks.Contains(b))) { b.PropertyChanged += GridBlockChanged; b.ReviewMarks.CollectionChanged += GridReviewsChanged; gridBlocks.Add(b); }
     }
+    private void GridReviewsChanged(object? sender, NotifyCollectionChangedEventArgs e) => QueueGrid();
     private void GridBlockChanged(object? sender, PropertyChangedEventArgs e)
     { if (e.PropertyName is nameof(EditorBlock.Braille) or nameof(EditorBlock.HasManualBraille) or nameof(EditorBlock.Metadata) or nameof(EditorBlock.Translation) or nameof(EditorBlock.Source)) QueueGrid(); }
     private void QueueGrid() { GridView.IsReadOnly = true; GridView.CoordinatesCurrent = false; GridView.SetLinkedRanges([]); RefreshFacePageBar(); gridTimer.Stop(); gridTimer.Start(); }
@@ -215,7 +216,7 @@ public partial class BraillePane : UserControl, IDisposable
     {
         gridTimer.Stop();
         if (session is not null) { session.PropertyChanged -= SessionChanged; session.Blocks.CollectionChanged -= GridBlocksChanged; }
-        foreach (var b in gridBlocks) b.PropertyChanged -= GridBlockChanged;
+        foreach (var b in gridBlocks) { b.PropertyChanged -= GridBlockChanged; b.ReviewMarks.CollectionChanged -= GridReviewsChanged; }
         gridBlocks.Clear();
         if (active is not null) active.PropertyChanged -= BlockChanged;
         chord.Reset(); session = null; gridPending = false; gridVersion = -1; GridView.ResetSelection();

@@ -214,7 +214,7 @@ public sealed class SixDotDialog : CompactDialog
         var modeCard = EditorModalDesign.Card(mode, new Thickness(0)); modeCard.Padding = new Thickness(16, 12, 16, 8); body.Children.Add(modeCard);
         body.Children.Add(new TextBlock { Text = "키 지정", FontSize = 12, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 16, 0, 4) });
         var keys = new Canvas { Width = 432, Height = 64, HorizontalAlignment = HorizontalAlignment.Left };
-        var leftLabel = new TextBlock { Text = "왼손  1 · 2 · 3", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F") }; keys.Children.Add(leftLabel); Canvas.SetLeft(leftLabel, 0); Canvas.SetTop(leftLabel, 0);
+        var leftLabel = new TextBlock { Text = "왼손  3 · 2 · 1", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F") }; keys.Children.Add(leftLabel); Canvas.SetLeft(leftLabel, 0); Canvas.SetTop(leftLabel, 0);
         var rightLabel = new TextBlock { Text = "오른손  4 · 5 · 6", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F") }; keys.Children.Add(rightLabel); Canvas.SetLeft(rightLabel, 230); Canvas.SetTop(rightLabel, 0);
         var hint = new TextBlock { Foreground = EditorModalDesign.Color("#9F9F9F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
         var settingPreset = false;

@@ -68,6 +68,29 @@ internal static class WindowsTableDraftChecks
                 window.ApplyTableDraft(confirming, 1, b => { b.Translation = b.Translation! with { Drafts = [new("later", "새로 받은 초안", "⠚", [])] }; return ManualEditDecision.Overwrite; });
                 check(block.Braille == "⠿" && block.HasManualBraille && block.Metadata == beforeMetadata && block.Translation!.Drafts is [{ Cells: "⠚" }]
                     && window.Session.Status.Contains("다시"), "Changes during manual overwrite confirmation do not erase manual braille");
+
+                block.Source = "표 검토 원문"; block.Braille = "⠁⠃"; block.HasManualBraille = true;
+                block.Metadata = new(Type: "table", RenderMode: "same");
+                block.Translation = BrailleTranslation.Plain("⠁⠃") with { SourceText = block.Source, RenderMode = "same", Drafts = [new("same", "동일 초안", "⠁⠃", [])] };
+                block.ReviewMarks.Clear(); block.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Braille, 0, 1);
+                var sameDraft = window.CaptureTableDraft(block);
+                window.ApplyTableDraft(sameDraft, 0, _ => ManualEditDecision.Keep);
+                window.ApplyTableDraft(sameDraft, 0, _ => ManualEditDecision.Cancel);
+                check(block.ReviewMarks.Single() is { IsStale: false, OriginalText: "⠁" }, "Keeping or cancelling an identical table draft preserves the braille confirmation");
+                var outdated = window.CaptureTableDraft(block); block.Metadata = block.Metadata with { RenderMode = "changed" };
+                window.ApplyTableDraft(outdated, 0, _ => ManualEditDecision.Overwrite);
+                check(!block.ReviewMarks.Single().IsStale, "A stale table draft is rejected without invalidating the braille confirmation");
+                sameDraft = window.CaptureTableDraft(block); window.ApplyTableDraft(sameDraft, 0, _ => ManualEditDecision.Overwrite);
+                check(block.Braille == "⠁⠃" && block.ReviewMarks.Single().IsStale, "Applying identical table braille invalidates the old confirmation");
+                window.ReplayHistory(); check(!block.ReviewMarks.Single().IsStale, "Undo restores confirmation before an identical table draft");
+                window.ReplayHistory(true); check(block.ReviewMarks.Single().IsStale, "Redo restores stale confirmation after the table draft");
+
+                block.HasManualBraille = true; block.ReviewMarks.Clear(); block.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Braille, 0, 1);
+                typeof(MainWindow).GetMethod("RestoreOriginalBraille", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(window, null);
+                check(block.Braille == "⠁⠃" && !block.HasManualBraille && block.ReviewMarks.Single().IsStale,
+                    "Restoring identical original braille invalidates the old confirmation");
+                window.ReplayHistory(); check(block.HasManualBraille && !block.ReviewMarks.Single().IsStale, "Undo of identical original restore recovers manual state and confirmation");
+                window.ReplayHistory(true); check(!block.HasManualBraille && block.ReviewMarks.Single().IsStale, "Redo of original restore recovers stale confirmation");
             }
             finally { timer.Stop(); }
         }

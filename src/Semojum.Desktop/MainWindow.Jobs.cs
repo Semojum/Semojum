@@ -230,7 +230,7 @@ public partial class MainWindow
                     }
                     if (applyInitialChoices) foreach (var block in result.Blocks) VisualDraftSelection.ApplyInitial(block, model.Options);
                     var keepLocalPage = replacePages?.Contains(page.Key) == true && model.Blocks.Any(b => b.Page == page.Key
-                        && (b.ServerId is not null || !b.Metadata.IsBlocked || b.Source.Length > 0 || b.Braille.Length > 0 || b.Memos.Count > 0));
+                        && (b.ServerId is not null || !b.Metadata.IsBlocked || b.Source.Length > 0 || b.Braille.Length > 0 || b.Memos.Count > 0 || b.ReviewMarks.Count > 0));
                     if (keepLocalPage && !missingCreditResult)
                     {
                         // Both versions remain available: never replace local work or record the new server baseline as if it had been applied.
@@ -260,7 +260,14 @@ public partial class MainWindow
                     if (result.Blocks.Length == 0 && page.Value is "FAILED" or "BLOCKED")
                         result = result with { Blocks = [new EditorBlock { Id = nextId++, Page = page.Key, Heading = missingCreditResult ? "크레딧 소진 · 변환 대기" : "변환 실패 · 원본 확인", State = page.Value, IsBrailleLocked = true, Metadata = new(IsBlocked: true) }] };
                     if (result.Blocks.Length == 0) { loadedPages.Add(page.Key); MarkPageChecked(page.Key); continue; }
-                    if (waiting) { model.ActiveBlock = null; model.Blocks.Clear(); waiting = false; }
+                    if (waiting)
+                    {
+                        // The initial placeholder is blocked and empty. Never silently discard
+                        // local review data if a future flow changes that invariant.
+                        if (model.Blocks.Any(b => b.ReviewMarks.Count > 0))
+                            throw new InvalidOperationException("변환 대기 문서에 저장할 검토 표시가 있어 서버 결과를 자동 적용하지 않았습니다. 먼저 로컬 SMJ로 보관해 주세요.");
+                        model.ActiveBlock = null; model.Blocks.Clear(); waiting = false;
+                    }
                     // First-time results may arrive in different polls out of page order.
                     // Insert the whole page before later pages without disturbing their edits
                     // or the server's order of blocks within this page.
@@ -402,7 +409,7 @@ public partial class MainWindow
         var owner = session;
         var pages = owner.PendingServerPages.Values.OrderBy(p => p.Page).ToArray();
         var choice = NoticeDialog.Choose(this, "재개 결과와 로컬 교정 확인",
-            "재개 결과가 돌아온 쪽에 로컬 교정이나 메모가 있습니다. 서버 결과를 별도 탭에서 비교하거나, 현재 교정본을 별도 파일로 보관한 뒤 서버 결과를 적용할 수 있습니다. 해결 전에는 서버 저장이 차단됩니다.",
+            "재개 결과가 돌아온 쪽에 로컬 교정, 메모 또는 검토 표시가 있습니다. 서버 결과를 별도 탭에서 비교하거나, 현재 교정본을 별도 파일로 보관한 뒤 서버 결과를 적용할 수 있습니다. 서버 결과를 적용한 쪽의 기존 검토 표시는 백업 파일에만 남습니다. 해결 전에는 서버 저장이 차단됩니다.",
             ["서버 결과 별도 탭", "교정본 백업 후 적용", "닫기"], width: 560);
         if (choice == 0)
         {

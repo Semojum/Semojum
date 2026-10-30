@@ -13,9 +13,9 @@ public sealed partial class BrailleGridView
         get => blocks;
         set
         {
-            foreach (var block in blocks) { System.Collections.Specialized.CollectionChangedEventManager.RemoveHandler(block.Memos, MarkerMemosChanged); PropertyChangedEventManager.RemoveHandler(block, MarkerBlockChanged, ""); }
+            foreach (var block in blocks) { System.Collections.Specialized.CollectionChangedEventManager.RemoveHandler(block.Memos, MarkerMemosChanged); System.Collections.Specialized.CollectionChangedEventManager.RemoveHandler(block.ReviewMarks, MarkerMemosChanged); PropertyChangedEventManager.RemoveHandler(block, MarkerBlockChanged, ""); }
             blocks = value;
-            foreach (var block in blocks) { System.Collections.Specialized.CollectionChangedEventManager.AddHandler(block.Memos, MarkerMemosChanged); PropertyChangedEventManager.AddHandler(block, MarkerBlockChanged, ""); }
+            foreach (var block in blocks) { System.Collections.Specialized.CollectionChangedEventManager.AddHandler(block.Memos, MarkerMemosChanged); System.Collections.Specialized.CollectionChangedEventManager.AddHandler(block.ReviewMarks, MarkerMemosChanged); PropertyChangedEventManager.AddHandler(block, MarkerBlockChanged, ""); }
             InvalidateMarkerCache();
         }
     }

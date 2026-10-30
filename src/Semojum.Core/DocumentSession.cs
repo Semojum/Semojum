@@ -17,6 +17,7 @@ public sealed partial class EditorBlock : ObservableObject
     [ObservableProperty] private BlockMetadata metadata = new();
     [ObservableProperty] private BrailleTranslation? translation;
     public ObservableCollection<LineMemo> Memos { get; } = [];
+    public ObservableCollection<ReviewMark> ReviewMarks { get; } = [];
     [ObservableProperty] private string source = "";
     [ObservableProperty] private string braille = "";
     [ObservableProperty] private string memo = "";
@@ -26,13 +27,53 @@ public sealed partial class EditorBlock : ObservableObject
     public int SourceRevision { get; private set; }
     public int BrailleRevision { get; private set; }
     public int MetadataRevision { get; private set; }
+    // Advances even when newly translated cells compare equal and no property change fires.
+    public int BrailleConfirmationRevision { get; private set; }
     // Navigation state is captured on explicit save; moving the caret is not a content edit.
     public int SourceCaret { get; set; }
     public int BrailleCaret { get; set; }
 
+    partial void OnSourceChanging(string? oldValue, string newValue)
+    {
+        ReanchorReviews(ReviewPanel.Text, oldValue ?? "", newValue);
+        // A human's braille confirmation also refers to the corresponding source.
+        // Until rechecked, identical cells cannot prove the changed source is correct.
+        InvalidateBrailleConfirmations();
+    }
+    partial void OnBrailleChanging(string? oldValue, string newValue) => ReanchorReviews(ReviewPanel.Braille, oldValue ?? "", newValue);
     partial void OnSourceChanged(string value) => SourceRevision++;
     partial void OnBrailleChanged(string value) => BrailleRevision++;
     partial void OnMetadataChanged(BlockMetadata value) => MetadataRevision++;
+    private void ReanchorReviews(ReviewPanel panel, string before, string after)
+    {
+        for (var i = 0; i < ReviewMarks.Count; i++)
+        {
+            var mark = ReviewMarks[i];
+            if (mark.Panel != panel) continue;
+            var updated = ReviewAnchors.Reanchor(mark, before, after);
+            if (updated != mark) ReviewMarks[i] = updated;
+        }
+    }
+    public void InvalidateBrailleConfirmations()
+    {
+        BrailleConfirmationRevision++;
+        for (var i = 0; i < ReviewMarks.Count; i++)
+        {
+            var mark = ReviewMarks[i];
+            if (mark.Panel == ReviewPanel.Braille && mark.Kind == ReviewKind.HumanConfirmed && !mark.IsStale)
+                ReviewMarks[i] = mark with { Length = 0, IsStale = true };
+        }
+    }
+    public ReviewMark AddReviewMark(ReviewKind kind, ReviewPanel panel, int start, int length)
+    {
+        var text = panel == ReviewPanel.Text ? Source : Braille;
+        if (!Enum.IsDefined(kind) || !Enum.IsDefined(panel) || start < 0 || length <= 0 || start > text.Length || length > text.Length - start)
+            throw new ArgumentOutOfRangeException(nameof(start), "검토할 범위를 선택해 주세요.");
+        var mark = new ReviewMark(Guid.NewGuid().ToString("N"), kind, panel, start, length, text.Substring(start, length));
+        if (!ReviewAnchors.Valid(mark, Source, Braille)) throw new ArgumentException("문자를 나누지 않는 검토 범위를 선택해 주세요.");
+        ReviewMarks.Add(mark);
+        return mark;
+    }
     public void EditBraille(string value)
     {
         if (IsBrailleLocked || Braille == value) return;
@@ -51,9 +92,9 @@ public sealed partial class DocumentSession : ObservableObject
         Blocks.CollectionChanged += (_, _) =>
         {
             foreach (var block in observedBlocks.Where(b => !Blocks.Contains(b)).ToArray())
-            { block.PropertyChanged -= BlockChanged; block.Memos.CollectionChanged -= MemosChanged; observedBlocks.Remove(block); }
+            { block.PropertyChanged -= BlockChanged; block.Memos.CollectionChanged -= MemosChanged; block.ReviewMarks.CollectionChanged -= MemosChanged; observedBlocks.Remove(block); }
             foreach (var block in Blocks.Where(b => !observedBlocks.Contains(b)))
-            { block.PropertyChanged += BlockChanged; block.Memos.CollectionChanged += MemosChanged; observedBlocks.Add(block); }
+            { block.PropertyChanged += BlockChanged; block.Memos.CollectionChanged += MemosChanged; block.ReviewMarks.CollectionChanged += MemosChanged; observedBlocks.Add(block); }
             MarkChanged();
         };
     }

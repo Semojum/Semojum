@@ -30,6 +30,9 @@ internal static class WindowsQa4Checks
         await WindowsIndividualControlStatesChecks.RunAsync(directory, check);
         await WindowsOwnedModalChecks.RunAsync(check);
         await WindowsReviewMarginChecks.RunAsync(check);
+        await WindowsManualReviewChecks.RunAsync(check, directory);
+        WindowsReviewPerformanceChecks.Run(check);
+        await WindowsReviewProjectionChecks.RunAsync(check);
         await WindowsGridMarkerNavigationChecks.RunAsync(check);
         await WindowsConversionOutcomeChecks.RunAsync(check);
         await WindowsUpdateDocumentSafetyChecks.RunAsync(check);
@@ -46,9 +49,10 @@ internal static class WindowsQa4Checks
         WindowsFooterFormulaDesignChecks.Run(owner, check);
         WindowsVisualDescriptionDesignChecks.Run(owner, check);
         WindowsLineTranslationDesignChecks.Run(owner, check);
+        await WindowsEditorHighlightChecks.RunAsync(check);
         await WindowsCreditRecoveryChecks.RunAsync(check, directory);
         await WindowsUncertainRestartChecks.RunAsync(check, directory);
-        WindowsSixDotChecks.Run(owner, check);
+        WindowsSixDotChecks.Run(owner, check, Stage);
         WindowsImageOrderChecks.Run(owner, check);
         await WindowsFileOpenChecks.RunAsync(directory, check);
         await WindowsFileEdgeChecks.RunAsync(directory, check);
@@ -103,8 +107,7 @@ internal static class WindowsQa4Checks
         Stage("role change complete; view commands start");
         await CheckViewCommandsAsync(owner, check);
         Stage("view commands complete; capture checks start");
-        check(owner.Braille.Editor.Visibility == Visibility.Collapsed && owner.Braille.GridView.ActualHeight > 500,
-            "Visual parity keeps one full-height editable braille surface without a duplicate editor");
+        CheckBrailleSurface(owner, check, Stage);
         var faceElement = Children(owner.Braille.GridView).OfType<FrameworkElement>().First(e => e.GetType().Name == "Face");
         var face = (BrailleGridFace)faceElement.GetType().GetProperty("Data")!.GetValue(faceElement)!;
         var firstCell = face.Rows.SelectMany((row, y) => row.Select((cell, x) => (cell, x, y))).First(c => c.cell is not null);
@@ -445,6 +448,27 @@ internal static class WindowsQa4Checks
         }
         finally { editor.PrepareSmokeShutdown(); editor.Close(); }
     }
+    internal static void CheckBrailleSurface(MainWindow owner, Action<bool, string> check, Action<string> stage)
+    {
+        var brailleGrid = owner.Braille.GridView;
+        var brailleContainer = VisualTreeHelper.GetParent(brailleGrid) as Grid;
+        var rowIndex = Grid.GetRow(brailleGrid);
+        var rowHeight = brailleContainer is not null && rowIndex < brailleContainer.RowDefinitions.Count
+            ? brailleContainer.RowDefinitions[rowIndex].ActualHeight : 0;
+        var tolerance = Math.Max(1, 1 / VisualTreeHelper.GetDpi(brailleGrid).DpiScaleY);
+        check(owner.Braille.Editor.Visibility == Visibility.Collapsed,
+            "The duplicate braille model editor remains hidden");
+        check(brailleGrid.IsVisible && brailleGrid.IsEnabled && brailleGrid.Focusable && brailleGrid.ActualHeight > 0,
+            "The braille grid is visible, enabled and keyboard-focusable");
+        check(brailleContainer is not null && rowHeight > 0 && Math.Abs(brailleGrid.ActualHeight - rowHeight) <= tolerance,
+            $"The braille grid fills its available layout row (window={owner.ActualHeight:F1}, row={rowHeight:F1}, grid={brailleGrid.ActualHeight:F1})");
+        if (owner.ActualHeight >= 950)
+            check(brailleGrid.ActualHeight > 500,
+                $"A large editor window retains a full-height braille grid (window={owner.ActualHeight:F1}, grid={brailleGrid.ActualHeight:F1})");
+        else
+            stage($"large braille window check skipped: actual window height {owner.ActualHeight:F1}");
+    }
+
     private static async Task CheckViewCommandsAsync(MainWindow owner, Action<bool, string> check)
     {
         var content = owner.Session.Blocks.Select(b => (b.Source, b.Braille)).ToArray(); var dirty = owner.Session.IsDirty;

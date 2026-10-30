@@ -58,7 +58,7 @@ public partial class MainWindow
                     editor.TextArea.LeftMargins.Remove(separator);
                 }
                 if (!editor.TextArea.LeftMargins.OfType<SourceTextInset>().Any()) editor.TextArea.LeftMargins.Add(new SourceTextInset(editor));
-                foreach (var inset in editor.TextArea.LeftMargins.OfType<SourceTextInset>()) { inset.LineBrush = value.HighContrast ? Brushes.White : C("#D6D6D6"); inset.InvalidateVisual(); }
+                foreach (var inset in editor.TextArea.LeftMargins.OfType<SourceTextInset>()) { inset.LineBrush = value.HighContrast ? Brushes.White : C("#D6D6D6"); inset.CurrentLineMarkerBrush = value.HighContrast ? Brushes.White : C("#005FB8"); inset.InvalidateVisual(); }
             }
             editor.LineNumbersForeground = value.HighContrast ? Brushes.White : C(value.LineNumberColor);
             foreach (var colorizer in view.LineTransformers.OfType<TagColorizer>()) colorizer.TagBrush = value.HighContrast ? Brushes.Cyan : C(value.TagColor);
@@ -69,8 +69,8 @@ public partial class MainWindow
         Braille.NormalForeground = value.HighContrast ? Brushes.White : C(value.BrailleColor);
         if (detachedPane is not null) detachedPane.NormalForeground = Braille.NormalForeground;
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
-        Braille.GridView.FontSize = value.BrailleSize; Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.CurrentLineBrush = gridLine; Braille.GridView.ShowLineNumbers = value.ShowLineNumbers; Braille.GridView.InvalidateFaces();
-        if (detachedPane is not null) { detachedPane.GridView.FontSize = value.BrailleSize; detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.CurrentLineBrush = gridLine; detachedPane.GridView.ShowLineNumbers = value.ShowLineNumbers; detachedPane.GridView.InvalidateFaces(); }
+        Braille.GridView.FontSize = value.BrailleSize; Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.CurrentLineBrush = gridLine; Braille.GridView.SelectionHighlightBrush = C(value.SelectionColor); Braille.GridView.SelectionTextBrush = C(value.SelectionTextColor); Braille.GridView.ShowLineNumbers = value.ShowLineNumbers; Braille.GridView.InvalidateFaces();
+        if (detachedPane is not null) { detachedPane.GridView.FontSize = value.BrailleSize; detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.CurrentLineBrush = gridLine; detachedPane.GridView.SelectionHighlightBrush = C(value.SelectionColor); detachedPane.GridView.SelectionTextBrush = C(value.SelectionTextColor); detachedPane.GridView.ShowLineNumbers = value.ShowLineNumbers; detachedPane.GridView.InvalidateFaces(); }
         LineNumbersToggle.IsChecked = value.ShowLineNumbers;
         FormattingToggle.IsChecked = value.ShowFormattingMarks;
         ToolbarToggle.IsChecked = value.ShowToolbar;

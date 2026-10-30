@@ -68,6 +68,7 @@ public sealed class SourceTextInset : AbstractMargin
 {
     private readonly TextEditor editor;
     public Brush LineBrush { get; set; } = Brushes.LightGray;
+    public Brush CurrentLineMarkerBrush { get; set; } = new SolidColorBrush(Color.FromRgb(0, 95, 184));
     public SourceTextInset(TextEditor editor)
     {
         this.editor = editor;
@@ -83,11 +84,19 @@ public sealed class SourceTextInset : AbstractMargin
     private void Changed(object? sender, EventArgs e) => InvalidateVisual();
     protected override void OnRender(DrawingContext dc)
     {
+        Rect? marker = null;
         if (TextView?.VisualLinesValid == true && editor.Options.HighlightCurrentLine)
         {
             var line = TextView.VisualLines.FirstOrDefault(l => editor.TextArea.Caret.Line >= l.FirstDocumentLine.LineNumber && editor.TextArea.Caret.Line <= l.LastDocumentLine.LineNumber);
-            if (line is not null) dc.DrawRectangle(TextView.CurrentLineBackground, null, new Rect(0, line.VisualTop - TextView.VerticalOffset, 12, line.Height));
+            if (line is not null)
+            {
+                dc.DrawRectangle(TextView.CurrentLineBackground, null, new Rect(0, line.VisualTop - TextView.VerticalOffset, 12, line.Height));
+                var top = TextView.GetVisualPosition(editor.TextArea.Caret.Position, VisualYPosition.LineTop).Y - TextView.VerticalOffset;
+                var bottom = TextView.GetVisualPosition(editor.TextArea.Caret.Position, VisualYPosition.LineBottom).Y - TextView.VerticalOffset;
+                marker = new Rect(0, top, 2, Math.Max(0, bottom - top));
+            }
         }
         dc.DrawLine(new Pen(LineBrush, 1), new Point(.5, 0), new Point(.5, ActualHeight));
+        if (marker is { } rect) dc.DrawRectangle(CurrentLineMarkerBrush, null, rect);
     }
 }

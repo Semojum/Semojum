@@ -26,6 +26,8 @@ public sealed partial class JobClient
         var known = manifest.ServerPages ?? [];
         var totalPages = manifest.IsTextJob == true ? manifest.Blocks.Max(b => b.Page) : (int?)null;
         var pages = new List<SavePage>(); var notes = new List<string>();
+        var reviews = manifest.Blocks.Sum(b => b.ReviewMarks?.Length ?? 0);
+        if (reviews > 0) notes.Add($"검토 표시 {reviews}건은 로컬 .smj에만 보존되며 서버에서 다시 열면 표시되지 않습니다.");
         var emptied = 0; var skipped = 0;
         foreach (var pageNo in manifest.Blocks.Select(b => b.Page).Concat(known.Keys).Distinct().Order())
         {

@@ -62,6 +62,8 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
                 if (generations[block] == generation) block.State = "수정됨 · 재점역 필요";
                 return TranslationOutcome.Superseded;
             }
+            // Even an identical new translation requires an explicit human recheck.
+            block.InvalidateBrailleConfirmations();
             block.Braille = result.Cells;
             block.Translation = result with { SourceText = block.Source };
             block.HasManualBraille = false;

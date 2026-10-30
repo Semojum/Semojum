@@ -57,7 +57,7 @@ public partial class MainWindow
     private void RestoreOriginalBraille()
     {
         if (!CanRestoreOriginalBraille() || session.ActiveBlock is not { Translation: { } result } block) return;
-        EditStructure(() => { block.Braille = result.Cells; block.HasManualBraille = false; block.State = "원래 점역 결과 복원"; });
+        EditStructure(() => { block.InvalidateBrailleConfirmations(); block.Braille = result.Cells; block.HasManualBraille = false; block.State = "원래 점역 결과 복원"; });
         translatedRevisions[block] = block.SourceRevision;
         session.Status = "원래 점역 결과를 복원했습니다. 실행 취소로 이전 점자 편집을 되돌릴 수 있습니다.";
     }

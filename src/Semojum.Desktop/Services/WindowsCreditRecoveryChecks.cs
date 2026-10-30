@@ -57,6 +57,70 @@ internal static class WindowsCreditRecoveryChecks
         await CheckSameJobTabsAsync(directory, check);
         await CheckClosedPendingTabAsync(directory, check);
         await CheckInitialArrivalOrderAsync(check);
+        await CheckStaleReviewRecoveryAsync(directory, check);
+    }
+
+    private static async Task CheckStaleReviewRecoveryAsync(string directory, Action<bool, string> check)
+    {
+        var fixture = new Fixture("resume-success"); using var http = new HttpClient(fixture);
+        var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
+        var window = new MainWindow(api); var choice = -1; var notices = 0;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
+        timer.Tick += (_, _) =>
+        {
+            foreach (Window dialog in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == window && w.IsVisible).ToArray())
+            {
+                if (dialog is TextValueDialog)
+                {
+                    Descendants(dialog).OfType<TextBox>().Single().Text = "review-recovery";
+                    Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "확인")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                else if (dialog is NoticeDialog notice && notice.MessageText == "재개 결과와 로컬 교정 확인" && choice >= 0)
+                { var selected = choice; choice = -1; notice.ActionButtons[selected].RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+                else if (dialog is AccountDialog account)
+                { check(false, "Recovery fixture unexpectedly requested interactive login"); account.Close(); }
+                else if (dialog is NoticeDialog other) { notices++; other.Close(); }
+            }
+        };
+        var backup = Path.Combine(directory, "review-recovery-" + Guid.NewGuid().ToString("N") + ".smj");
+        window.Show(); timer.Start();
+        try
+        {
+            check(api.Account is { LoginId: "fixture" }, "Recovery fixture starts with an authenticated account");
+            await window.ExecuteAsync("serverOpen");
+            var deadline = DateTime.UtcNow.AddSeconds(8);
+            while (notices == 0 && DateTime.UtcNow < deadline) await Task.Delay(25);
+            var model = window.Session;
+            if (model.Blocks.FirstOrDefault(b => b.Page == 2) is not { } old)
+            { check(false, "Recovery fixture received the blocked second page"); return; }
+            old.AddReviewMark(ReviewKind.HumanConfirmed, ReviewPanel.Text, 0, 1);
+            old.Source = ""; old.Braille = ""; old.ServerId = null;
+            old.Metadata = old.Metadata with { IsBlocked = true };
+            check(old.ReviewMarks is [{ IsStale: true, Length: 0 }] && old.Memos.Count == 0,
+                "Resume fixture contains only a stale review on an empty blocked placeholder");
+            Descendants(window.CreditBanner).OfType<Button>().Single(b => Equals(b.Content, "이어서 처리")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            deadline = DateTime.UtcNow.AddSeconds(8);
+            while (!model.HasPendingServerPages && DateTime.UtcNow < deadline) await Task.Delay(25);
+            check(model.HasPendingServerPages && model.Blocks.Contains(old) && old.ReviewMarks.Count == 1,
+                "Server resume cannot silently replace an empty placeholder that retains a stale review");
+            choice = 2; window.ReviewPendingServerPages.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(model.HasPendingServerPages && old.ReviewMarks.Count == 1, "Closing resume conflict retains the original stale review");
+            window.PendingBackupPicker = () => null; choice = 1;
+            window.ReviewPendingServerPages.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(model.HasPendingServerPages && old.ReviewMarks.Count == 1, "Canceling backup cannot replace the original stale review");
+            window.PendingBackupPicker = () => backup; choice = 1;
+            window.ReviewPendingServerPages.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            deadline = DateTime.UtcNow.AddSeconds(8);
+            while (model.HasPendingServerPages && DateTime.UtcNow < deadline) await Task.Delay(25);
+            var saved = File.Exists(backup) ? await SmjFile.LoadAsync(backup) : null;
+            check(!model.HasPendingServerPages && saved?.Blocks.Any(b => b.Page == 2 && b.ReviewMarks is [{ IsStale: true }]) == true,
+                "Applying a resumed server result first preserves the stale review in the explicit SMJ backup");
+        }
+        finally
+        {
+            timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close();
+            if (File.Exists(backup)) File.Delete(backup);
+        }
     }
 
     internal static async Task CheckInitialArrivalOrderAsync(Action<bool, string> check)
