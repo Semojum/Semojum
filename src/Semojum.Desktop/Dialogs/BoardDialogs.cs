@@ -236,7 +236,7 @@ public sealed class PostEditorDialog : CompactDialog
             }
             return Task.CompletedTask;
         }));
-        var choose = (Button)fileActions.Children[0]; choose.Margin = new(0); choose.Width = 99;
+        var choose = (Button)fileActions.Children[0]; PublicDialogDesign.StyleAction(choose); choose.Margin = new(0); choose.Width = 110;
         fileActions.Children.Add(new TextBlock { Text = "최대 5개 · 10MB 제한", Margin = new(32, 0, 0, 0), Foreground = (Brush)FindResource("Muted") });
         panel.Children.Add(list);
         var attachmentMenu = new ContextMenu(); var remove = new MenuItem { Header = "선택 첨부 제거" }; attachmentMenu.Items.Add(remove); list.ContextMenu = attachmentMenu;
@@ -279,12 +279,16 @@ public sealed class PostDialog : CompactDialog
             foreach (var a in post.Attachments)
             {
                 var download = Button("", async () => await RunAsync(() => DownloadAsync(a)));
-                download.MinWidth = 230; download.Height = download.MinHeight = 24; download.HorizontalAlignment = HorizontalAlignment.Left;
+                download.MinWidth = 0; download.MaxWidth = 268; download.Height = download.MinHeight = 32; download.HorizontalAlignment = HorizontalAlignment.Stretch;
                 download.Margin = new(0, 10, 0, 0); download.Padding = new(8, 0, 8, 0);
-                var attachment = new StackPanel { Orientation = Orientation.Horizontal };
+                download.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                var attachment = new Grid(); attachment.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); attachment.ColumnDefinitions.Add(new ColumnDefinition());
                 var export = BoardDesign.Icon("export"); export.Margin = new(0, 0, 6, 0); attachment.Children.Add(export);
-                attachment.Children.Add(new TextBlock { Text = $"{a.FileName} ({a.Size / 1024d:0.#} KB)", FontSize = 12 });
-                download.Content = attachment; System.Windows.Automation.AutomationProperties.SetName(download, a.FileName + " 다운로드"); panel.Children.Add(download);
+                var fileName = new TextBlock { Text = $"{a.FileName} ({a.Size / 1024d:0.#} KB)", FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                Grid.SetColumn(fileName, 1); attachment.Children.Add(fileName);
+                download.Content = attachment; download.ToolTip = a.FileName; System.Windows.Automation.AutomationProperties.SetName(download, a.FileName + " 다운로드");
+                var attachmentRow = new Grid(); attachmentRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MaxWidth = 268 });
+                attachmentRow.Children.Add(download); panel.Children.Add(attachmentRow);
             }
             foreach (var answer in post.Answers)
             {
@@ -292,7 +296,7 @@ public sealed class PostDialog : CompactDialog
                 byline.Children.Add(new TextBlock { Text = "운영자 답변", FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 10, 0) });
                 byline.Children.Add(new TextBlock { Text = answer.AnsweredAt, FontSize = 12, Foreground = (Brush)FindResource("Muted") }); reply.Children.Add(byline);
                 reply.Children.Add(new TextBlock { Text = answer.Content, FontSize = 12, LineHeight = 18, TextWrapping = TextWrapping.Wrap });
-                panel.Children.Add(new Border { BorderThickness = new(3, 0, 0, 0), BorderBrush = (Brush)FindResource("Accent"), Background = new SolidColorBrush(Color.FromRgb(250, 250, 250)), Margin = new(0, 16, 0, 0), Padding = new(9, 8, 9, 10), Child = reply });
+                panel.Children.Add(new Border { BorderThickness = new(3, 0, 0, 0), BorderBrush = (Brush)FindResource("Accent"), Background = new SolidColorBrush(Color.FromRgb(249, 249, 249)), CornerRadius = new(6), Margin = new(0, 16, 0, 0), Padding = new(9, 8, 9, 10), Child = reply });
             }
         }
         Render();

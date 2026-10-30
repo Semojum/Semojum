@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -23,6 +24,19 @@ internal static class WindowsPanelDesignChecks
                 "All three Figma panel headers are 36 pixels high");
             check(window.OriginalPosition.Text == "" && window.OriginalPageBar.Visibility == Visibility.Collapsed,
                 "A blank original shows no invented page number or duplicate page bar");
+            check(window.OriginalPanel.ActualWidth >= 260 && window.SourcePanel.ActualWidth >= 300 && window.Braille.ActualWidth >= 300 && window.PanelScroll.ViewportWidth > 0,
+                $"Initially fitted window keeps each panel at a usable width (window={window.ActualWidth:F1}, viewport={window.PanelScroll.ViewportWidth:F1})");
+            foreach (var (header, name) in new[] { (window.OriginalHeader, "원본 패널 숨기기"), (window.SourceHeader, "텍스트 패널 숨기기"), (window.Braille.Header, "점자 패널 숨기기") })
+            {
+                var button = Descendants(header).OfType<Button>().Single(b => AutomationProperties.GetName(b) == name);
+                button.BringIntoView(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                var bounds = button.TransformToAncestor(window.PanelScroll).TransformBounds(new Rect(0, 0, button.ActualWidth, button.ActualHeight));
+                check(button.IsEnabled && button.Focusable && bounds.Left >= -1 && bounds.Right <= window.PanelScroll.ViewportWidth + 1,
+                    $"The initially fitted window can bring {name} into its horizontal viewport");
+            }
+            window.PanelScroll.ScrollToLeftEnd();
+            window.Width = 1440; window.Height = 1000;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
             check(Math.Abs(window.OriginalPanel.ActualWidth - 380) < 2 && Math.Abs(window.SourcePanel.ActualWidth - 474) < 2 && Math.Abs(window.Braille.ActualWidth - 586) < 2,
                 "Three panels use the final Figma proportions at 1440 pixels");
             CheckHeader(window.OriginalHeader, window.OriginalPanelTitle, "1", "panel-original-close.svg", check);

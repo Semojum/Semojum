@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Semojum.Core.Integration;
@@ -20,11 +22,13 @@ internal static class WindowsBoardDesignChecks
     {
         var fixture = new Fixture(); using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
         await api.LoginAsync("fixture", "fixture"); var client = new BoardClient(api);
-        var board = new BoardDialog(client, "검수"); board.Show();
+        var board = new BoardDialog(client, "검수");
+        check(board.Width == 1440 && board.Height == 1000, "Board requests the final Figma geometry before work-area fitting");
+        board.Show();
         try
         {
             await WaitAsync(() => Descendants(board).OfType<DataGrid>().Any(g => g.Items.Count == 1));
-            check(board.Width == 1440 && board.Height == 1000, "Board window uses the final Figma geometry");
+            CheckWorkAreaFit(board, "Board", check);
             check(HasIcon(board, "board-caption-close.svg") && HasIcon(board, "board-chevron-down.svg"), "Board title bar and search use the final Figma SVGs");
             check(HasIcon(board, "board-chevron-left.svg") && HasIcon(board, "board-chevron-right.svg"), "Board pagination renders both Figma arrow icons");
             check(Descendants(board).OfType<Button>().Any(b => Equals(b.Content, "알림")), "Board retains access to notifications");
@@ -60,11 +64,13 @@ internal static class WindowsBoardDesignChecks
             check(footer.ScrollableWidth > 0 && inputRect.Left >= 0 && inputRect.Right <= footer.ViewportWidth + 1, "Narrow board footer scrolls to keep page input accessible");
         }
         finally { board.Close(); }
-        var editor = new PostEditorDialog(client, null, "검수"); editor.Show();
+        var editor = new PostEditorDialog(client, null, "검수");
+        check(editor.Width == 1440 && editor.Height == 1000, "Post editor requests the final Figma geometry before work-area fitting");
+        editor.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(editor.Width == 1440 && editor.Height == 1000, "Post editor uses the final Figma geometry");
+            CheckWorkAreaFit(editor, "Post editor", check);
             check(Descendants(editor).OfType<ComboBox>().Any(c => AutomationProperties.GetName(c) == "게시글 분류" && !c.IsEnabled
                 && AutomationProperties.GetHelpText(c).Contains("제공하지 않습니다")), "Unsupported post classification remains visible with an explicit unavailable state");
             check(Descendants(editor).OfType<TextBox>().Any(t => t.AcceptsReturn && t.Height == 220), "Post editor offers the final Figma multiline field");
@@ -75,20 +81,63 @@ internal static class WindowsBoardDesignChecks
             var checkRect = workOption.TransformToAncestor(checkContainer).TransformBounds(new Rect(0, 0, workOption.ActualWidth, workOption.ActualHeight));
             check(workOption.ActualHeight >= 20 && checkRect.Top >= 0 && checkRect.Bottom <= checkContainer.ActualHeight, "The work-information checkbox fits completely within its row");
             check(Descendants(editor).OfType<Button>().Where(b => Equals(b.Content, "취소") || Equals(b.Content, "등록")).Select(b => b.Content).SequenceEqual(new object[] { "취소", "등록" }), "Cancel precedes registration in the post editor");
+            var choose = Descendants(editor).OfType<Button>().Single(b => Equals(b.Content, "파일 고르기"));
+            check(choose.Width == 110 && choose.Height == 32 && choose.IsEnabled, "Post editor retains an enabled 110x32 Figma file picker");
             if (Environment.GetEnvironmentVariable("BOARD_EDITOR_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(editor, capture);
+            editor.Width = 480; editor.Height = 400; editor.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var editScroll = Descendants(editor).OfType<ScrollViewer>().First(s => s.Content is StackPanel);
+            editScroll.ScrollToBottom(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); editor.UpdateLayout();
+            var chooseRect = choose.TransformToAncestor(editScroll).TransformBounds(new Rect(0, 0, choose.ActualWidth, choose.ActualHeight));
+            check(editScroll.ScrollableHeight > 0 && chooseRect.Top >= -1 && chooseRect.Bottom <= editScroll.ViewportHeight + 2 && choose.IsEnabled,
+                "The narrow post editor can scroll to its file picker");
         }
         finally { editor.Close(); }
         var post = new BoardPost(42, "문의 제목", "서버의 본문", "작성자", true, false, false, "2026-10-21", "", 4, [new(3, "첨부.pdf", 1024, "https://example.invalid/attachment.pdf")], [new(1, "운영자 답변 내용", false, "2026-10-22", "")]);
-        var detail = new PostDialog(client, post, "검수"); detail.Show();
+        var detail = new PostDialog(client, post, "검수");
+        check(detail.Width == 1440 && detail.Height == 1000, "Post detail requests the final Figma geometry before work-area fitting");
+        detail.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(detail.Width == 1440 && detail.Height == 1000, "Post detail uses the final Figma geometry");
+            CheckWorkAreaFit(detail, "Post detail", check);
             check(Descendants(detail).OfType<TextBlock>().Any(t => t.Text == "운영자 답변 내용"), "Post detail retains the actual operator answer");
             check(HasIcon(detail, "board-export.svg"), "Post attachments render the Figma download icon");
+            var attachment = Descendants(detail).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "첨부.pdf 다운로드");
+            check(attachment.ActualHeight == 32 && Math.Abs(attachment.ActualWidth - 268) < 2 && Equals(attachment.ToolTip, "첨부.pdf"),
+                "Post attachment uses the Figma 268x32 surface and retains its filename for accessibility");
+            var detailScroll = Descendants(detail).OfType<ScrollViewer>().First(s => s.Content is StackPanel);
+            var attachmentLeft = attachment.TransformToAncestor(detailScroll).Transform(new Point()).X;
+            check(attachmentLeft >= -1 && attachmentLeft <= 2, $"Post attachment aligns with the left edge of the actual content (left={attachmentLeft:F1})");
+            var answer = Descendants(detail).OfType<Border>().Single(b => b.Child is StackPanel p && Descendants(p).OfType<TextBlock>().Any(t => t.Text == "운영자 답변 내용"));
+            check(answer.CornerRadius == new CornerRadius(6) && answer.Background is SolidColorBrush { Color: var c } && c == Color.FromRgb(249, 249, 249),
+                "The actual operator answer uses the Figma rounded neutral card");
             if (Environment.GetEnvironmentVariable("BOARD_DETAIL_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(detail, capture);
+            detail.Width = 480; detail.Height = 400; detail.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var postScroll = Descendants(detail).OfType<ScrollViewer>().First(s => s.Content is StackPanel);
+            var attachmentRect = attachment.TransformToAncestor(postScroll).TransformBounds(new Rect(0, 0, attachment.ActualWidth, attachment.ActualHeight));
+            check(attachmentRect.Left >= -1 && attachmentRect.Right <= postScroll.ViewportWidth + 2 && attachment.IsEnabled,
+                "The attachment download stays within a 480px detail window and remains enabled");
         }
         finally { detail.Close(); }
+        var longName = new string('가', 160) + ".pdf";
+        var longPost = post with { Attachments = [new(4, longName, 1024, "https://example.invalid/long.pdf")] };
+        var longDetail = new PostDialog(client, longPost, "검수"); longDetail.Show();
+        try
+        {
+            foreach (var width in new[] { 1440d, 480d })
+            {
+                longDetail.Width = width; longDetail.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                var button = Descendants(longDetail).OfType<Button>().Single(b => AutomationProperties.GetName(b) == longName + " 다운로드");
+                var text = Descendants(button).OfType<TextBlock>().Single(t => t.Text.StartsWith(longName, StringComparison.Ordinal));
+                var icon = Descendants(button).OfType<SvgViewbox>().Single(i => i.Source?.ToString().EndsWith("board-export.svg", StringComparison.Ordinal) == true);
+                var textBounds = text.TransformToAncestor(button).TransformBounds(new Rect(0, 0, text.ActualWidth, text.ActualHeight));
+                var iconBounds = icon.TransformToAncestor(button).TransformBounds(new Rect(0, 0, icon.ActualWidth, icon.ActualHeight));
+                check(text.TextTrimming == TextTrimming.CharacterEllipsis && textBounds.Left >= 0 && textBounds.Right <= button.ActualWidth + 1
+                    && iconBounds.Left >= 0 && iconBounds.Right <= button.ActualWidth + 1 && Equals(button.ToolTip, longName) && button.IsEnabled,
+                    $"A long attachment name and icon stay inside the {width:0}px window button while retaining the full accessible filename");
+            }
+        }
+        finally { longDetail.Close(); }
         var alerts = new NotificationsDialog(client, "검수"); alerts.Show();
         try
         {
@@ -99,6 +148,31 @@ internal static class WindowsBoardDesignChecks
         }
         finally { alerts.Close(); }
     }
+    private static void CheckWorkAreaFit(Window window, string name, Action<bool, string> check)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        var monitor = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (handle == IntPtr.Zero || !GetMonitorInfo(MonitorFromWindow(handle, 2), ref monitor) || !GetWindowRect(handle, out var actual))
+            throw new InvalidOperationException($"Cannot inspect {name} monitor work area and window bounds.");
+        var scale = Math.Max(96, GetDpiForWindow(handle)) / 96d;
+        var workWidth = monitor.Work.Right - monitor.Work.Left;
+        var workHeight = monitor.Work.Bottom - monitor.Work.Top;
+        var expectedWidth = Math.Min(1440, Math.Max(300, workWidth / scale));
+        var expectedHeight = Math.Min(1000, Math.Max(200, workHeight / scale));
+        check(Math.Abs(window.Width - expectedWidth) < 1 && Math.Abs(window.Height - expectedHeight) < 1 &&
+              actual.Left >= monitor.Work.Left - 2 && actual.Top >= monitor.Work.Top - 2 &&
+              actual.Right <= monitor.Work.Right + 2 && actual.Bottom <= monitor.Work.Bottom + 2,
+              $"{name} fits its monitor work area while preserving the largest available Figma size " +
+              $"(window={window.Width:F1}x{window.Height:F1}, work={workWidth}x{workHeight}px, scale={scale:F2}, " +
+              $"bounds={actual.Left},{actual.Top},{actual.Right},{actual.Bottom})");
+    }
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+
     private static bool HasIcon(DependencyObject root, string asset) => Descendants(root).OfType<SvgViewbox>().Any(i => i.Source?.ToString().EndsWith(asset, StringComparison.Ordinal) == true && i.Width == 16 && i.Height == 16 && i.Drawings is { Bounds.IsEmpty: false });
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); yield return child; foreach (var nested in Descendants(child)) yield return nested; } }
