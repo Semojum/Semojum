@@ -117,6 +117,15 @@
     </Border>
     <Border DockPanel.Dock="Top" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="8,0">
       <Border.Style><Style TargetType="Border"><Setter Property="Height" Value="{Binding ComputedHorizontalScrollBarVisibility, ElementName=FormatToolbarScroll, Converter={StaticResource ToolbarHeightConverter}, ConverterParameter=32}"/></Style></Border.Style>
+      <DockPanel>
+      <Button x:Name="ToolbarAccount" DockPanel.Dock="Right" Width="128" Height="24" MinWidth="0" MinHeight="0" Margin="8,0,4,0" Padding="0" BorderThickness="0" Background="#F0F0F0" VerticalAlignment="Center" Tag="usage" Click="Action_Click" ToolTip="마이페이지 · 사용량" AutomationProperties.Name="마이페이지 · 사용량">
+        <Button.Template><ControlTemplate TargetType="Button"><Border x:Name="AccountSurface" Background="{TemplateBinding Background}" CornerRadius="12"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="AccountSurface" Property="Background" Value="#E6E6E6"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="AccountSurface" Property="BorderBrush" Value="#005FB8"/><Setter TargetName="AccountSurface" Property="BorderThickness" Value="1"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="AccountSurface" Property="Opacity" Value="0.5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Button.Template>
+        <Grid Margin="8,0,4,0"><Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
+          <svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/editor-account-user.svg" Width="16" Height="16" Stretch="None" HorizontalAlignment="Left" IsHitTestVisible="False"/>
+          <TextBlock Grid.Column="1" Text="{Binding Text, ElementName=AccountLabel}" Foreground="#5F5F5F" FontSize="12" TextTrimming="CharacterEllipsis"/>
+          <svg:SvgViewbox Grid.Column="2" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/editor-account-chevron.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/>
+        </Grid>
+      </Button>
       <ScrollViewer x:Name="FormatToolbarScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="서식 도구 모음 가로 스크롤">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
         <ComboBox x:Name="TextStylePicker" Width="104" Height="24" MinHeight="24" FontSize="12" SelectedIndex="0" SelectionChanged="TextStylePicker_SelectionChanged" AutomationProperties.Name="텍스트 서식"><ComboBoxItem Content="본문"/><ComboBoxItem Content="강조"/><ComboBoxItem Content="굵은"/><ComboBoxItem Content="색강조"/><ComboBoxItem Content="취소선"/></ComboBox>
@@ -140,6 +149,7 @@
         <Button Tag="lineNumbers" ToolTip="줄 번호 켜기 / 끄기" AutomationProperties.Name="줄 번호 켜기 / 끄기" Click="Action_Click" Style="{StaticResource FormatButton}"><svg:SvgViewbox x:Name="LinenoIcon" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/main-toolbar-lineno.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
       </StackPanel>
       </ScrollViewer>
+      </DockPanel>
     </Border>
     <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">
       <DockPanel>

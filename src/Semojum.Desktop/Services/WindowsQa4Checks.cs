@@ -41,6 +41,7 @@ internal static class WindowsQa4Checks
         WindowsEditorDialogDesignChecks.Run(owner, check);
         await WindowsPanelDesignChecks.RunAsync(directory, check);
         await WindowsStatusZoomChecks.RunAsync(directory, check);
+        await WindowsToolbarAccountChecks.RunAsync(check);
         await WindowsFormDesignChecks.RunAsync(check);
         WindowsFooterFormulaDesignChecks.Run(owner, check);
         WindowsVisualDescriptionDesignChecks.Run(owner, check);
