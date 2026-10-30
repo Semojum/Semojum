@@ -11,10 +11,15 @@
     <x:Static x:Key="UiFont" Member="controls:BundledFonts.UserInterface"/>
     <controls:InterfaceLineHeightConverter x:Key="InterfaceLineHeight"/>
     <controls:FigmaButtonStateBrush x:Key="ButtonStateBrush"/>
+    <controls:FigmaButtonForegroundBrush x:Key="ButtonForegroundBrush"/>
+    <controls:FigmaDisabledIconOpacity x:Key="DisabledIconOpacity"/>
+    <controls:FigmaButtonSurfaceOpacity x:Key="ButtonSurfaceOpacity"/>
+    <controls:FigmaInputFocusBrush x:Key="InputFocusBrush"/>
     <x:Static x:Key="MonoFont" Member="controls:BundledFonts.Mono"/>
     <Style TargetType="Window"><Setter Property="FontFamily" Value="{StaticResource UiFont}"/><Setter Property="FontSize" Value="12"/><Setter Property="Language" Value="ko-KR"/><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Background" Value="#F3F3F3"/></Style>
     <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="LineStackingStrategy" Value="BlockLineHeight"/><Setter Property="LineHeight" Value="{Binding FontSize, RelativeSource={RelativeSource Self}, Converter={StaticResource InterfaceLineHeight}}"/></Style>
     <Style TargetType="Button">
+      <Setter Property="controls:FigmaSystemContrast.IsHighContrast" Value="{DynamicResource {x:Static SystemParameters.HighContrastKey}}"/>
       <Setter Property="Padding" Value="14,6"/><Setter Property="Height" Value="32"/><Setter Property="MinHeight" Value="0"/><Setter Property="SnapsToDevicePixels" Value="True"/><Setter Property="HorizontalContentAlignment" Value="Center"/>
       <Setter Property="Background" Value="#FBFBFB"/><Setter Property="BorderBrush" Value="#EAEAEA"/><Setter Property="BorderThickness" Value="1"/>
       <Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Cursor" Value="Hand"/>
@@ -23,14 +28,18 @@
           <Border x:Name="FocusOuter" BorderBrush="#1A1A1A" BorderThickness="2" CornerRadius="7" Margin="-3" Visibility="Collapsed" IsHitTestVisible="False"/>
           <Border x:Name="FocusInner" BorderBrush="White" BorderThickness="1" CornerRadius="5" Margin="-1" Visibility="Collapsed" IsHitTestVisible="False"/>
           <Border x:Name="Surface" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
-            <Border.Background><MultiBinding Converter="{StaticResource ButtonStateBrush}" ConverterParameter="generic"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="BorderBrush" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsMouseOver" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsPressed" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.Background>
-            <Border.BorderBrush><MultiBinding Converter="{StaticResource ButtonStateBrush}" ConverterParameter="genericBorder"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="BorderBrush" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsMouseOver" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsPressed" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.BorderBrush>
-            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/>
+            <Border.Background><MultiBinding Converter="{StaticResource ButtonStateBrush}" ConverterParameter="generic"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="BorderBrush" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsMouseOver" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsPressed" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="(controls:FigmaSystemContrast.IsHighContrast)" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.Background>
+            <Border.BorderBrush><MultiBinding Converter="{StaticResource ButtonStateBrush}" ConverterParameter="genericBorder"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="BorderBrush" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsMouseOver" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsPressed" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="(controls:FigmaSystemContrast.IsHighContrast)" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.BorderBrush>
+            <Border.Opacity><MultiBinding Converter="{StaticResource ButtonSurfaceOpacity}"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="(controls:FigmaSystemContrast.IsHighContrast)" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.Opacity>
+            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center">
+              <TextElement.Foreground><MultiBinding Converter="{StaticResource ButtonForegroundBrush}" ConverterParameter="generic"><Binding Path="Foreground" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="(controls:FigmaSystemContrast.IsHighContrast)" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></TextElement.Foreground>
+              <ContentPresenter.Opacity><MultiBinding Converter="{StaticResource DisabledIconOpacity}"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsEnabled" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></ContentPresenter.Opacity>
+            </ContentPresenter>
           </Border>
         </Grid>
         <ControlTemplate.Triggers>
-          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value="0.4"/></Trigger>
           <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="FocusOuter" Property="Visibility" Value="Visible"/><Setter TargetName="FocusInner" Property="Visibility" Value="Visible"/></Trigger>
+          <Trigger Property="controls:FigmaSystemContrast.IsHighContrast" Value="True"><Setter TargetName="FocusOuter" Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/><Setter TargetName="FocusInner" Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/></Trigger>
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
@@ -112,11 +121,13 @@
     </Style>
     <Style x:Key="ToolButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="MinWidth" Value="32"/><Setter Property="Padding" Value="7,3"/><Setter Property="Margin" Value="2,0"/><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/></Style>
     <Style TargetType="TextBox">
+      <Setter Property="controls:FigmaSystemContrast.IsHighContrast" Value="{DynamicResource {x:Static SystemParameters.HighContrastKey}}"/>
       <Setter Property="Padding" Value="11,3"/><Setter Property="Height" Value="32"/><Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Background" Value="#FBFBFB"/><Setter Property="BorderBrush" Value="#EAEAEA"/><Setter Property="BorderThickness" Value="1"/><Setter Property="SelectionBrush" Value="#B8D3EE"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
         <Grid>
-          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+          <Border x:Name="InputSurface" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+            <Border.Background><MultiBinding Converter="{StaticResource InputFocusBrush}"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsKeyboardFocusWithin" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="(controls:FigmaSystemContrast.IsHighContrast)" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.Background>
             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
           </Border>
           <Border x:Name="Underline" Height="1" Background="#D1D1D1" Margin="1,0,1,0" VerticalAlignment="Bottom" IsHitTestVisible="False"/>
@@ -126,6 +137,8 @@
           <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="FocusUnderline" Property="Visibility" Value="Visible"/></Trigger>
           <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
           <Trigger Property="BorderThickness" Value="0"><Setter TargetName="Underline" Property="Visibility" Value="Collapsed"/><Setter TargetName="FocusUnderline" Property="Visibility" Value="Collapsed"/></Trigger>
+          <Trigger Property="controls:FigmaSystemContrast.IsHighContrast" Value="True"><Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/><Setter Property="SelectionBrush" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/><Setter Property="CaretBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/><Setter TargetName="InputSurface" Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/><Setter TargetName="Underline" Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/><Setter TargetName="FocusUnderline" Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/></Trigger>
+          <MultiTrigger><MultiTrigger.Conditions><Condition Property="controls:FigmaSystemContrast.IsHighContrast" Value="True"/><Condition Property="IsEnabled" Value="False"/></MultiTrigger.Conditions><Setter Property="Opacity" Value="1"/><Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"/></MultiTrigger>
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
       <Style.Triggers><Trigger Property="AcceptsReturn" Value="True"><Setter Property="Height" Value="Auto"/></Trigger></Style.Triggers>

@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
@@ -24,11 +25,25 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     private readonly HashSet<EditorBlock> observed = [];
     private bool syncing, queued, selectedBlock, projectionSuppressed;
     private bool showReviews = true;
-    public bool ShowReviews { get => showReviews; set { showReviews = value; Editor.TextArea.TextView.Redraw(); } }
+    private bool showMemos = true;
+    private readonly ReviewOverview overview;
+    internal ReviewOverview Overview => overview;
+    public bool ShowReviews { get => showReviews; set { if (showReviews == value) return; showReviews = value; InvalidateReviewPresentation(); } }
+    public bool ShowMemos { get => showMemos; set { if (showMemos == value) return; showMemos = value; overview.InvalidateMarkers(); } }
+    public bool OverviewHighContrast { get => overview.HighContrast; set { overview.HighContrast = value; overview.InvalidateVisual(); } }
     private int page;
     public ContinuousSourceEditor()
     {
-        Children.Add(Editor);
+        // Draw the overview over the real vertical scrollbar.  It is not hit-testable:
+        // the underlying native Track/Thumb still handles mouse, keyboard and UIA.
+        var host = new Grid(); host.Children.Add(Editor);
+        overview = new ReviewOverview(Editor, OverviewMarkers) { HorizontalAlignment = HorizontalAlignment.Right, Width = 12, IsHitTestVisible = false };
+        host.Children.Add(overview); Children.Add(host);
+        var scrollStyle = new Style(typeof(ScrollBar));
+        var vertical = new Trigger { Property = ScrollBar.OrientationProperty, Value = Orientation.Vertical };
+        vertical.Setters.Add(new Setter(WidthProperty, 12d)); scrollStyle.Triggers.Add(vertical);
+        Editor.Resources[typeof(ScrollBar)] = scrollStyle;
+        ColoredLineNumbers.SetReviewProvider(Editor.TextArea.TextView, ReviewKindForLine);
         NativeIme.Attach(Editor);
         Editor.Options.HighlightCurrentLine = true;
         Editor.TextArea.TextView.CurrentLineBackground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 245, 163));
@@ -108,6 +123,40 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         }
         return result;
     }
+    private ReviewKind? ReviewKindForLine(int line)
+    {
+        if (!ShowReviews) return null;
+        var kinds = Editor.TextArea.LeftMargins.OfType<MemoMargin>().FirstOrDefault()?.ManualKinds(line) ?? [];
+        // A pending correction/deletion must not be masked by an overlapping confirmation.
+        return kinds.Contains(ReviewKind.SuggestDeletion) ? ReviewKind.SuggestDeletion
+            : kinds.Contains(ReviewKind.SuggestCorrection) ? ReviewKind.SuggestCorrection
+            : kinds.Contains(ReviewKind.HumanConfirmed) ? ReviewKind.HumanConfirmed : null;
+    }
+    private IReadOnlyList<ReviewOverviewMarker> OverviewMarkers()
+    {
+        if (ProjectionPending() || model is null) return [];
+        var markers = new List<ReviewOverviewMarker>(); var offset = 0;
+        foreach (var block in Blocks())
+        {
+            if (showMemos && block.Memos.Any(m => m.Panel == "TEXT" && !m.Resolved))
+            {
+                var lines = DocumentNavigation.LineOffsets(block.Source);
+                foreach (var memo in block.Memos.Where(m => m.Panel == "TEXT" && !m.Resolved && m.LineIndex >= 0 && m.LineIndex < lines.Length))
+                    markers.Add(new(offset + lines[memo.LineIndex], 1, null));
+            }
+            if (showReviews)
+                foreach (var mark in block.ReviewMarks.Where(m => m.Panel == ReviewPanel.Text && !m.IsStale && Enum.IsDefined(m.Kind) && m.Start >= 0 && m.Length > 0 && m.Start <= block.Source.Length && m.Length <= block.Source.Length - m.Start && block.Source.AsSpan(m.Start, m.Length).SequenceEqual(m.OriginalText.AsSpan())))
+                    markers.Add(new(offset + mark.Start, mark.Length, mark.Kind));
+            offset += block.Source.Length + 1;
+        }
+        return markers;
+    }
+    private void InvalidateReviewPresentation()
+    {
+        Editor.TextArea.TextView.Redraw();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<ColoredLineNumbers>()) margin.InvalidateVisual();
+        overview.InvalidateMarkers();
+    }
     public (EditorBlock? Block, int Line) ResolveLine(int line)
     {
         // Visual lines may still belong to the previous document while the
@@ -156,6 +205,8 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         projectionSuppressed = false;
         Editor.TextArea.TextView.Redraw();
         foreach (var margin in Editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.InvalidateVisual();
+        foreach (var margin in Editor.TextArea.LeftMargins.OfType<ColoredLineNumbers>()) margin.InvalidateVisual();
+        overview.InvalidateMarkers();
         ProjectionRestored?.Invoke();
     }
     internal void SelectContext()
@@ -187,19 +238,20 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     }
     private void Observe()
     {
-        foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; observed.Remove(b); }
-        if (model is not null) foreach (var b in model.Blocks.Where(b => !observed.Contains(b))) { b.PropertyChanged += Changed; b.ReviewMarks.CollectionChanged += ReviewsChanged; observed.Add(b); }
+        foreach (var b in observed.Where(b => model?.Blocks.Contains(b) != true).ToArray()) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; b.Memos.CollectionChanged -= MemosChanged; observed.Remove(b); }
+        if (model is not null) foreach (var b in model.Blocks.Where(b => !observed.Contains(b))) { b.PropertyChanged += Changed; b.ReviewMarks.CollectionChanged += ReviewsChanged; b.Memos.CollectionChanged += MemosChanged; observed.Add(b); }
     }
     private void ReviewsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        Editor.TextArea.TextView.Redraw();
+        InvalidateReviewPresentation();
         foreach (var margin in Editor.TextArea.LeftMargins.OfType<MemoMargin>()) margin.InvalidateVisual();
     }
+    private void MemosChanged(object? sender, NotifyCollectionChangedEventArgs e) => overview.InvalidateMarkers();
     private void Changed(object? sender, PropertyChangedEventArgs e)
     { if (!syncing && e.PropertyName is nameof(EditorBlock.Source) or nameof(EditorBlock.Metadata)) QueueRefresh(); }
     private void QueueRefresh()
     {
-        if (queued) return; queued = true;
+        if (queued) return; queued = true; overview.InvalidateMarkers();
         Dispatcher.BeginInvoke(() => { queued = false; Refresh(); }, DispatcherPriority.DataBind);
     }
     public void Refresh()
@@ -225,7 +277,7 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     public void Dispose()
     {
         if (model is not null) { model.PropertyChanged -= SessionChanged; model.Blocks.CollectionChanged -= BlocksChanged; }
-        foreach (var b in observed) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; }
-        observed.Clear(); model = null;
+        foreach (var b in observed) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; b.Memos.CollectionChanged -= MemosChanged; }
+        observed.Clear(); model = null; overview.InvalidateMarkers();
     }
 }

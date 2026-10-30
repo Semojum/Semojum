@@ -50,8 +50,28 @@ internal sealed class ReviewRangeRenderer(Func<IReadOnlyList<(int Start, ReviewM
     public void Draw(TextView view, DrawingContext dc)
     {
         if (!enabled() || !view.VisualLinesValid) return;
-        var selected = selection();
-        foreach (var (start, mark) in ranges().Where(r => !r.Mark.IsStale && r.Mark.Length > 0))
+        var all = ranges();
+        var seen = new HashSet<(int Start, int Length, ReviewKind Kind)>();
+        var unique = new List<(int Start, ReviewMark Mark)>();
+        // An identical later opaque range completely covers an earlier one.
+        // Retaining the last occurrence preserves the order relative to every
+        // differently coloured overlapping range and to the selection gap.
+        for (var i = all.Count - 1; i >= 0; i--)
+        {
+            var item = all[i];
+            if (!item.Mark.IsStale && item.Mark.Length > 0 && seen.Add((item.Start, item.Mark.Length, item.Mark.Kind))) unique.Add(item);
+        }
+        unique.Reverse();
+        DrawRanges(view, dc, unique, selection());
+    }
+    internal void DrawReferenceForChecks(TextView view, DrawingContext dc)
+    {
+        if (!enabled() || !view.VisualLinesValid) return;
+        DrawRanges(view, dc, ranges().Where(r => !r.Mark.IsStale && r.Mark.Length > 0), selection());
+    }
+    private static void DrawRanges(TextView view, DrawingContext dc, IEnumerable<(int Start, ReviewMark Mark)> marks, (int Start, int Length) selected)
+    {
+        foreach (var (start, mark) in marks)
         {
             var end = start + mark.Length;
             var parts = selected.Length <= 0 || selected.Start >= end || selected.Start + selected.Length <= start

@@ -46,19 +46,48 @@ public sealed class DotSpeech : IDisposable
 }
 public sealed class ColoredLineNumbers : LineNumberMargin
 {
+    private static readonly DependencyProperty ReviewProviderProperty = DependencyProperty.RegisterAttached(
+        "ReviewProvider", typeof(Func<int, ReviewKind?>), typeof(ColoredLineNumbers));
+    internal static void SetReviewProvider(DependencyObject target, Func<int, ReviewKind?> provider) => target.SetValue(ReviewProviderProperty, provider);
     public Brush Background { get; set; } = Brushes.WhiteSmoke;
     public Brush NumberBrush { get; set; } = Brushes.Gray;
     public bool Compact { get; set; }
+    public bool HighContrast { get; set; }
+    public bool CustomNumberColor { get; set; }
+    public bool CustomBackground { get; set; }
+    internal Func<bool> SystemHighContrast { get; set; } = () => SystemParameters.HighContrast;
+    internal bool ListeningForSystemChanges { get; private set; }
+    public ColoredLineNumbers()
+    {
+        Loaded += (_, _) => { if (!ListeningForSystemChanges) { SystemParameters.StaticPropertyChanged += SystemChanged; ListeningForSystemChanges = true; } };
+        Unloaded += (_, _) => { if (ListeningForSystemChanges) { SystemParameters.StaticPropertyChanged -= SystemChanged; ListeningForSystemChanges = false; } };
+    }
+    internal void SystemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    { if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(SystemParameters.HighContrast)) InvalidateVisual(); }
     protected override void OnRender(DrawingContext dc)
     {
-        dc.DrawRectangle(Background, null, new Rect(RenderSize));
+        var systemContrast = SystemHighContrast();
+        var contrast = HighContrast || systemContrast;
+        var background = systemContrast ? SystemColors.WindowBrush : Background;
+        var numberBrush = systemContrast ? SystemColors.WindowTextBrush : NumberBrush;
+        dc.DrawRectangle(background, null, new Rect(RenderSize));
         if (!Compact) { base.OnRender(dc); return; }
         if (TextView?.VisualLinesValid != true) return;
+        var provider = TextView.GetValue(ReviewProviderProperty) as Func<int, ReviewKind?>;
         foreach (var line in TextView.VisualLines)
         {
+            var kind = provider?.Invoke(line.FirstDocumentLine.LineNumber - 1);
+            var y = line.VisualTop - TextView.VerticalOffset;
+            if (kind is { } marked)
+            {
+                var ink = contrast ? numberBrush : Controls.ReviewVisuals.Ink(marked);
+                if (!contrast && !CustomBackground) dc.DrawRectangle(Controls.ReviewVisuals.Background(marked), null, new Rect(0, y, RenderSize.Width, line.Height));
+                dc.DrawRectangle(ink, null, new Rect(0, y, 3, line.Height));
+            }
             var text = new FormattedText(line.FirstDocumentLine.LineNumber.ToString(), System.Globalization.CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight, new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 12, NumberBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            dc.DrawText(text, new Point(RenderSize.Width / 2 + 2 - text.Width / 2, line.VisualTop - TextView.VerticalOffset + 14));
+                FlowDirection.LeftToRight, new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, kind is null ? FontWeights.Normal : FontWeights.Bold, FontStretches.Normal),
+                kind is null ? 12 : 14, kind is { } review && !contrast && !CustomNumberColor ? Controls.ReviewVisuals.Ink(review) : numberBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(text, new Point(RenderSize.Width / 2 + 2 - text.Width / 2, y + (line.Height - text.Height) / 2));
         }
     }
 }

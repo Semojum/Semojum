@@ -44,14 +44,10 @@ public partial class MainWindow
             view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
             editor.Options.ShowSpaces = editor.Options.ShowTabs = editor.Options.ShowEndOfLine = value.ShowFormattingMarks;
             editor.ShowLineNumbers = value.ShowLineNumbers;
-            foreach (var margin in editor.TextArea.LeftMargins.OfType<LineNumberMargin>().ToArray())
-            {
-                var index = editor.TextArea.LeftMargins.IndexOf(margin);
-                editor.TextArea.LeftMargins[index] = new ColoredLineNumbers { Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground), Margin = margin.Margin,
-                    NumberBrush = value.HighContrast ? Brushes.White : C(value.LineNumberColor), Compact = editor == PageEditor.Editor, MinWidth = editor == PageEditor.Editor ? 28 : 0 };
-            }
+            ApplyLineNumberAppearance(editor, value);
             if (editor == PageEditor.Editor)
             {
+                PageEditor.OverviewHighContrast = value.HighContrast;
                 foreach (var memo in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { memo.GutterWidth = 12; memo.Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground); memo.InvalidateMeasure(); }
                 foreach (var separator in editor.TextArea.LeftMargins.OfType<System.Windows.Shapes.Line>().ToArray())
                 {
@@ -76,6 +72,19 @@ public partial class MainWindow
         ToolbarToggle.IsChecked = value.ShowToolbar;
         EditorToolbar.Visibility = value.ShowToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (!value.SpeakDots) dotSpeech.Stop();
+    }
+    private void ApplyLineNumberAppearance(TextEditor editor, EditorAppearance value)
+    {
+        Brush C(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        foreach (var margin in editor.TextArea.LeftMargins.OfType<LineNumberMargin>().ToArray())
+        {
+            var index = editor.TextArea.LeftMargins.IndexOf(margin);
+            editor.TextArea.LeftMargins[index] = new ColoredLineNumbers { Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground), Margin = margin.Margin,
+                NumberBrush = value.HighContrast ? Brushes.White : C(value.LineNumberColor), Compact = editor == PageEditor.Editor, HighContrast = value.HighContrast,
+                CustomNumberColor = !value.LineNumberColor.Equals(new EditorAppearance().LineNumberColor, StringComparison.OrdinalIgnoreCase),
+                CustomBackground = !value.LineNumberBackground.Equals(new EditorAppearance().LineNumberBackground, StringComparison.OrdinalIgnoreCase),
+                MinWidth = editor == PageEditor.Editor ? 32 : 0 };
+        }
     }
     private async Task EditAppearanceAsync(bool colors)
     {

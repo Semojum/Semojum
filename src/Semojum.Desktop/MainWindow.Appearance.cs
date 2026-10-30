@@ -129,6 +129,12 @@ public partial class MainWindow
     {
         SourceEditor.ShowLineNumbers = PageEditor.Editor.ShowLineNumbers = Braille.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
         if (detachedPane is not null) detachedPane.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
+        if (LineNumbersToggle.IsChecked)
+        {
+            ApplyLineNumberAppearance(SourceEditor, appearance); ApplyLineNumberAppearance(PageEditor.Editor, appearance);
+            ApplyLineNumberAppearance(Braille.Editor, appearance);
+            if (detachedPane is not null) ApplyLineNumberAppearance(detachedPane.Editor, appearance);
+        }
         Braille.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; Braille.GridView.InvalidateFaces();
         if (detachedPane is not null) { detachedPane.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; detachedPane.GridView.InvalidateFaces(); }
     }

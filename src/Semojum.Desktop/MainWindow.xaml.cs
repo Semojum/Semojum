@@ -311,6 +311,7 @@ public partial class MainWindow : Window
                     break;
                 case "selectRange": SelectTextRange(); break;
                 case "showMemos":
+                    PageEditor.ShowMemos = MemoToggle.IsChecked;
                     foreach (var editor in new[] { SourceEditor, PageEditor.Editor, Braille.Editor, detachedPane?.Editor }.OfType<TextEditor>())
                         foreach (var margin in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { margin.ShowMemos = MemoToggle.IsChecked; margin.InvalidateVisual(); }
                     foreach (var grid in new[] { Braille.GridView, detachedPane?.GridView }.OfType<BrailleGridView>()) { grid.ShowMemos = MemoToggle.IsChecked; grid.InvalidateFaces(); }

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Automation;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.IO;
 using Semojum.Core;
 using Semojum.Core.Integration;
@@ -41,6 +42,7 @@ internal static class WindowsFileDialogDesignChecks
                 "A file that disappears before conversion shows an error without closing the dialog");
         }
         finally { open.Close(); }
+        CheckUploadTotalNotice(general, check);
         var offline = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"), serverSettingsAvailable: false);
         offline.SetPaths(["document.smj"]); offline.Show();
         try
@@ -68,6 +70,64 @@ internal static class WindowsFileDialogDesignChecks
             check(name.Text == "새 이름", "The redesigned filename field remains editable");
         }
         finally { save.Close(); }
+    }
+
+    private static void CheckUploadTotalNotice(BrailleForm general, Action<bool, string> check)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "semojum-upload-notice-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var first = Path.Combine(directory, "first.png");
+        var second = Path.Combine(directory, "second.png");
+        try
+        {
+            const long mib = 1024L * 1024;
+            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(60 * mib);
+            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(60 * mib);
+            CheckNotice([first, second], "Two 60 MiB images report their total size rather than a single oversized file");
+            using (var file = new FileStream(first, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes + 1);
+            CheckNotice([first], "One oversized file reports the selected total size accurately");
+        }
+        finally
+        {
+            if (File.Exists(first)) File.Delete(first);
+            if (File.Exists(second)) File.Delete(second);
+            Directory.Delete(directory);
+        }
+
+        void CheckNotice(string[] paths, string description)
+        {
+            var dialog = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"));
+            dialog.SetPaths(paths);
+            dialog.Show();
+            string? message = null, detail = null;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+            var ticks = 0;
+            timer.Tick += (_, _) =>
+            {
+                var notice = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(n => n.Owner == dialog && n.IsVisible);
+                if (notice is not null)
+                {
+                    message = notice.MessageText; detail = notice.DetailText;
+                    Capture(notice, $"oversized-{paths.Length}.png");
+                    timer.Stop(); notice.Close();
+                }
+                else if (++ticks >= 250)
+                {
+                    timer.Stop();
+                    foreach (var owned in dialog.OwnedWindows.Cast<Window>().Where(w => w.IsVisible).ToArray()) owned.Close();
+                }
+            };
+            try
+            {
+                dialog.UpdateLayout(); timer.Start();
+                Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "변환 시작"))
+                    .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                check(message == "선택한 파일의 총 크기가 100 MB를 넘습니다." &&
+                      detail == "파일 크기를 줄이거나 나누어 다시 올려 주세요." && dialog.IsVisible,
+                    description);
+            }
+            finally { timer.Stop(); dialog.Close(); }
+        }
     }
     private static void Capture(Window window, string filename)
     {

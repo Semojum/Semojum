@@ -33,6 +33,7 @@ internal static class WindowsQa4Checks
         await WindowsManualReviewChecks.RunAsync(check, directory);
         WindowsReviewPerformanceChecks.Run(check);
         await WindowsReviewProjectionChecks.RunAsync(check);
+        await WindowsReviewOverviewChecks.RunAsync(check);
         await WindowsGridMarkerNavigationChecks.RunAsync(check);
         await WindowsConversionOutcomeChecks.RunAsync(check);
         await WindowsUpdateDocumentSafetyChecks.RunAsync(check);

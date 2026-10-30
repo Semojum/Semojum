@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Semojum.Desktop.Controls;
@@ -26,8 +27,13 @@ internal static class WindowsIndividualControlStatesChecks
         var genericBlue = new Button { Content = "다시 시작", Background = (Brush)new BrushConverter().ConvertFromString("#005FB8")!, BorderBrush = Brushes.Red };
         var genericIcon = new Button { Content = "×", Background = Brushes.Transparent, BorderBrush = Brushes.Transparent };
         var genericCustom = new Button { Content = "사용자 색", Background = Brushes.Purple };
-        var panel = new StackPanel(); foreach (var element in new FrameworkElement[] { button, primary, stretch, input, plain, genericBlue, genericIcon, genericCustom }) panel.Children.Add(element);
-        var window = new Window { Width = 300, Height = 300, Content = panel, ShowInTaskbar = false };
+        var genericPrimary = new Button { Content = "강조", Background = (Brush)new BrushConverter().ConvertFromString("#005FB8")!, BorderBrush = (Brush)new BrushConverter().ConvertFromString("#005FB8")!, Foreground = Brushes.White };
+        var genericDestructive = new Button { Content = "삭제", Background = (Brush)new BrushConverter().ConvertFromString("#C42B1C")!, BorderBrush = (Brush)new BrushConverter().ConvertFromString("#C42B1C")!, Foreground = Brushes.White };
+        var genericNeutral = new Button { Content = "취소" };
+        var defaultInput = new TextBox { Text = "기본" };
+        var customInput = new TextBox { Text = "사용자 색", Background = Brushes.AliceBlue };
+        var panel = new StackPanel(); foreach (var element in new FrameworkElement[] { button, primary, stretch, input, plain, genericBlue, genericIcon, genericCustom, genericPrimary, genericDestructive, genericNeutral, defaultInput, customInput }) panel.Children.Add(element);
+        var window = new Window { Width = 300, Height = 580, Content = panel, ShowInTaskbar = false };
         window.Show();
         try
         {
@@ -66,12 +72,78 @@ internal static class WindowsIndividualControlStatesChecks
             var redBorder = converter.Convert(new object[] { genericBlue.Background, Brushes.Red, true, false, true }, typeof(Brush), "genericBorder", CultureInfo.InvariantCulture);
             check(ReferenceEquals(redBorder, Brushes.Red), "A separately specified border color is preserved on hover");
             genericBlue.IsEnabled = false; window.UpdateLayout();
-            check(blueSurface.Opacity == .4 && ((SolidColorBrush)blueSurface.Background).Color.ToString() == "#FF005FB8", "The actual disabled blue button retains its color and disabled opacity");
+            check(blueSurface.Opacity == 1 && ((SolidColorBrush)blueSurface.Background).Color.ToString() == "#FFBFBFBF" && Equals(blueSurface.BorderBrush, Brushes.Red), "The actual disabled blue button uses the Figma fill and retains its separately specified border");
+            genericPrimary.IsEnabled = genericDestructive.IsEnabled = genericNeutral.IsEnabled = genericIcon.IsEnabled = genericCustom.IsEnabled = false;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            var primarySurface = (Border)genericPrimary.Template.FindName("Surface", genericPrimary);
+            var destructiveSurface = (Border)genericDestructive.Template.FindName("Surface", genericDestructive);
+            var neutralSurface = (Border)genericNeutral.Template.FindName("Surface", genericNeutral);
+            static ContentPresenter Content(Border surface) => (ContentPresenter)surface.Child;
+            static string ColorOf(Brush brush) => ((SolidColorBrush)brush).Color.ToString();
+            check(primarySurface.Opacity == 1 && ColorOf(primarySurface.Background) == "#FFBFBFBF" && ColorOf(primarySurface.BorderBrush) == "#FFBFBFBF" && ColorOf(System.Windows.Documents.TextElement.GetForeground(Content(primarySurface))) == "#FFFFFFFF", "Disabled generic primary renders the Figma gray fill and white text");
+            check(destructiveSurface.Opacity == 1 && ColorOf(destructiveSurface.Background) == "#FFE3BDB9" && ColorOf(destructiveSurface.BorderBrush) == "#FFE3BDB9" && ColorOf(System.Windows.Documents.TextElement.GetForeground(Content(destructiveSurface))) == "#FFFFFFFF", "Disabled generic destructive button renders the Figma muted red and white text");
+            check(neutralSurface.Opacity == 1 && ColorOf(neutralSurface.Background) == "#FFF5F5F5" && ColorOf(neutralSurface.BorderBrush) == "#FFEAEAEA" && ColorOf(System.Windows.Documents.TextElement.GetForeground(Content(neutralSurface))) == "#FF9F9F9F", "Disabled generic neutral button renders the Figma fill, border and text");
+            check(Pixel(primarySurface, 8, 8) == Color.FromRgb(191, 191, 191) && Pixel(destructiveSurface, 8, 8) == Color.FromRgb(227, 189, 185), "Actual disabled button surface pixels match the Figma primary and destructive fills");
+            check(iconSurface.Opacity == 1 && Content(iconSurface).Opacity == .4 && customSurface.Opacity == .4 && Equals(customSurface.Background, Brushes.Purple), "Disabled transparent icons and custom-colored buttons keep their previous opacity behavior");
+            var inputSurface = (Border)defaultInput.Template.FindName("InputSurface", defaultInput);
+            var customInputSurface = (Border)customInput.Template.FindName("InputSurface", customInput);
+            check(ColorOf(inputSurface.Background) == "#FFFBFBFB", "Unfocused generic input has the Figma default background");
+            window.Activate(); defaultInput.Focus(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(defaultInput.IsKeyboardFocusWithin && ColorOf(inputSurface.Background) == "#FFFFFFFF" && ((Border)defaultInput.Template.FindName("FocusUnderline", defaultInput)).Visibility == Visibility.Visible,  $"Focused generic input turns white and shows its underline: focus={defaultInput.IsKeyboardFocusWithin}, background={ColorOf(inputSurface.Background)}, underline={((Border)defaultInput.Template.FindName("FocusUnderline", defaultInput)).Visibility}");
+            customInput.Focus(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(customInput.IsKeyboardFocusWithin && Equals(customInputSurface.Background, Brushes.AliceBlue),  $"Focused generic input preserves an explicit custom background: focus={customInput.IsKeyboardFocusWithin}, background={customInputSurface.Background}");
+            FigmaSystemContrast.SetIsHighContrast(genericPrimary, true); FigmaSystemContrast.SetIsHighContrast(genericNeutral, true); FigmaSystemContrast.SetIsHighContrast(defaultInput, true);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(Equals(primarySurface.Background, SystemColors.ControlBrush) && Equals(primarySurface.BorderBrush, SystemColors.GrayTextBrush) && Equals(System.Windows.Documents.TextElement.GetForeground(Content(primarySurface)), SystemColors.GrayTextBrush), "Generic buttons use system disabled colors in simulated Windows high contrast");
+            check(Equals(inputSurface.Background, SystemColors.WindowBrush) && Equals(inputSurface.BorderBrush, SystemColors.WindowTextBrush) && Equals(defaultInput.Foreground, SystemColors.WindowTextBrush) && Equals(defaultInput.SelectionBrush, SystemColors.HighlightBrush), "Generic input uses system colors in simulated Windows high contrast");
+            FigmaSystemContrast.SetIsHighContrast(genericPrimary, false); FigmaSystemContrast.SetIsHighContrast(genericNeutral, false); FigmaSystemContrast.SetIsHighContrast(defaultInput, false);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(ColorOf(primarySurface.Background) == "#FFBFBFBF" && ColorOf(neutralSurface.Background) == "#FFF5F5F5", "Generic buttons restore their Figma disabled colors after simulated contrast changes");
             check(plain.Template.FindName("Underline", plain) is Border { Visibility: Visibility.Collapsed } && plain.Template.FindName("FocusUnderline", plain) is Border { Visibility: Visibility.Collapsed }, "Borderless inputs remain borderless");
             input.Text += "!"; check(input.Text.EndsWith("!", StringComparison.Ordinal), "Input text remains writable");
             if (Environment.GetEnvironmentVariable("INDIVIDUAL_STATE_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(window, capture);
         }
         finally { window.Close(); }
+        // The actual panel keeps a light Figma header under transparent text and SVG buttons.
+        var pane = new BraillePane { Height = 140 };
+        var customWhite = new Button { Content = "흰 글자", Foreground = Brushes.White, Background = Brushes.Transparent, BorderBrush = Brushes.Transparent };
+        var darkBackground = new Border { Background = Brushes.Black, Child = customWhite };
+        var contrastPanel = new StackPanel(); contrastPanel.Children.Add(pane); contrastPanel.Children.Add(darkBackground);
+        var contrastWindow = new Window { Width = 480, Height = 260, Content = contrastPanel, ShowInTaskbar = false };
+        contrastWindow.Show();
+        try
+        {
+            contrastWindow.Activate(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); contrastWindow.UpdateLayout();
+            var detach = Descendants(pane).OfType<Button>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "점자 창 분리 또는 합치기");
+            var close = Descendants(pane).OfType<Button>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "점자 패널 숨기기");
+            var header = (Border)pane.FindName("Header");
+            var detachSurface = (Border)detach.Template.FindName("Surface", detach);
+            var closeSurface = (Border)close.Template.FindName("Surface", close);
+            var whiteSurface = (Border)customWhite.Template.FindName("Surface", customWhite);
+            var detachText = (ContentPresenter)detachSurface.Child;
+            var whiteText = (ContentPresenter)whiteSurface.Child;
+            var before = System.Windows.Documents.TextElement.GetForeground(detachText);
+            check(((SolidColorBrush)header.Background).Color == Color.FromRgb(249, 249, 249) && ((SolidColorBrush)before).Color == Color.FromRgb(26, 26, 26), "Actual braille panel detach text contrasts with its light Figma header");
+            check(close.Content is SharpVectors.Converters.SvgViewbox && OpaquePixels(closeSurface) > 0, "Actual braille close SVG is visible on the light header");
+            FigmaSystemContrast.SetIsHighContrast(detach, true); FigmaSystemContrast.SetIsHighContrast(close, true); FigmaSystemContrast.SetIsHighContrast(customWhite, true);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); contrastWindow.UpdateLayout();
+            check(Equals(System.Windows.Documents.TextElement.GetForeground(detachText), before) && ((SolidColorBrush)detachSurface.Background).Color.A == 0, "High contrast preserves transparent detach text and its actual light header");
+            check(Equals(System.Windows.Documents.TextElement.GetForeground(whiteText), Brushes.White) && ((SolidColorBrush)whiteSurface.Background).Color.A == 0 && Equals(darkBackground.Background, Brushes.Black), "High contrast preserves explicit white foreground on a dark parent");
+            check(((SolidColorBrush)closeSurface.Background).Color.A == 0 && OpaquePixels(closeSurface) > 0, "High contrast leaves the actual fixed-color SVG visible on the light header");
+            var transparentState = new FigmaButtonStateBrush();
+            var hover = (SolidColorBrush)transparentState.Convert(new object[] { Brushes.Transparent, Brushes.Transparent, true, false, true, true }, typeof(Brush), "generic", CultureInfo.InvariantCulture);
+            var pressed = (SolidColorBrush)transparentState.Convert(new object[] { Brushes.Transparent, Brushes.Transparent, true, true, true, true }, typeof(Brush), "generic", CultureInfo.InvariantCulture);
+            check(hover.Color == Color.FromRgb(240, 240, 240) && pressed.Color == Color.FromRgb(234, 234, 234), "Transparent high-contrast buttons keep their existing hover and pressed surfaces");
+            detach.Focus(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); contrastWindow.UpdateLayout();
+            var focusOuter = (Border)detach.Template.FindName("FocusOuter", detach);
+            var focusInner = (Border)detach.Template.FindName("FocusInner", detach);
+            check(detach.IsKeyboardFocused && focusOuter.Visibility == Visibility.Visible && focusInner.Visibility == Visibility.Visible && Equals(focusOuter.BorderBrush, SystemColors.WindowTextBrush) && Equals(focusInner.BorderBrush, SystemColors.WindowBrush) &&
+                Math.Max(Contrast(((SolidColorBrush)focusOuter.BorderBrush).Color, ((SolidColorBrush)header.Background).Color), Contrast(((SolidColorBrush)focusInner.BorderBrush).Color, ((SolidColorBrush)header.Background).Color)) >= 3,
+                "High-contrast keyboard focus remains visible against the actual light header");
+            FigmaSystemContrast.SetIsHighContrast(detach, false); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(Equals(System.Windows.Documents.TextElement.GetForeground(detachText), before), "Leaving high contrast restores the normal transparent text color");
+        }
+        finally { contrastWindow.Close(); }
         var forms = new[] { new BrailleForm("user:new", "새 양식", false, null, new(), new()), new BrailleForm("user:sample", "내 양식", false, null, new(), new()) };
         var picker = new FormPickerDialog(forms, null, canEdit: true); picker.Show();
         try
@@ -114,5 +186,30 @@ internal static class WindowsIndividualControlStatesChecks
         yield return root;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
             foreach (var child in Descendants(VisualTreeHelper.GetChild(root, i))) yield return child;
+    }
+    private static int OpaquePixels(FrameworkElement element)
+    {
+        var width = (int)Math.Ceiling(element.ActualWidth); var height = (int)Math.Ceiling(element.ActualHeight);
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(element);
+        var pixels = new byte[width * height * 4]; bitmap.CopyPixels(pixels, width * 4, 0);
+        var count = 0; for (var index = 3; index < pixels.Length; index += 4) if (pixels[index] > 0) count++;
+        return count;
+    }
+    private static double Contrast(Color first, Color second)
+    {
+        static double Luminance(Color color)
+        {
+            static double Linear(byte value) { var s = value / 255d; return s <= .04045 ? s / 12.92 : Math.Pow((s + .055) / 1.055, 2.4); }
+            return .2126 * Linear(color.R) + .7152 * Linear(color.G) + .0722 * Linear(color.B);
+        }
+        var a = Luminance(first); var b = Luminance(second);
+        return (Math.Max(a, b) + .05) / (Math.Min(a, b) + .05);
+    }
+    private static Color Pixel(FrameworkElement element, int x, int y)
+    {
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth), (int)Math.Ceiling(element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var pixel = new byte[4]; bitmap.CopyPixels(new Int32Rect(x, y, 1, 1), pixel, 4, 0);
+        return Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]);
     }
 }

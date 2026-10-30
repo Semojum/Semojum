@@ -23,7 +23,10 @@ public sealed class FigmaButtonStateBrush : IMultiValueConverter
         var border = parameter is true || Equals(parameter, "genericBorder");
         if (values.Length < 5 || values[0] is not SolidColorBrush background) return values.Length > (border ? 1 : 0) ? values[border ? 1 : 0] : DependencyProperty.UnsetValue;
         var original = border ? values[1] : values[0];
-        if (parameter is string && values[4] is false) return original;
+        if (values.Length > 5 && values[5] is true && background.Color.A != 0)
+        {
+            return border ? values[4] is false ? SystemColors.GrayTextBrush : SystemColors.ControlTextBrush : SystemColors.ControlBrush;
+        }
         var color = background.Color;
         if (border && (original is not SolidColorBrush originalBorder || originalBorder.Color != color)) return original;
         if (color.A == 0 && !border && values[4] is true)
@@ -48,7 +51,7 @@ public sealed class FigmaButtonStateBrush : IMultiValueConverter
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-internal sealed class FigmaButtonForegroundBrush : IMultiValueConverter
+public sealed class FigmaButtonForegroundBrush : IMultiValueConverter
 {
     internal static MultiBinding Binding()
     {
@@ -59,6 +62,10 @@ internal sealed class FigmaButtonForegroundBrush : IMultiValueConverter
     }
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
     {
+        if (values.Length > 3 && values[3] is true && !(values[1] is SolidColorBrush transparent && transparent.Color.A == 0))
+            return values[2] is false ? SystemColors.GrayTextBrush : SystemColors.ControlTextBrush;
+        if (Equals(parameter, "generic") && values.Length > 0 && values[0] is SolidColorBrush custom
+            && custom.Color != Color.FromRgb(26, 26, 26)) return values[0];
         if (values.Length >= 3 && values[2] is false && values[1] is SolidColorBrush bg && (bg.Color.ToString() == "#FFFBFBFB" || bg.Color.ToString() == "#FFFFFFFF"))
             return (Brush)new BrushConverter().ConvertFromString("#9F9F9F")!;
         return values.Length > 0 ? values[0] : DependencyProperty.UnsetValue;
@@ -66,7 +73,7 @@ internal sealed class FigmaButtonForegroundBrush : IMultiValueConverter
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-internal sealed class FigmaDisabledIconOpacity : IMultiValueConverter
+public sealed class FigmaDisabledIconOpacity : IMultiValueConverter
 {
     internal static MultiBinding Binding()
     {
@@ -80,7 +87,7 @@ internal sealed class FigmaDisabledIconOpacity : IMultiValueConverter
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
-internal sealed class FigmaInputFocusBrush : IMultiValueConverter
+public sealed class FigmaInputFocusBrush : IMultiValueConverter
 {
     internal static MultiBinding Binding()
     {
@@ -90,7 +97,31 @@ internal sealed class FigmaInputFocusBrush : IMultiValueConverter
         return binding;
     }
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
+        values.Length > 2 && values[2] is true ? SystemColors.WindowBrush :
         values.Length >= 2 && values[1] is true && values[0] is SolidColorBrush bg && bg.Color.ToString() == "#FFFBFBFB"
             ? Brushes.White : values.Length > 0 ? values[0] : DependencyProperty.UnsetValue;
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>Dynamic Windows contrast state, overridable on an individual control.</summary>
+public static class FigmaSystemContrast
+{
+    public static readonly DependencyProperty IsHighContrastProperty = DependencyProperty.RegisterAttached(
+        "IsHighContrast", typeof(bool), typeof(FigmaSystemContrast), new FrameworkPropertyMetadata(false));
+    public static bool GetIsHighContrast(DependencyObject control) => (bool)control.GetValue(IsHighContrastProperty);
+    public static void SetIsHighContrast(DependencyObject control, bool value) => control.SetValue(IsHighContrastProperty, value);
+}
+
+/// <summary>Keep existing disabled opacity for custom colors; design-system colors supply their own disabled colors.</summary>
+public sealed class FigmaButtonSurfaceOpacity : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (values.Length < 2 || values[1] is not false || values.Length > 2 && values[2] is true) return 1d;
+        if (values[0] is not SolidColorBrush brush) return .4d;
+        var color = brush.Color;
+        return color.A == 0 || color == Color.FromRgb(0, 95, 184) || color == Color.FromRgb(196, 43, 28)
+            || color == Color.FromRgb(251, 251, 251) || color == Colors.White ? 1d : .4d;
+    }
     public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
