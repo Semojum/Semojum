@@ -24,20 +24,11 @@ jobs:
         run: dotnet build Semojum.sln -c Release
       - name: Core behavior checks
         run: dotnet run --project tests/Semojum.Core.Tests -c Release --no-build
-      - name: Check engine read credential
-        shell: pwsh
-        env:
-          ENGINE_READ_TOKEN: ${{ secrets.BRAILLE_READ_TOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:ENGINE_READ_TOKEN)) {
-            throw 'Configure the BRAILLE_READ_TOKEN Actions secret with read access to the private engine repository.'
-          }
       - name: Check out pinned engine source
         uses: actions/checkout@v4
         with:
           repository: Semojum/braille
           ref: 429ee6bc8a4a01135ef427274c3dbde04b685bdc
-          token: ${{ secrets.BRAILLE_READ_TOKEN }}
           persist-credentials: false
           path: artifacts/engine-build/source
       - name: Publish portable Windows app
