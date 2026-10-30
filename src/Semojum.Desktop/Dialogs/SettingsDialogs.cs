@@ -172,6 +172,7 @@ public sealed class FormDialog : CompactDialog
             var row = new DockPanel { Height = 31 };
             row.Children.Add(new TextBlock { Text = label, Width = 94, FontSize = 14 });
             var value = new TextBlock { FontSize = 14, FontWeight = label == "한글" ? FontWeights.SemiBold : FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis }; values[label] = value; row.Children.Add(value);
+            if (label == "페이지행") AutomationProperties.SetAutomationId(value, "FormPageRowSummary");
             panel.Children.Add(new System.Windows.Controls.Border { BorderBrush = (System.Windows.Media.Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = row });
         }
         var edit = new MenuItem { Header = "수정…" }; edit.Click += async (_, _) => await RunAsync(() => EditAsync(false));
@@ -189,8 +190,12 @@ public sealed class FormDialog : CompactDialog
             values["줄·칸"].Text = f is null || f.FormId == "user:new" ? "사용자 양식을 설정해 주세요." : $"{f.Layout.Columns}칸 × {f.Layout.Lines}줄";
             values["한글"].Text = f is null ? "—" : f.Options.KoreanGrade1 ? "정자(1급)" : "약자(2급)";
             values["줄바꿈"].Text = f is null ? "—" : (f.Options.LineBreakUnit == "word" ? "어절" : "음절") + " 단위";
-            values["페이지행"].Text = f?.Layout.PageNumbers ?? "—";
+            var summary = f is null ? "—" : $"번호: {Policy(f.Layout.PageNumbers)} · 꼬리말 면: {Policy(f.Layout.Footer)}";
+            values["페이지행"].Text = summary;
+            values["페이지행"].ToolTip = summary;
+            AutomationProperties.SetName(values["페이지행"], "페이지행 " + summary);
         };
+        static string Policy(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
         async Task ReloadAsync(string? id)
         {
             var forms = await client.FormsAsync(Lifetime.Token);

@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -65,9 +67,19 @@ internal static class WindowsEditorDialogDesignChecks
             check(replaced == "변경", "Replace action receives only the entered value rather than its hint");
             replacement.Clear(); find.UpdateLayout();
             check(hint.IsVisible, "Clearing the replacement field restores its hint");
-            toggle.IsChecked = true; query.Focus();
-            find.UpdateLayout(); CheckIcons(find, check);
+            query.Focus(); find.UpdateLayout();
+            CheckFindToggle(toggle, false, check);
+            var togglePeer = new ToggleButtonAutomationPeer(toggle);
+            var toggleProvider = (IToggleProvider)togglePeer.GetPattern(PatternInterface.Toggle)!;
+            toggleProvider.Toggle(); find.UpdateLayout();
+            CheckFindToggle(toggle, true, check);
+            check(query.IsKeyboardFocusWithin, "Accessible toggle keeps the focused search input available");
+            CheckIcons(find, check);
             var source = PresentationSource.FromVisual(query) ?? throw new InvalidOperationException("Missing find input presentation source");
+            query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            toggleProvider.Toggle(); toggleProvider.Toggle();
+            query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
+            check(query.Text == "", "Switching the input toggle resets a pending six-dot chord");
             query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
             query.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
             check(query.Text == "⠁", "Find dialog uses configured six-dot keys");
@@ -79,6 +91,29 @@ internal static class WindowsEditorDialogDesignChecks
             check(replacement.Text == "⠁" && hint.Visibility == Visibility.Collapsed, "Replacement still accepts configured six-dot input with its hint");
         }
         finally { find.Close(); }
+    }
+
+    private static void CheckFindToggle(ToggleButton toggle, bool on, Action<bool, string> check)
+    {
+        var surface = toggle.Template.FindName("Surface", toggle) as Border;
+        var icon = toggle.Content as SvgViewbox;
+        var expectedBorder = on ? Color.FromRgb(0, 95, 184) : Color.FromRgb(234, 234, 234);
+        var expectedBackground = on ? Color.FromRgb(239, 246, 252) : Color.FromRgb(251, 251, 251);
+        var expectedIcon = on ? "find-braille-on.svg" : "find-braille-off.svg";
+        var drawing = icon?.Drawings?.Bounds ?? Rect.Empty;
+        var actualIcon = icon is null ? Rect.Empty : icon.TransformToAncestor(toggle).TransformBounds(new Rect(0, 0, icon.ActualWidth, icon.ActualHeight));
+        check(toggle.IsChecked == on && toggle.ActualWidth == 32 && toggle.ActualHeight == 32 &&
+              surface is { CornerRadius.TopLeft: 4, BorderBrush: SolidColorBrush border, Background: SolidColorBrush background } &&
+              surface.BorderThickness == new Thickness(on ? 2 : 1) && border.Color == expectedBorder && background.Color == expectedBackground &&
+              icon is { Width: 16, Height: 16, Drawings.Bounds.IsEmpty: false } &&
+              Math.Abs(actualIcon.Width - drawing.Width) < 1 && Math.Abs(actualIcon.Height - drawing.Height) < 1 &&
+              Math.Abs(actualIcon.Left + actualIcon.Width / 2 - 16) < 1 && Math.Abs(actualIcon.Top + actualIcon.Height / 2 - 16) < 1 &&
+              icon.Source?.ToString().EndsWith(expectedIcon, StringComparison.Ordinal) == true,
+            $"Find braille input {(on ? "on" : "off")} matches the Figma border, background, icon and 32px slot " +
+            $"(checked={toggle.IsChecked}, size={toggle.ActualWidth:0.##}x{toggle.ActualHeight:0.##}, " +
+            $"border={surface?.BorderThickness}/{surface?.BorderBrush}, background={surface?.Background}, " +
+            $"corner={surface?.CornerRadius}, icon={actualIcon}, " +
+            $"iconData={icon?.Drawings?.Bounds}, source={icon?.Source})");
     }
 
     private static void CheckIcons(Window window, Action<bool, string> check)

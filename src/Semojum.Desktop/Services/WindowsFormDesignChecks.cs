@@ -28,6 +28,26 @@ internal static class WindowsFormDesignChecks
             check(form.Width == 460 && form.Height == 348, "Form dialog matches the final Figma 460x348 modal");
             check(HasIcon(form, "form-main-close.svg") && HasIcon(form, "form-main-chevron.svg"), "Form dialog uses final Figma close and selector icons");
             check(Descendants(form).OfType<ComboBox>().Any(c => c.SelectedItem is BrailleForm { FormId: "user:1" }), "An existing selected personal form is retained");
+            var formPicker = Descendants(form).OfType<ComboBox>().Single(c => c.SelectedItem is BrailleForm { FormId: "user:1" });
+            var summary = Descendants(form).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "FormPageRowSummary");
+            check(summary.Text == "번호: 홀수 페이지 · 꼬리말 면: 홀수 페이지" && Equals(summary.ToolTip, summary.Text)
+                && AutomationProperties.GetName(summary) == "페이지행 " + summary.Text,
+                "Selected form reports page numbering and footer-page policies without implying footer content");
+            var noPageNumber = forms[0] with { FormId = "fixture:none", Layout = forms[0].Layout with { PageNumbers = "출력 안 함", Footer = "" } };
+            var longPolicy = forms[0] with { FormId = "fixture:long", Layout = forms[0].Layout with { PageNumbers = new string('가', 40), Footer = "모든 페이지" } };
+            formPicker.ItemsSource = new[] { forms[0], noPageNumber, longPolicy, forms[^1] };
+            formPicker.SelectedItem = noPageNumber;
+            check(summary.Text == "번호: 출력 안 함 · 꼬리말 면: —", "Empty footer policy and explicit no-page-number policy are reported truthfully");
+            formPicker.SelectedItem = null;
+            check(summary.Text == "—" && Equals(summary.ToolTip, "—"), "No selected form does not invent page policies");
+            formPicker.SelectedItem = longPolicy; form.Width = 420;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); form.UpdateLayout();
+            var summaryBounds = summary.TransformToAncestor(form).TransformBounds(new Rect(0, 0, summary.ActualWidth, summary.ActualHeight));
+            check(summary.IsVisible && summary.TextTrimming == TextTrimming.CharacterEllipsis && summary.ActualWidth > 0
+                && summaryBounds.Left >= 0 && summaryBounds.Right <= form.ActualWidth + 1
+                && Equals(summary.ToolTip, summary.Text) && AutomationProperties.GetName(summary) == "페이지행 " + summary.Text,
+                "Long page policies remain within a narrow form and expose their complete text to tooltip and accessibility");
+            form.Width = 460; formPicker.ItemsSource = forms; formPicker.SelectedItem = forms[^1];
             if (Environment.GetEnvironmentVariable("FORM_MAIN_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(form, capture);
         }
         finally { form.Close(); }

@@ -322,14 +322,15 @@ public sealed class FindDialog : CompactDialog
         var replacement = new TextBox();
         var result = new TextBlock { Margin = new Thickness(0, 20, 0, 0), TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted") };
         var sixDot = new SixDotInput(); sixDot.Configure(sixDotKeys);
-        var toggle = new ToggleButton { IsChecked = target == SearchPanel.Braille, Width = 32, Height = 32, MinHeight = 0, Padding = new Thickness(0), Background = Brushes.White, BorderBrush = EditorModalDesign.Color("#D6D6D6") };
+        var toggle = new ToggleButton { IsChecked = target == SearchPanel.Braille, Width = 32, Height = 32, MinHeight = 0, Padding = new Thickness(0), Background = EditorModalDesign.Color("#FBFBFB"), BorderBrush = EditorModalDesign.Color("#EAEAEA") };
         toggle.BorderThickness = new Thickness(1); toggle.Template = EditorModalDesign.ButtonTemplate(typeof(ToggleButton));
         System.Windows.Automation.AutomationProperties.SetName(toggle, "점자 입력");
         void UpdateToggle()
         {
             var on = toggle.IsChecked == true;
             toggle.Content = EditorModalDesign.Icon(on ? "find-braille-on" : "find-braille-off");
-            toggle.BorderBrush = EditorModalDesign.Color(on ? "#005FB8" : "#D6D6D6"); toggle.Background = EditorModalDesign.Color(on ? "#EFF6FC" : "#FFFFFF");
+            toggle.BorderThickness = new Thickness(on ? 2 : 1);
+            toggle.BorderBrush = EditorModalDesign.Color(on ? "#005FB8" : "#EAEAEA"); toggle.Background = EditorModalDesign.Color(on ? "#EFF6FC" : "#FBFBFB");
             toggle.ToolTip = on ? "점자 입력 켬" : "점자 입력 끔"; sixDot.Reset();
         }
         toggle.Checked += (_, _) => UpdateToggle(); toggle.Unchecked += (_, _) => UpdateToggle(); UpdateToggle();

@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using Semojum.Core;
 using Semojum.Desktop.Controls;
 
@@ -11,6 +12,28 @@ namespace Semojum.Desktop.Dialogs;
 
 internal static class FooterDesign
 {
+    internal static ControlTemplate AddRowTemplate()
+    {
+        var root = new FrameworkElementFactory(typeof(Grid));
+        var outline = new FrameworkElementFactory(typeof(Rectangle), "Outline");
+        outline.SetValue(Shape.StrokeProperty, EditorModalDesign.Color("#EAEAEA"));
+        outline.SetValue(Shape.StrokeThicknessProperty, 1d);
+        outline.SetValue(Shape.StrokeDashArrayProperty, new DoubleCollection([2d, 2d]));
+        outline.SetValue(Rectangle.RadiusXProperty, 4d); outline.SetValue(Rectangle.RadiusYProperty, 4d);
+        outline.SetValue(Shape.FillProperty, Brushes.Transparent);
+        root.AppendChild(outline);
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        root.AppendChild(content);
+        var template = new ControlTemplate(typeof(Button)) { VisualTree = root };
+        var focus = new Trigger { Property = UIElement.IsKeyboardFocusWithinProperty, Value = true };
+        focus.Setters.Add(new Setter(Shape.StrokeProperty, EditorModalDesign.Color("#005FB8"), "Outline"));
+        focus.Setters.Add(new Setter(Shape.StrokeThicknessProperty, 2d, "Outline")); template.Triggers.Add(focus);
+        var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+        hover.Setters.Add(new Setter(Shape.FillProperty, EditorModalDesign.Color("#EFF6FC"), "Outline")); template.Triggers.Add(hover);
+        return template;
+    }
     internal static void StyleAlignment(SegmentedChoice choice)
     {
         choice.Width = 288; choice.Height = 32; choice.FontSize = 12;
@@ -130,8 +153,8 @@ public sealed class FooterDialog : CompactDialog
         entries.CollectionChanged += (_, e) => { if (e.NewItems is not null) foreach (Entry entry in e.NewItems) Track(entry); Labels(); }; Labels();
         var grid = new DataGrid { ItemsSource = entries, AutoGenerateColumns = false, CanUserAddRows = false, CanUserDeleteRows = false, CanUserSortColumns = false,
             CanUserReorderColumns = false, CanUserResizeColumns = false, HeadersVisibility = DataGridHeadersVisibility.Column, BorderThickness = new(0), Background = Brushes.Transparent,
-            GridLinesVisibility = DataGridGridLinesVisibility.None, RowHeight = 32, ColumnHeaderHeight = 28, Height = 164, SelectionMode = DataGridSelectionMode.Single,
-            SelectionUnit = DataGridSelectionUnit.FullRow, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+            GridLinesVisibility = DataGridGridLinesVisibility.None, RowHeight = 32, ColumnHeaderHeight = 28, Height = 160, SelectionMode = DataGridSelectionMode.Single,
+            SelectionUnit = DataGridSelectionUnit.FullRow, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         grid.ToolTip = "시작 면 번호를 고칠 수 있습니다. 끝 면은 다음 꼬리말 직전까지 자동으로 정해지며 마지막 항목은 끝까지 적용됩니다.";
         var header = new Style(typeof(System.Windows.Controls.Primitives.DataGridColumnHeader));
         header.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
@@ -175,16 +198,22 @@ public sealed class FooterDialog : CompactDialog
         var trash = new FrameworkElementFactory(typeof(SharpVectors.Converters.SvgViewbox)); trash.SetValue(FrameworkElement.WidthProperty, 16d); trash.SetValue(FrameworkElement.HeightProperty, 16d); trash.SetValue(SharpVectors.Converters.SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Mockup;component/Assets/Figma/footer-trash.svg")); trash.SetValue(System.Windows.Controls.Viewbox.StretchProperty, Stretch.None); remove.AppendChild(trash);
         remove.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler((sender, _) => { if (sender is Button { DataContext: Entry entry }) entries.Remove(entry); }));
         grid.Columns.Add(new DataGridTemplateColumn { Header = "", Width = 32, CellTemplate = new DataTemplate { VisualTree = remove } });
-        fields.Children.Add(grid);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 6, 0, 0) }; fields.Children.Add(buttons);
-        var add = Action("추가", () =>
+        var table = new Grid(); table.Children.Add(grid); fields.Children.Add(table);
+        var add = Action("줄 더하기", () =>
         {
             grid.CommitEdit(DataGridEditingUnit.Cell, true); grid.CommitEdit(DataGridEditingUnit.Row, true);
             var entry = new Entry { Start = (entries.Select(e => int.TryParse(e.Start, out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1).ToString() };
             entries.Add(entry); grid.SelectedItem = entry; grid.ScrollIntoView(entry);
         });
         var delete = Action("지우기", () => { if (grid.SelectedItem is Entry entry) entries.Remove(entry); });
-        foreach (var button in new[] { add, delete }) { Actions.Children.Remove(button); button.Margin = new(0, 0, 8, 0); buttons.Children.Add(button); }
+        Actions.Children.Remove(add); add.Margin = new(0, 6, 0, 0); add.Height = 32; add.MinHeight = 0;
+        add.MinWidth = 0; add.HorizontalAlignment = HorizontalAlignment.Stretch; add.Padding = new(0);
+        add.Foreground = EditorModalDesign.Color("#5F5F5F"); add.Template = FooterDesign.AddRowTemplate();
+        System.Windows.Automation.AutomationProperties.SetName(add, "꼬리말 줄 더하기"); fields.Children.Add(add);
+        Actions.Children.Remove(delete); delete.Width = 32; delete.MinWidth = 0; delete.Height = 24; delete.MinHeight = 0;
+        delete.FontSize = 10; delete.Padding = new(0); delete.Margin = new(0); delete.VerticalAlignment = VerticalAlignment.Top;
+        delete.HorizontalAlignment = HorizontalAlignment.Right; delete.ToolTip = "선택한 꼬리말 지우기";
+        System.Windows.Automation.AutomationProperties.SetName(delete, "선택한 꼬리말 지우기"); table.Children.Add(delete);
         Action("취소", Close);
         Action("확인", () =>
         {
