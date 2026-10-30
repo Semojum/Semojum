@@ -116,17 +116,58 @@ public sealed partial class DocumentSession : ObservableObject
     [ObservableProperty] private ConversionProgress? progress;
     [ObservableProperty] private string creditNotice = "";
     [ObservableProperty] private string errorNotice = "";
+    [ObservableProperty] private int? totalOriginalPages;
+    partial void OnTotalOriginalPagesChanged(int? value) => MarkChanged();
     [ObservableProperty] private PageLayout layout = new();
     [ObservableProperty] private BrailleOptions options = new();
     [ObservableProperty] private string footerText = "";
     [ObservableProperty] private FooterRange[] footerRanges = [];
-    public string? JobId { get; set; }
+    private string? jobId;
+    public string? JobId
+    {
+        get => jobId;
+        set
+        {
+            if (string.Equals(jobId, value, StringComparison.Ordinal)) return;
+            jobId = value;
+            // The old job's page count must never be shown for a different job.
+            TotalOriginalPages = null;
+            OnPropertyChanged(nameof(JobId));
+        }
+    }
     public string? OwnerLoginId { get; set; }
-    public bool? IsTextJob { get; set; }
+    private bool? isTextJob;
+    public bool? IsTextJob
+    {
+        get => isTextJob;
+        set
+        {
+            if (isTextJob == value) return;
+            isTextJob = value;
+            if (value == true) TotalOriginalPages = null;
+            OnPropertyChanged(nameof(IsTextJob));
+        }
+    }
     public string JobStatus { get; set; } = "COMPLETED";
     public bool CancellationRequested { get; set; }
     public Dictionary<int, string> PageStatuses { get; } = [];
     public Dictionary<int, OriginalPage> OriginalPages { get; } = [];
+    /// <summary>Accept a positive total only from the same job and only when it agrees with known page numbers.</summary>
+    public bool TryApplyServerOriginalPageTotal(string? jobId, int total, IEnumerable<int> responsePages)
+    {
+        if (IsTextJob == true || string.IsNullOrEmpty(JobId) || !string.Equals(JobId, jobId, StringComparison.Ordinal)) return false;
+        var received = responsePages.ToArray();
+        var known = PageStatuses.Keys.Concat(OriginalPages.Keys).ToArray();
+        if (total <= 0 || received.Any(p => p < 1 || p > total) || known.Any(p => p < 1 || p > total))
+        {
+            // Conflicting information is not a confirmed total. Drop only
+            // this optional metadata before applying any received page status.
+            TotalOriginalPages = null;
+            return false;
+        }
+        TotalOriginalPages = total;
+        return true;
+    }
     /// <summary>Blocks the server is known to hold per page (last read or last confirmed save). Drives deletion and braille-panel planning.</summary>
     public Dictionary<int, ServerBlockRecord[]> ServerPages { get; } = [];
     public Dictionary<int, PendingServerPage> PendingServerPages { get; } = [];

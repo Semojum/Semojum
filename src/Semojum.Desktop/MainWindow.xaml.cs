@@ -212,11 +212,6 @@ public partial class MainWindow : Window
 
     private void RefreshSourcePosition()
     {
-        if (session?.ActiveBlock is not null)
-        {
-            var editor = PageEditor.Visibility == Visibility.Visible ? PageEditor.Editor : SourceEditor;
-            SourcePosition.Text = $"줄 {editor.TextArea.Caret.Line} / {editor.Document.LineCount}";
-        }
         RefreshEditorStatus();
     }
 

@@ -39,7 +39,12 @@ public partial class MainWindow
 
     private void RefreshEditorStatus()
     {
-        if (session?.ActiveBlock is not { } block || CaretStatus is null) return;
+        if (session?.ActiveBlock is not { } block || CaretStatus is null)
+        {
+            if (OriginalPosition is not null) OriginalPosition.Text = "";
+            if (SourcePosition is not null) SourcePosition.Text = "";
+            return;
+        }
         var editor = lastEditor ?? SourceEditor;
         var braille = editor != SourceEditor && editor != PageEditor.Editor;
         var input = braille ? (Braille.SixDotEnabled ? "점형" : "점자") : "텍스트";
@@ -60,8 +65,33 @@ public partial class MainWindow
             CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"}";
             StatusCell.Text = $"칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";
         }
-        OriginalPosition.Text = session.OriginalPages.ContainsKey(block.Page) ? $"{block.Page}쪽 · 맞춤" : "";
+        OriginalPosition.Text = session.IsTextJob == true || !session.OriginalPages.ContainsKey(block.Page) ? ""
+            : session.TotalOriginalPages is { } total && block.Page <= total ? $"{block.Page} / {total}쪽" : $"{block.Page}쪽";
+        OriginalPosition.ToolTip = OriginalPosition.Text;
+        UpdateSourcePosition(block);
         RefreshPanelPageBars();
+    }
+
+    private void UpdateSourcePosition(Semojum.Core.EditorBlock block)
+    {
+        int line, column;
+        if (PageEditor.Visibility == Visibility.Visible)
+        {
+            if (!PageEditor.TryGetPageCaretPosition(block.Page, out line, out column))
+            { SourcePosition.Text = ""; SourcePosition.ToolTip = null; return; }
+        }
+        else
+        {
+            // The fallback editor holds one block rather than the whole page.
+            if (SourceEditor.Text != block.Source)
+            { SourcePosition.Text = ""; SourcePosition.ToolTip = null; return; }
+            line = SourceEditor.TextArea.Caret.Line + session.Blocks
+                .Where(b => b.Page == block.Page).TakeWhile(b => b != block)
+                .Sum(b => b.Source.Count(c => c == '\n') + 1);
+            column = SourceEditor.TextArea.Caret.Column;
+        }
+        SourcePosition.Text = $"{block.Page}쪽 {line}줄 {column}칸";
+        SourcePosition.ToolTip = SourcePosition.Text;
     }
 
     private void ZoomPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)

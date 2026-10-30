@@ -80,6 +80,20 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         }));
     }
     private EditorBlock[] Blocks() => model?.Blocks.Where(b => b.Page == page).ToArray() ?? [];
+    internal bool TryGetPageCaretPosition(int expectedPage, out int line, out int column)
+    {
+        line = column = 0;
+        // A queued update may still be showing the previous page or previous
+        // contents. Do not present its caret as a position in the new model.
+        if (model is null || syncing || page != expectedPage || Editor.Text != BlockRange.Text(Blocks(), SearchPanel.Text))
+        {
+            projectionSuppressed = true;
+            return false;
+        }
+        line = Editor.TextArea.Caret.Line;
+        column = Editor.TextArea.Caret.Column;
+        return true;
+    }
     private IReadOnlyList<(int Start, ReviewMark Mark)> ReviewRanges()
     {
         // The page model can change before its queued editor refresh runs. Its

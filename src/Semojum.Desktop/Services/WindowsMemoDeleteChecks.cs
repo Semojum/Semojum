@@ -24,6 +24,26 @@ internal static class WindowsMemoDeleteChecks
             block.Memos.Add(original);
             var dialog = new MemoThreadDialog(block, "TEXT", 0, "원문", window.EditStructure, window.Session, author: "현재 사용자") { Owner = window };
             dialog.Show(); dialog.UpdateLayout();
+            var input = dialog.ReplyInput;
+            input.Focus(); dialog.UpdateLayout();
+            var replySurface = input.Template.FindName("Surface", input) as Border;
+            check(input.IsKeyboardFocusWithin && replySurface?.BorderBrush is SolidColorBrush replyFocus && replyFocus.Color == Color.FromRgb(0, 95, 184) && replySurface.BorderThickness == new Thickness(1),
+                "Focused memo reply shows the full Figma blue outline");
+            check(AutomationProperties.GetName(input) == "메모 회신", "Memo reply retains its accessible name");
+            input.SelectionBrush = Brushes.Purple; dialog.ApplyReplyAppearance(true); dialog.ApplyReplyAppearance(false);
+            check(input.SelectionBrush == Brushes.Purple, "Memo reply preserves explicitly chosen selection colors when contrast changes");
+            input.ClearValue(TextBox.SelectionBrushProperty); dialog.ApplyReplyAppearance(true); dialog.UpdateLayout();
+            var hcSurface = input.Template.FindName("Surface", input) as Border;
+            check(input.Background is SolidColorBrush bg && bg.Color == SystemColors.WindowColor &&
+                input.Foreground is SolidColorBrush fg && fg.Color == SystemColors.WindowTextColor &&
+                input.SelectionBrush is SolidColorBrush selection && selection.Color == SystemColors.HighlightColor &&
+                hcSurface?.BorderBrush is SolidColorBrush border && border.Color == SystemColors.HighlightColor,
+                "Focused memo reply uses system contrast colors");
+            dialog.ApplyReplyAppearance(false); input.Text = string.Join("\n", Enumerable.Repeat("긴 회신 내용", 20)); input.Focus(); dialog.UpdateLayout(); input.ScrollToEnd(); dialog.UpdateLayout();
+            var replyScroll = input.Template.FindName("PART_ContentHost", input) as ScrollViewer;
+            check(replyScroll is { ScrollableHeight: > 0, VerticalOffset: > 0 } && input.Text.Contains("긴 회신 내용"),
+                "Long memo replies stay editable and scroll within the focus outline");
+            input.Clear();
             var replyButtons = Descendants(dialog).OfType<Button>().Where(b => AutomationProperties.GetName(b) == "답글 삭제").ToArray();
             check(replyButtons.Length == 2 && replyButtons.All(b => b.IsEnabled), "Each reply has an enabled delete action for a document editor");
             replyButtons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

@@ -21,7 +21,8 @@ public sealed record SmjManifest(string Format, int Version, string? JobId, stri
     Dictionary<int, string>? PageStatuses = null, Dictionary<int, OriginalPage>? OriginalPages = null, FooterRange[]? FooterRanges = null,
     Dictionary<int, ServerBlockRecord[]>? ServerPages = null, Dictionary<int, QualityIssue[]>? QualityReports = null, bool? IsTextJob = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Dictionary<int, PendingServerPage>? PendingServerPages = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PendingRestart? PendingRestart = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PendingRestart? PendingRestart = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? TotalOriginalPages = null);
 public sealed record SmjSnapshot(SmjManifest Manifest, IReadOnlyDictionary<string, byte[]> Assets);
 
 /// <summary>Versioned, self-contained ZIP. All reading happens in memory; archive paths are never extracted.</summary>
@@ -52,7 +53,8 @@ public static class SmjFile
         var manifest = new SmjManifest(Format, hasReviews ? ReviewVersion : pending is null && session.PendingRestart is null ? Version : ConflictVersion, session.JobId, session.OwnerLoginId, session.JobStatus,
             session.Layout, session.Options, session.FooterText, session.ActiveBlock?.Id, blocks, originals,
             new(session.PageStatuses), new(session.OriginalPages), session.FooterRanges.ToArray(),
-            new(session.ServerPages), new(session.QualityReports), session.IsTextJob, pending, session.PendingRestart);
+            new(session.ServerPages), new(session.QualityReports), session.IsTextJob, pending, session.PendingRestart,
+            session.IsTextJob == true ? null : session.TotalOriginalPages);
         // Detach nested arrays from live editor/engine state before awaiting disk or network I/O.
         manifest = JsonSerializer.Deserialize<SmjManifest>(JsonSerializer.SerializeToUtf8Bytes(manifest, Json), Json)!;
         Validate(manifest);
@@ -149,7 +151,8 @@ public static class SmjFile
         var model = new DocumentSession
         {
             Title = title, JobId = manifest.JobId, OwnerLoginId = manifest.OwnerLoginId, JobStatus = manifest.JobStatus, IsTextJob = manifest.IsTextJob,
-            Layout = manifest.Layout, Options = manifest.Options, FooterText = manifest.FooterText, FooterRanges = manifest.FooterRanges ?? []
+            Layout = manifest.Layout, Options = manifest.Options, FooterText = manifest.FooterText, FooterRanges = manifest.FooterRanges ?? [],
+            TotalOriginalPages = manifest.IsTextJob == true ? null : manifest.TotalOriginalPages
         };
         foreach (var pair in manifest.PageStatuses ?? []) model.PageStatuses.Add(pair.Key, pair.Value);
         foreach (var pair in manifest.OriginalPages ?? []) model.OriginalPages.Add(pair.Key, pair.Value);
@@ -175,6 +178,10 @@ public static class SmjFile
             throw new InvalidDataException("확인할 재개 쪽 정보가 올바르지 않습니다.");
         if (m.Layout is null || m.Options is null || m.FooterText is null || m.Blocks is not { Length: > 0 } || m.Originals is null)
             throw new InvalidDataException("작업 필수 정보가 없습니다.");
+        if (m.TotalOriginalPages is { } originalPageTotal && (originalPageTotal <= 0
+            || (m.PageStatuses?.Keys.Any(p => p > originalPageTotal) ?? false)
+            || (m.OriginalPages?.Keys.Any(p => p > originalPageTotal) ?? false)))
+            throw new InvalidDataException("원본 전체 쪽 정보가 올바르지 않습니다.");
         if (m.Version != ReviewVersion && (m.Blocks.Any(b => b?.ReviewMarks is { Length: > 0 })
             || (m.PendingServerPages?.Values.Any(p => p?.Blocks?.Any(b => b?.ReviewMarks is { Length: > 0 }) == true) ?? false)))
             throw new InvalidDataException("검토 표시가 작업 파일 버전과 일치하지 않습니다.");

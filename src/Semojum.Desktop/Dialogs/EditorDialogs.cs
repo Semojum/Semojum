@@ -342,7 +342,20 @@ public sealed class FindDialog : CompactDialog
             if (showToggle) { DockPanel.SetDock(toggle, Dock.Right); toggle.Margin = new Thickness(8, 0, 0, 0); row.Children.Add(toggle); }
             control.Width = 198; control.Height = 32; control.MinHeight = 0; control.VerticalContentAlignment = VerticalAlignment.Center;
             EditorModalDesign.Input(control);
-            System.Windows.Automation.AutomationProperties.SetName(control, label); row.Children.Add(control); form.Children.Add(row);
+            System.Windows.Automation.AutomationProperties.SetName(control, label);
+            if (!showToggle)
+            {
+                var input = new Grid { Width = 198, Height = 32 };
+                input.Children.Add(control);
+                var hint = new TextBlock { Text = "바꿀 말을 적는다", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F"),
+                    Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+                System.Windows.Automation.AutomationProperties.SetAutomationId(hint, "ReplacementPlaceholder");
+                input.Children.Add(hint);
+                control.TextChanged += (_, _) => hint.Visibility = control.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+                row.Children.Add(input);
+            }
+            else row.Children.Add(control);
+            form.Children.Add(row);
             control.PreviewKeyDown += (_, e) =>
             {
                 if (toggle.IsChecked != true || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt | ModifierKeys.Windows)) != 0) return;

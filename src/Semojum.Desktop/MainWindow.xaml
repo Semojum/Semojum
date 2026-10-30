@@ -244,7 +244,7 @@
         <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Border x:Name="OriginalHeader" Background="#F9F9F9" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1" Padding="12,0,8,0"><DockPanel>
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-            <TextBlock x:Name="OriginalPosition" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,0,8,0"/>
+            <TextBlock x:Name="OriginalPosition" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,0,8,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
             <Button Content="⧉" Tag="detachOriginal" Click="Action_Click" Style="{StaticResource IconButton}" ToolTip="원본 창 분리 / 합치기" AutomationProperties.Name="원본 창 분리 또는 합치기"/>
             <Button Tag="hideOriginal" Click="Action_Click" Style="{StaticResource IconButton}" ToolTip="원본 패널 숨기기" AutomationProperties.Name="원본 패널 숨기기"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/panel-original-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
           </StackPanel>
@@ -260,7 +260,7 @@
         <Grid><Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
           <Border x:Name="SourceHeader" Background="#F9F9F9" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1" Padding="12,0,8,0"><DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-              <TextBlock x:Name="SourcePosition" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,0,8,0"/>
+              <TextBlock x:Name="SourcePosition" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,0,8,0" MaxWidth="160" TextTrimming="CharacterEllipsis"/>
               <Button Content="⧉" Tag="detachSource" Click="Action_Click" Style="{StaticResource IconButton}" ToolTip="텍스트 창 분리 / 합치기" AutomationProperties.Name="텍스트 창 분리 또는 합치기"/>
               <Button Tag="hideSource" Click="Action_Click" Style="{StaticResource IconButton}" ToolTip="텍스트 패널 숨기기" AutomationProperties.Name="텍스트 패널 숨기기"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/panel-source-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
             </StackPanel>

@@ -14,14 +14,7 @@ public sealed class MemoInputDialog : CompactDialog
     public MemoInputDialog(string? author = null) : base("메모", 300, 150, popover: true)
     {
         MinHeight = 150; MinWidth = 300;
-        ApplyInputAppearance(SystemParameters.HighContrast);
-        System.ComponentModel.PropertyChangedEventHandler systemChanged = (_, e) =>
-        {
-            if (e.PropertyName == nameof(SystemParameters.HighContrast))
-                Dispatcher.BeginInvoke(new Action(() => ApplyInputAppearance(SystemParameters.HighContrast)));
-        };
-        SystemParameters.StaticPropertyChanged += systemChanged;
-        Closed += (_, _) => SystemParameters.StaticPropertyChanged -= systemChanged;
+        MemoTextInputAppearance.Attach(this, Input);
         var panel = new StackPanel { Margin = new(11) }; Body(panel);
         panel.Children.Add(MemoAuthor.Header(author)); panel.Children.Add(Input);
         System.Windows.Automation.AutomationProperties.SetName(Input, "메모 내용");
@@ -38,25 +31,42 @@ public sealed class MemoInputDialog : CompactDialog
 
     internal void ApplyInputAppearance(bool highContrast)
     {
-        Input.Template = InputTemplate(highContrast);
+        MemoTextInputAppearance.Apply(Input, highContrast);
     }
+}
+
+internal static class MemoTextInputAppearance
+{
+    internal static void Attach(Window owner, TextBox input)
+    {
+        Apply(input, SystemParameters.HighContrast);
+        System.ComponentModel.PropertyChangedEventHandler systemChanged = (_, e) =>
+        {
+            if (e.PropertyName == nameof(SystemParameters.HighContrast))
+                owner.Dispatcher.BeginInvoke(new Action(() => Apply(input, SystemParameters.HighContrast)));
+        };
+        SystemParameters.StaticPropertyChanged += systemChanged;
+        owner.Closed += (_, _) => SystemParameters.StaticPropertyChanged -= systemChanged;
+    }
+
+    internal static void Apply(TextBox input, bool highContrast) => input.Template = InputTemplate(highContrast);
 
     private static ControlTemplate InputTemplate(bool highContrast)
     {
         var surface = new FrameworkElementFactory(typeof(Border), "Surface");
-        surface.SetBinding(Border.BackgroundProperty, new Binding(nameof(Background)) { RelativeSource = RelativeSource.TemplatedParent });
+        surface.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
         surface.SetValue(Border.BorderBrushProperty, EditorModalDesign.Color("#D1D1D1"));
         surface.SetValue(Border.BorderThicknessProperty, new Thickness(1));
         var host = new FrameworkElementFactory(typeof(ScrollViewer), "PART_ContentHost");
-        host.SetValue(FocusableProperty, false);
-        host.SetBinding(FrameworkElement.MarginProperty, new Binding(nameof(Padding)) { RelativeSource = RelativeSource.TemplatedParent });
+        host.SetValue(UIElement.FocusableProperty, false);
+        host.SetBinding(FrameworkElement.MarginProperty, new Binding(nameof(Control.Padding)) { RelativeSource = RelativeSource.TemplatedParent });
         host.SetBinding(ScrollViewer.VerticalScrollBarVisibilityProperty, new Binding { Path = new PropertyPath("(0)", ScrollViewer.VerticalScrollBarVisibilityProperty), RelativeSource = RelativeSource.TemplatedParent });
         host.SetBinding(ScrollViewer.HorizontalScrollBarVisibilityProperty, new Binding { Path = new PropertyPath("(0)", ScrollViewer.HorizontalScrollBarVisibilityProperty), RelativeSource = RelativeSource.TemplatedParent });
         surface.AppendChild(host);
         var template = new ControlTemplate(typeof(TextBox)) { VisualTree = surface };
         foreach (var enabled in new[] { true, false })
         {
-            var colors = new Trigger { Property = IsEnabledProperty, Value = enabled };
+            var colors = new Trigger { Property = UIElement.IsEnabledProperty, Value = enabled };
             colors.Setters.Add(new Setter(Control.BackgroundProperty, highContrast ? new DynamicResourceExtension(SystemColors.WindowBrushKey) : Brushes.White));
             if (highContrast)
             {
@@ -65,12 +75,12 @@ public sealed class MemoInputDialog : CompactDialog
             }
             template.Triggers.Add(colors);
         }
-        var focus = new Trigger { Property = IsKeyboardFocusWithinProperty, Value = true };
+        var focus = new Trigger { Property = UIElement.IsKeyboardFocusWithinProperty, Value = true };
         focus.Setters.Add(new Setter(Border.BorderBrushProperty, highContrast ? SystemColors.HighlightBrush : EditorModalDesign.Color("#005FB8"), "Surface"));
         template.Triggers.Add(focus);
-        var disabled = new Trigger { Property = IsEnabledProperty, Value = false };
+        var disabled = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
         if (highContrast) disabled.Setters.Add(new Setter(Control.ForegroundProperty, new DynamicResourceExtension(SystemColors.GrayTextBrushKey)));
-        else disabled.Setters.Add(new Setter(OpacityProperty, .5));
+        else disabled.Setters.Add(new Setter(UIElement.OpacityProperty, .5));
         template.Triggers.Add(disabled);
         return template;
     }

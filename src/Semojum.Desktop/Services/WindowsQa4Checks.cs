@@ -43,6 +43,7 @@ internal static class WindowsQa4Checks
         await WindowsMenuDesignChecks.RunAsync(directory, check);
         WindowsEditorDialogDesignChecks.Run(owner, check);
         await WindowsPanelDesignChecks.RunAsync(directory, check);
+        await WindowsPanelPositionChecks.RunAsync(check);
         await WindowsStatusZoomChecks.RunAsync(directory, check);
         await WindowsToolbarAccountChecks.RunAsync(check);
         await WindowsFormDesignChecks.RunAsync(check);
@@ -141,36 +142,7 @@ internal static class WindowsQa4Checks
         owner.Session.ErrorNotice = "";
         owner.UpdateLayout();
         check(owner.OperationErrorBanner.Visibility == Visibility.Collapsed, "QA4 operation notice clears without changing document contents");
-        // The native IME itself requires physical keyboard testing. This checks the
-        // event ordering that previously let WPF retire its context before completion.
-        var imeEditor = new ICSharpCode.AvalonEdit.TextEditor { Text = "기존", Height = 80 };
-        var focusTarget = new TextBox(); var imePanel = new StackPanel();
-        imePanel.Children.Add(imeEditor); imePanel.Children.Add(focusTarget);
-        var pending = true;
-        NativeIme.Attach(imeEditor, () =>
-        {
-            if (!pending) return;
-            pending = false; imeEditor.TextArea.PerformTextInput("가");
-        });
-        var imeWindow = new Window { Owner = owner, Content = imePanel, Width = 360, Height = 180 };
-        imeWindow.Show();
-        try
-        {
-            imeEditor.Focus(); imeEditor.CaretOffset = imeEditor.Document.TextLength;
-            focusTarget.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
-                { RoutedEvent = Mouse.PreviewMouseDownEvent });
-            check(imeEditor.Text == "기존가" && imeEditor.TextArea.IsKeyboardFocused,
-                "IME boundary completes pending text on another control's click before focus changes");
-            focusTarget.Focus();
-            check(imeEditor.Text == "기존가" && focusTarget.Text == "" && focusTarget.IsKeyboardFocused,
-                "IME boundary keeps completed text in its original editor when focus moves");
-            imeWindow.Activate(); imeEditor.Focus(); imeEditor.CaretOffset = imeEditor.Document.TextLength; pending = true;
-            owner.Activate();
-            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            check(imeEditor.Text == "기존가가" && !imeWindow.IsActive,
-                "IME boundary completes pending text before native window deactivation");
-        }
-        finally { imeWindow.Close(); }
+        await WindowsImeBoundaryChecks.RunAsync(owner, check, Stage);
         using var handler = new Fixture(); using var http = new HttpClient(handler); var api = new SemojumApiClient(http);
         await api.LoginAsync("qa-ui", "fixture-only"); var settings = new SettingsClient(api);
         var forms = await settings.FormsAsync(); var defaults = await settings.DefaultsAsync();
@@ -303,8 +275,13 @@ internal static class WindowsQa4Checks
             check(Children(usage).OfType<TextBlock>().Any(t => t.Text == "8,251") && Children(usage).OfType<TextBlock>().Any(t => t.Text.Contains("할당") && t.Text.Contains("10,000") && t.Text.Contains("크레딧")), "QA4 usage uses the returned credit balance and allocation");
             check(Children(usage).OfType<ProgressBar>().Any(b => b.Value == 17.49), "QA4 usage percentage populates the progress bar");
             var displayedUsage = Children(usage).OfType<ProgressBar>().First(b => b.Value == 17.49);
-            check(displayedUsage.Template.FindName("RangeFill", displayedUsage) is FrameworkElement fill && fill.ActualWidth > 80,
-                "Usage progress remains visibly filled after its asynchronous value loads");
+            var fill = displayedUsage.Template.FindName("RangeFill", displayedUsage) as FrameworkElement;
+            var track = displayedUsage.Template.FindName("UsageTrack", displayedUsage) as FrameworkElement;
+            var trackBounds = track?.TransformToAncestor(usage).TransformBounds(new Rect(0, 0, track.ActualWidth, track.ActualHeight)) ?? Rect.Empty;
+            check(displayedUsage.IsVisible && track is { ActualWidth: > 0 } && fill is { ActualWidth: > 0 } &&
+                Math.Abs(fill.ActualWidth - track.ActualWidth * 0.1749) <= 1.5 &&
+                trackBounds.Left >= -1 && trackBounds.Right <= usage.ActualWidth + 1,
+                $"Usage progress remains visible and proportional after loading (window={usage.ActualWidth:F1}, fill={fill?.ActualWidth:F1}, track={track?.ActualWidth:F1})");
             check(handler.Paths.All(p => !p.StartsWith("/api/org/")), "QA4 normal account never requests privileged institution billing endpoints");
         });
         check(UsageDialog.StatusLabel("COMPLETED", false) == "완료" && UsageDialog.StatusLabel("COMPLETED", true) == "일부 쪽 실패" && UsageDialog.StatusLabel("FAILED", true) == "변환 실패", "QA4 job statuses use user-facing labels");
@@ -439,8 +416,12 @@ internal static class WindowsQa4Checks
             editor.Session.Title = "안내문.txt"; editor.Session.IsTextJob = true; editor.HidePanel("hideOriginal"); editor.LinePreviewToggle.IsChecked = false; editor.LineStrip.Visibility = Visibility.Collapsed;
             editor.PageEditor.Refresh(); editor.PageEditor.FollowActive(tagsBlock.Source.IndexOf("수험표"), 0); editor.PageEditor.Editor.Focus();
             await render(editor, Path.Combine(directory, "68-text-file.png"));
-            check(editor.SourcePanelNumber.Text == "1" && editor.Braille.PanelNumber.Text == "2" && Math.Abs(editor.SourcePanel.ActualWidth / editor.Braille.ActualWidth - 854.0 / 586.0) < .02,
-                "TXT layout uses the final Figma panel ratio and two-panel numbering");
+            var sourceWidth = editor.SourcePanel.ActualWidth; var brailleWidth = editor.Braille.ActualWidth;
+            var contentWidth = sourceWidth + brailleWidth;
+            var expectedSource = Math.Clamp(contentWidth * 854.0 / 1440.0, 300, Math.Max(300, contentWidth - 300));
+            check(editor.SourcePanelNumber.Text == "1" && editor.Braille.PanelNumber.Text == "2" &&
+                  sourceWidth >= 299 && brailleWidth >= 299 && Math.Abs(sourceWidth - expectedSource) < 2,
+                $"TXT layout follows its Figma weights and minimum panel widths (window={editor.ActualWidth:F1}, source={sourceWidth:F1}, braille={brailleWidth:F1})");
             editor.Braille.Width = 820; editor.Braille.Height = 420; editor.Braille.HorizontalAlignment = HorizontalAlignment.Left; editor.Braille.VerticalAlignment = VerticalAlignment.Top;
             editor.Braille.GridView.ShowOutlines = false; editor.Braille.GridView.InvalidateFaces(); editor.Braille.PanelNumber.Text = "3";
             editor.Braille.SetLinePreviewVisible(true); editor.Braille.SetLinePreview(3, tagsBlock.Braille.Split('\n')[0]); editor.Braille.GridView.Focus();

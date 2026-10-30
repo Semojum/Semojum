@@ -68,7 +68,7 @@ public partial class MainWindow
         PageEditor.Editor.TextArea.SelectionChanged += (_, _) => RefreshLinkedSource();
         // Selection and caret callbacks can run while the page projection is
         // temporarily suppressed. Recompute linkage once its offsets are valid.
-        PageEditor.ProjectionRestored += RefreshLinkedSource;
+        PageEditor.ProjectionRestored += () => { RefreshLinkedSource(); RefreshSourcePosition(); };
     }
     private void InstallEditorMenu(TextEditor editor)
     {

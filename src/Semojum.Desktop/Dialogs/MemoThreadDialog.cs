@@ -15,11 +15,13 @@ public sealed class MemoThreadDialog : CompactDialog
     internal Button ReplyButton { get; }
     internal TextBox ReplyInput { get; } = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 32, MaxLength = 2000, Padding = new(11, 7, 11, 7), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     public NavigationLocation? Destination { get; private set; }
+    internal void ApplyReplyAppearance(bool highContrast) => MemoTextInputAppearance.Apply(ReplyInput, highContrast);
     public MemoThreadDialog(EditorBlock block, string panel, int line, string lineText, Action<Action> edit,
         DocumentSession? model = null, bool showResolved = false, string? author = null) : base("메모", 360, 232, popover: true)
     {
         var body = new DockPanel { Margin = new(7, 7, 7, 11) }; Body(body);
         var input = ReplyInput;
+        MemoTextInputAppearance.Attach(this, input);
         var replyHost = new Grid { Margin = new(4, 14, 4, 0), Height = 32 };
         replyHost.ColumnDefinitions.Add(new()); replyHost.ColumnDefinitions.Add(new() { Width = new(40) }); replyHost.Children.Add(input);
         var placeholder = new TextBlock { Text = "회신...", Foreground = Brushes.Gray, Margin = new(12, 7, 0, 0), IsHitTestVisible = false };

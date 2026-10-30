@@ -44,16 +44,27 @@ internal static class WindowsEditorDialogDesignChecks
         }
         finally { layout.Close(); }
 
-        string? searched = null; SearchPanel? searchedPanel = null;
+        string? searched = null; SearchPanel? searchedPanel = null; string? replaced = null;
         var find = new FindDialog(SearchPanel.Text, "", false,
             (text, panel) => { searched = text; searchedPanel = panel; return Task.FromResult("ok"); },
-            (_, _, _, _) => Task.FromResult("ok"), "Q 1 , 4 - /") { Owner = owner };
+            (_, text, _, _) => { replaced = text; return Task.FromResult("ok"); }, "Q 1 , 4 - /") { Owner = owner };
         find.Show();
         try
         {
             find.UpdateLayout();
             var toggle = Children(find).OfType<ToggleButton>().Single(t => AutomationProperties.GetName(t) == "점자 입력");
             var query = Children(find).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "찾을 내용");
+            var replacement = Children(find).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "바꿀 내용");
+            var hint = Children(find).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "ReplacementPlaceholder");
+            check(hint.Text == "바꿀 말을 적는다" && hint.IsVisible && !hint.IsHitTestVisible && replacement.Text == "",
+                "Empty replacement shows the Figma hint without intercepting input");
+            replacement.Focus(); replacement.Text = "변경"; find.UpdateLayout();
+            check(replacement.IsKeyboardFocusWithin && hint.Visibility == Visibility.Collapsed,
+                "Typing into the replacement field hides its noninteractive hint");
+            Children(find).OfType<Button>().Single(b => b.Content as string == "바꾸기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(replaced == "변경", "Replace action receives only the entered value rather than its hint");
+            replacement.Clear(); find.UpdateLayout();
+            check(hint.IsVisible, "Clearing the replacement field restores its hint");
             toggle.IsChecked = true; query.Focus();
             find.UpdateLayout(); CheckIcons(find, check);
             var source = PresentationSource.FromVisual(query) ?? throw new InvalidOperationException("Missing find input presentation source");
@@ -63,6 +74,9 @@ internal static class WindowsEditorDialogDesignChecks
             var button = Children(find).OfType<Button>().Single(b => b.Content as string == "다음 찾기");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(searched == "⠁" && searchedPanel == SearchPanel.Braille, "Find uses braille input and braille search target");
+            replacement.Focus(); replacement.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            replacement.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Q) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
+            check(replacement.Text == "⠁" && hint.Visibility == Visibility.Collapsed, "Replacement still accepts configured six-dot input with its hint");
         }
         finally { find.Close(); }
     }

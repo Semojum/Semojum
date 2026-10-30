@@ -2,7 +2,7 @@
   <DockPanel Background="White">
     <Border x:Name="Header" DockPanel.Dock="Top" Background="#F9F9F9" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1" Padding="12,0,8,0" Height="36"><DockPanel>
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-        <TextBlock x:Name="LayoutLabel" Foreground="{StaticResource Muted}" FontSize="11" Margin="0,0,8,0" ToolTip="{Binding Text, ElementName=StateLabel}"/>
+        <TextBlock x:Name="LayoutLabel" Foreground="{StaticResource Muted}" FontSize="12" Margin="0,0,8,0" MaxWidth="160" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, ElementName=StateLabel}"/>
         <Button x:Name="DetachButton" Content="⧉" ToolTip="점자 창 분리 / 합치기" AutomationProperties.Name="점자 창 분리 또는 합치기" Click="Detach_Click" Style="{StaticResource IconButton}"/>
         <Button ToolTip="점자 패널 숨기기" AutomationProperties.Name="점자 패널 숨기기" Click="Hide_Click" Style="{StaticResource IconButton}"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/panel-braille-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
       </StackPanel>

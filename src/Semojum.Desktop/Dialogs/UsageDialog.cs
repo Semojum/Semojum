@@ -48,16 +48,63 @@ public sealed class UsageDialog : CompactDialog
         purchase.Width = 120; purchase.Margin = new(0, 4, 4, 0); purchase.VerticalAlignment = VerticalAlignment.Top; purchase.IsDefault = false;
         purchase.ToolTip = "쪽 구매 문의를 작성합니다."; DockPanel.SetDock(purchase, Dock.Right); summaryRow.Children.Add(purchase);
         var summary = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold, MinWidth = 110, VerticalAlignment = VerticalAlignment.Top }; summaryRow.Children.Add(summary);
-        var allocated = new TextBlock { FontSize = 12, Margin = new(0, 16, 0, 0), Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Top }; summaryRow.Children.Add(allocated);
+        var allocated = new TextBlock { FontSize = 12, Margin = new(0, 16, 0, 0), Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Top, TextWrapping = TextWrapping.Wrap }; summaryRow.Children.Add(allocated);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(summary, "OrganizationCreditBalance");
+        System.Windows.Automation.AutomationProperties.SetAutomationId(allocated, "OrganizationCreditAllocation");
+        System.Windows.Automation.AutomationProperties.SetAutomationId(purchase, "OrganizationCreditPurchase");
+        var purchaseRow = new Grid { Height = 0, Visibility = Visibility.Collapsed };
+        summaryPanel.Children.Add(purchaseRow);
         var orgBar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 8, Template = UsageProgressTemplate() }; System.Windows.Automation.AutomationProperties.SetName(orgBar, "기관 크레딧 사용률"); summaryPanel.Children.Add(orgBar);
         var orgUsage = new TextBlock { Margin = new(0, 4, 0, 0), Foreground = (Brush)FindResource("Muted") }; summaryPanel.Children.Add(orgUsage);
-        var cards = new Grid { Margin = new(0, 0, 0, 16) }; cards.ColumnDefinitions.Add(new()); cards.ColumnDefinitions.Add(new() { Width = new(16) }); cards.ColumnDefinitions.Add(new()); panel.Children.Add(cards);
+        var cards = new Grid { Margin = new(0, 0, 0, 16) }; cards.ColumnDefinitions.Add(new()); cards.ColumnDefinitions.Add(new() { Width = new(16) }); cards.ColumnDefinitions.Add(new());
+        cards.RowDefinitions.Add(new() { Height = new(116) }); cards.RowDefinitions.Add(new() { Height = new(0) }); cards.RowDefinitions.Add(new() { Height = new(0) }); panel.Children.Add(cards);
         var usedPanel = new StackPanel { Margin = new(15, 11, 15, 0) };
         usedPanel.Children.Add(new TextBlock { Text = "내가 쓴 크레딧", Foreground = (Brush)FindResource("Muted") });
         var usedTotal = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold }; usedPanel.Children.Add(usedTotal);
         var usedBar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 8, Template = UsageProgressTemplate() }; System.Windows.Automation.AutomationProperties.SetName(usedBar, "내 크레딧 사용률"); usedPanel.Children.Add(usedBar);
         var usage = new TextBlock { Margin = new(0, 4, 0, 0), Foreground = (Brush)FindResource("Muted") }; usedPanel.Children.Add(usage); cards.Children.Add(Card(usedPanel, 116));
         var summaryCard = Card(summaryPanel, 116); Grid.SetColumn(summaryCard, 2); cards.Children.Add(summaryCard);
+        bool? stacked = null, compact = null;
+        cards.SizeChanged += (_, e) =>
+        {
+            // Keep both values readable and the purchase action reachable as the window narrows.
+            var nextStacked = e.NewSize.Width < 850;
+            if (stacked != nextStacked)
+            {
+                stacked = nextStacked;
+                cards.ColumnDefinitions[1].Width = new GridLength(nextStacked ? 0 : 16);
+                cards.ColumnDefinitions[2].Width = nextStacked ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+                cards.RowDefinitions[1].Height = new GridLength(nextStacked ? 16 : 0);
+                cards.RowDefinitions[2].Height = nextStacked ? GridLength.Auto : new GridLength(0);
+                Grid.SetColumn(summaryCard, nextStacked ? 0 : 2);
+                Grid.SetRow(summaryCard, nextStacked ? 2 : 0);
+            }
+            var nextCompact = nextStacked && e.NewSize.Width < 320;
+            if (compact == nextCompact) return;
+            compact = nextCompact;
+            if (nextCompact)
+            {
+                summaryRow.Children.Remove(purchase);
+                purchase.HorizontalAlignment = HorizontalAlignment.Right;
+                purchase.Margin = new Thickness(0, 0, 4, 0);
+                purchaseRow.Children.Add(purchase);
+                purchaseRow.Height = 32; purchaseRow.Visibility = Visibility.Visible;
+                DockPanel.SetDock(summary, Dock.Top); summary.MinWidth = 0; summary.TextWrapping = TextWrapping.Wrap;
+                allocated.Margin = new Thickness(0); summaryRow.Height = double.NaN; summaryRow.MinHeight = 50;
+                summaryCard.Height = double.NaN; summaryCard.MinHeight = 116;
+            }
+            else
+            {
+                purchaseRow.Children.Remove(purchase);
+                purchase.HorizontalAlignment = HorizontalAlignment.Stretch;
+                purchase.Margin = new Thickness(0, 4, 4, 0);
+                if (!summaryRow.Children.Contains(purchase)) summaryRow.Children.Insert(0, purchase);
+                purchaseRow.Height = 0; purchaseRow.Visibility = Visibility.Collapsed;
+                DockPanel.SetDock(summary, Dock.Left); summary.MinWidth = 110; summary.TextWrapping = TextWrapping.NoWrap;
+                allocated.Margin = new Thickness(0, 16, 0, 0); summaryRow.Height = 50; summaryRow.MinHeight = 0;
+                summaryCard.Height = 116; summaryCard.MinHeight = 0;
+            }
+        };
         var period = new Semojum.Desktop.Controls.SegmentedChoice("이 달", "지난 3달", "올해") { Width = 210 };
         var chartPanel = new DockPanel { Margin = new(15, 11, 19, 10) };
         var chartHeading = new DockPanel { Height = 28 }; DockPanel.SetDock(chartHeading, Dock.Top); chartPanel.Children.Add(chartHeading);

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
@@ -32,6 +33,9 @@ internal static class WindowsUsageDesignChecks
             var usageBar = Descendants(dialog).OfType<ProgressBar>().FirstOrDefault(b => b.Value == 17.49);
             var fill = usageBar?.Template.FindName("RangeFill", usageBar) as FrameworkElement;
             var track = usageBar?.Template.FindName("UsageTrack", usageBar) as FrameworkElement;
+            var balance = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "OrganizationCreditBalance");
+            var allocation = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "OrganizationCreditAllocation");
+            var purchase = Descendants(dialog).OfType<Button>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "OrganizationCreditPurchase");
             var originalWidth = dialog.Width;
             foreach (var requestedWidth in new[] { originalWidth, 960d, 480d })
             {
@@ -44,7 +48,37 @@ internal static class WindowsUsageDesignChecks
                       Math.Abs(fillWidth - trackWidth * 0.1749) <= 1.5 &&
                       trackBounds.Left >= -1 && trackBounds.Right <= dialog.ActualWidth + 1,
                     $"The returned 17.49% usage remains proportional and visible at {dialog.ActualWidth:0.#}px (fill={fillWidth:0.##}, track={trackWidth:0.##})");
+                var balanceBounds = balance.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, balance.ActualWidth, balance.ActualHeight));
+                var allocationBounds = allocation.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, allocation.ActualWidth, allocation.ActualHeight));
+                var purchaseBounds = purchase.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, purchase.ActualWidth, purchase.ActualHeight));
+                var displayedText = new FormattedText(allocation.Text, CultureInfo.CurrentCulture, allocation.FlowDirection,
+                    new Typeface(allocation.FontFamily, allocation.FontStyle, allocation.FontWeight, allocation.FontStretch),
+                    allocation.FontSize, allocation.Foreground, VisualTreeHelper.GetDpi(allocation).PixelsPerDip)
+                    { MaxTextWidth = Math.Max(1, allocation.ActualWidth) };
+                check(balance.IsVisible && allocation.IsVisible && purchase.IsVisible && purchase.IsEnabled &&
+                      allocation.ActualWidth > 0 && allocation.ActualHeight + 2 >= displayedText.Height &&
+                      !Overlaps(allocationBounds, purchaseBounds) && !Overlaps(balanceBounds, purchaseBounds) &&
+                      allocationBounds.Left >= -1 && allocationBounds.Right <= dialog.ActualWidth + 1 &&
+                      purchaseBounds.Left >= -1 && purchaseBounds.Right <= dialog.ActualWidth + 1,
+                    $"Organization balance, full allocation and purchase action remain readable without overlap at {dialog.ActualWidth:0.#}px (allocation={allocationBounds}, purchase={purchaseBounds})");
             }
+            var originalBalance = balance.Text; var originalAllocation = allocation.Text;
+            balance.Text = "2,147,483,647";
+            allocation.Text = "잔여 / 할당 2,147,483,647 크레딧";
+            dialog.Width = 480;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var longBalance = balance.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, balance.ActualWidth, balance.ActualHeight));
+            var longAllocation = allocation.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, allocation.ActualWidth, allocation.ActualHeight));
+            var longPurchase = purchase.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, purchase.ActualWidth, purchase.ActualHeight));
+            FormattedText Measure(TextBlock block) => new(block.Text, CultureInfo.CurrentCulture, block.FlowDirection,
+                new Typeface(block.FontFamily, block.FontStyle, block.FontWeight, block.FontStretch), block.FontSize,
+                block.Foreground, VisualTreeHelper.GetDpi(block).PixelsPerDip) { MaxTextWidth = Math.Max(1, block.ActualWidth) };
+            check(balance.ActualWidth > 0 && allocation.ActualWidth > 0 &&
+                  balance.ActualHeight + 2 >= Measure(balance).Height && allocation.ActualHeight + 2 >= Measure(allocation).Height &&
+                  !Overlaps(longBalance, longAllocation) && !Overlaps(longBalance, longPurchase) && !Overlaps(longAllocation, longPurchase) &&
+                  longBalance.Right <= dialog.ActualWidth + 1 && longAllocation.Right <= dialog.ActualWidth + 1 && longPurchase.Right <= dialog.ActualWidth + 1,
+                $"Long credit values remain readable and do not overlap at 480px (balance={longBalance}, allocation={longAllocation}, purchase={longPurchase})");
+            balance.Text = originalBalance; allocation.Text = originalAllocation;
             dialog.Width = originalWidth;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "내 작업별 크레딧") && fixture.JobRequests > 0,
@@ -83,6 +117,8 @@ internal static class WindowsUsageDesignChecks
         }
         finally { dialog.Close(); }
     }
+    private static bool Overlaps(Rect a, Rect b) => a.Left < b.Right - .5 && a.Right > b.Left + .5 &&
+        a.Top < b.Bottom - .5 && a.Bottom > b.Top + .5;
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)

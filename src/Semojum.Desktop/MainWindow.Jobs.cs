@@ -203,9 +203,10 @@ public partial class MainWindow
                 .Concat(model.PendingServerPages.Values.SelectMany(p => p.Blocks.Select(b => b.Id))).DefaultIfEmpty(0).Max() + 1;
             while (true)
             {
-                model.JobStatus = status.OverallStatus;
+                ct.ThrowIfCancellationRequested();
+                if (!JobClient.ApplyReceivedStatus(model, status))
+                    throw new InvalidDataException("현재 문서와 다른 작업의 상태는 적용할 수 없습니다.");
                 model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 변환 완료)" : "";
-                foreach (var pair in status.Pages) model.PageStatuses[pair.Key] = pair.Value;
                 // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
                 // count twice nor shorten the estimate a second time (C-02).
                 var finishedSinceOpen = status.FinishedPages - initialFinished;
