@@ -21,6 +21,8 @@ internal static class WindowsCaseDesignChecks
             check(Math.Abs(invalid.Width - 471) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice follows the final Figma dimensions");
             check(invalid.DetailText.Contains("JPEG", StringComparison.Ordinal) && invalid.DetailText.Contains("SMJ", StringComparison.Ordinal),
                 "Unsupported file notice includes supported JPEG and local SMJ files");
+            var detail = Descendants(invalid).OfType<TextBlock>().Single(t => t.Text == invalid.DetailText);
+            check(detail.ActualHeight <= 21, "Supported formats fit on one line in the Figma-sized notice");
             var icon = Descendants(invalid).OfType<SvgViewbox>().Single();
             check(icon.Source?.ToString().EndsWith("case-error.svg", StringComparison.Ordinal) == true && icon.Drawings is { Bounds.IsEmpty: false } && icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16 && icon.ActualHeight > 0 && icon.ActualHeight <= 16,
                 "Error notice renders the original Figma warning in its 16px slot");

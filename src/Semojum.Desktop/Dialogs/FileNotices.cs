@@ -2,7 +2,7 @@ namespace Semojum.Desktop.Dialogs;
 
 internal static class FileNotices
 {
-    internal static NoticeDialog UnsupportedFormat() => new("이 형식은 열 수 없습니다.", "PDF · HWP · HWPX · TXT · JPG · JPEG · PNG · SMJ만 열 수 있습니다.", ["다시 선택", "취소"], error: true, width: 471);
+    internal static NoticeDialog UnsupportedFormat() => new("이 형식은 열 수 없습니다.", "지원 형식: PDF · HWP · HWPX · TXT · JPG · JPEG · PNG · SMJ", ["다시 선택", "취소"], error: true, width: 471);
     internal static NoticeDialog OversizedFile() => new("파일이 100 MB를 넘습니다.", "파일 크기를 줄이거나 나누어 다시 올려 주세요.", ["도움말", "취소"], error: true, width: 440);
     internal static NoticeDialog EngineUnavailable() => new("점역 엔진이 응답하지 않습니다.", "점자 패널만 잠깁니다. 텍스트 수정과 저장은 가능합니다.", ["다시 시도", "나중에"], error: true, width: 456);
     internal static NoticeDialog ReadOnlyDocument(bool accessDenied = false) => new(accessDenied ? "이 문서에 쓰기 권한이 없습니다." : "이 문서는 다른 창에서 열려 있습니다.", "이 창에서는 읽기 전용으로 엽니다.", ["읽기 전용으로 열기", "취소"]);
