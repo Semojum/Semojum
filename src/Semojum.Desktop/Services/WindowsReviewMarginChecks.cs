@@ -56,16 +56,24 @@ internal static class WindowsReviewMarginChecks
                         if (!SetCursorPos((int)Math.Round(position.X), (int)Math.Round(position.Y))) { validCoordinates = false; return; }
                         await Task.Delay(100); Mouse.Synchronize();
                         var positionInMargin = Mouse.GetPosition(margin); GetCursorPos(out var actual);
-                        var nativeReady = window.IsActive && Math.Abs(actual.X - position.X) < 2 && Math.Abs(actual.Y - position.Y) < 2
+                        var nativeReady = window.IsActive && GetForegroundWindow() == new WindowInteropHelper(window).Handle && Math.Abs(actual.X - position.X) < 2 && Math.Abs(actual.Y - position.Y) < 2
                             && GetAncestor(WindowFromPoint(actual), 2) == new WindowInteropHelper(window).Handle;
                         if (!nativeReady) { validCoordinates = false; Console.WriteLine($"SOURCE POINTER DIAGNOSTIC: requested={position}, cursor={actual.X},{actual.Y}, target={new WindowInteropHelper(window).Handle}, hit={GetAncestor(WindowFromPoint(actual), 2)}, active={window.IsActive}"); return; }
                         var wpfReady = margin.IsMouseOver && Math.Abs(positionInMargin.X - x) < 2 && Math.Abs(positionInMargin.Y - y) < 2;
                         if (!wpfReady) { inputFailure = true; validCoordinates = false; check(false, $"Source margin misses pointer input even though the active test window is under the cursor (WPF={positionInMargin}, hover={margin.IsMouseOver})"); return; }
+                        var handle = new WindowInteropHelper(window).Handle;
+                        if (!GetCursorPos(out actual) || GetForegroundWindow() != handle || GetAncestor(WindowFromPoint(actual), 2) != handle
+                            || Math.Abs(actual.X - position.X) >= 2 || Math.Abs(actual.Y - position.Y) >= 2)
+                        {
+                            validCoordinates = false;
+                            Console.WriteLine($"SOURCE POINTER DIAGNOSTIC: foreground={GetForegroundWindow()}, target={handle}, hit={GetAncestor(WindowFromPoint(actual), 2)}, cursor={actual.X},{actual.Y}");
+                            return;
+                        }
                         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); await Task.Delay(100);
                     }
                     await ClickSlot(8); await ClickSlot(24);
                     if (validCoordinates) check(memoClicks == 1 && reviewClicks == 1, $"Actual pointer clicks invoke source memo and review callbacks separately (memo={memoClicks}, review={reviewClicks})");
-                    else if (!inputFailure) Console.WriteLine("SKIP: source WPF mouse routing requires a desktop that reports the moved pointer coordinates.");
+                    else if (!inputFailure) Console.WriteLine("SKIP: source WPF mouse routing requires the test window in the foreground and under the moved pointer.");
                 }
                 finally { SetCursorPos(originalPointer.X, originalPointer.Y); }
             }
@@ -144,15 +152,23 @@ internal static class WindowsReviewMarginChecks
                         if (!SetCursorPos((int)Math.Round(pos.X), (int)Math.Round(pos.Y))) { validCoordinates = false; continue; }
                         await Task.Delay(100); Mouse.Synchronize();
                         var positionInFace = Mouse.GetPosition(faceVisual); GetCursorPos(out var actual);
-                        var nativeReady = gridWindow.IsActive && Math.Abs(actual.X - pos.X) < 2 && Math.Abs(actual.Y - pos.Y) < 2
+                        var nativeReady = gridWindow.IsActive && GetForegroundWindow() == new WindowInteropHelper(gridWindow).Handle && Math.Abs(actual.X - pos.X) < 2 && Math.Abs(actual.Y - pos.Y) < 2
                             && GetAncestor(WindowFromPoint(actual), 2) == new WindowInteropHelper(gridWindow).Handle;
                         if (!nativeReady) { validCoordinates = false; Console.WriteLine($"GRID POINTER DIAGNOSTIC: requested={pos}, cursor={actual.X},{actual.Y}, target={new WindowInteropHelper(gridWindow).Handle}, hit={GetAncestor(WindowFromPoint(actual), 2)}, active={gridWindow.IsActive}"); continue; }
                         var wpfReady = faceVisual.IsMouseOver && Math.Abs(positionInFace.X - x) < 2 && Math.Abs(positionInFace.Y - 14) < 2;
                         if (!wpfReady) { inputFailure = true; validCoordinates = false; check(false, $"Braille grid misses pointer input even though the active test window is under the cursor (WPF={positionInFace}, hover={faceVisual.IsMouseOver})"); continue; }
+                        var handle = new WindowInteropHelper(gridWindow).Handle;
+                        if (!GetCursorPos(out actual) || GetForegroundWindow() != handle || GetAncestor(WindowFromPoint(actual), 2) != handle
+                            || Math.Abs(actual.X - pos.X) >= 2 || Math.Abs(actual.Y - pos.Y) >= 2)
+                        {
+                            validCoordinates = false;
+                            Console.WriteLine($"GRID POINTER DIAGNOSTIC: foreground={GetForegroundWindow()}, target={handle}, hit={GetAncestor(WindowFromPoint(actual), 2)}, cursor={actual.X},{actual.Y}");
+                            continue;
+                        }
                         mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); await Task.Delay(100);
                     }
                     if (validCoordinates) check(gridMemoClicks == 1 && gridReviewClicks == 1, $"Actual pointer clicks invoke grid memo and review callbacks separately (memo={gridMemoClicks}, review={gridReviewClicks})");
-                    else if (!inputFailure) Console.WriteLine("SKIP: grid WPF mouse routing requires a desktop that reports the moved pointer coordinates.");
+                    else if (!inputFailure) Console.WriteLine("SKIP: grid WPF mouse routing requires the test window in the foreground and under the moved pointer.");
                 }
                 finally { SetCursorPos(savedPointer.X, savedPointer.Y); }
             }
@@ -226,6 +242,7 @@ internal static class WindowsReviewMarginChecks
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { internal int X, Y; }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out NativePoint point);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
