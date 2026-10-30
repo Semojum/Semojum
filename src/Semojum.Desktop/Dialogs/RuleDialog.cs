@@ -95,6 +95,10 @@ public sealed class RuleDialog : CompactDialog
         };
         var search = Button("검색", () => RunAsync(async () => { page = 0; await SearchAsync(); }));
         var searchHost = new Grid(); searchHost.Children.Add(query);
+        var placeholder = new TextBlock { Text = "점역 규정 검색...", Foreground = ExportRangeDialog.Brush("#8A8A8A"), Margin = new(31, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        AutomationProperties.SetAutomationId(placeholder, "RuleSearchPlaceholder");
+        void UpdatePlaceholder() => placeholder.Visibility = query.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        query.TextChanged += (_, _) => UpdatePlaceholder(); UpdatePlaceholder(); searchHost.Children.Add(placeholder);
         search.MinWidth = search.Width = 24; search.Height = 24; search.MinHeight = 0; search.Margin = new(4, 0, 0, 0); search.HorizontalAlignment = HorizontalAlignment.Left;
         search.Content = ExportRangeDialog.DesignIcon("rule-browser-book.svg", 16, 16); search.Background = Brushes.Transparent; search.BorderBrush = Brushes.Transparent; search.Template = ExportRangeDialog.SurfaceTemplate(0); search.Padding = new(0);
         AutomationProperties.SetName(search, "규정 검색"); searchHost.Children.Add(search); filters.Children.Add(searchHost);

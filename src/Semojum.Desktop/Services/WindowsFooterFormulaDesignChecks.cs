@@ -55,6 +55,14 @@ internal static class WindowsFooterFormulaDesignChecks
             check(math.Width == 980 && math.Height == 510 && math.BrailleInput.Text == "⠿" && math.Edited, "Math editor Figma size preserves manual braille");
             math.Input.Text = "x+2"; math.RefreshAsync().GetAwaiter().GetResult();
             check(math.BrailleInput.Text == "⠿" && math.Edited, "Changing LaTeX does not replace manual braille"); CheckIcons(math, check);
+            var fraction = math.SymbolButtons.Children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "분수");
+            var root = math.SymbolButtons.Children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "제곱근");
+            static bool ColorIs(Brush? brush, byte r, byte g, byte b) => brush is SolidColorBrush solid && solid.Color == Color.FromRgb(r, g, b);
+            check(ColorIs(fraction.Background, 255, 255, 255) && ColorIs(fraction.BorderBrush, 209, 209, 209), "An unselected math symbol uses the Figma white fill and gray border");
+            fraction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(ColorIs(fraction.Background, 239, 246, 252) && ColorIs(fraction.BorderBrush, 0, 95, 184) && ColorIs(root.Background, 255, 255, 255), "Selecting a math symbol uses the Figma blue fill and border");
+            root.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(ColorIs(fraction.Background, 255, 255, 255) && ColorIs(fraction.BorderBrush, 209, 209, 209) && ColorIs(root.Background, 239, 246, 252), "Choosing another math symbol restores the previous symbol's unselected state");
         }
         finally { math.Close(); }
     }

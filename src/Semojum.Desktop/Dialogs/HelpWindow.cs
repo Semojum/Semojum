@@ -15,6 +15,7 @@ public sealed class HelpWindow : Window
         new("문서 변환", "파일 업로드", "PDF·HWP·HWPX·이미지를 업로드할 수 있습니다. 전체 크기는 100 MB까지입니다. 여러 이미지는 순서를 확인하고 올리세요. 점역 양식과 옵션을 고른 후 변환을 시작합니다. 실패한 쪽은 쪽별 변환 상태에서 확인합니다."),
         new("결과 편집", "텍스트 고치기", "원문을 고치면 입력이 멈춘 뒤 로컬 엔진이 점역합니다. Enter는 같은 블록 안의 줄바꿈입니다. Ctrl+Enter는 쪽바꿈을 넣습니다. 다른 쪽은 이동 창에서 선택합니다. 경계에서 Backspace·Delete·Insert를 누르면 인접 블록이 합쳐집니다. Ctrl+Z·Ctrl+Y는 쪽별 최대 100단계 기록을 사용합니다."),
         new("결과 편집", "점자 직접 고치기", "점자 패널에서 6점 입력을 켜고 설정한 키를 함께 누른 뒤 모두 놓으면 한 칸이 입력됩니다. 키는 1·2·3·4·5·6점 순서로 설정합니다. 직접 고친 점자는 별도 색으로 표시합니다. 다시 점역할 때 유지·덮어쓰기·취소를 고를 수 있습니다. 텍스트는 점자 직접 수정으로 바뀌지 않습니다."),
+        new("결과 편집", "검토 표시 읽는 법", "문서 여백의 표시는 확인이 필요한 점역 결과나 해결되지 않은 메모를 나타냅니다. 표시를 선택하면 해당 내용을 확인할 수 있습니다. 확인할 근거가 없는 위치에는 표시하지 않습니다."),
         new("메뉴별 기능", "여러 블록 선택", "Ctrl+A 한 번은 현재 블록, 두 번은 현재 쪽의 블록을 선택합니다. 도움말의 추가 도구에서 현재 쪽 블록 선택과 여러 줄·블록 구간 선택을 엽니다. 드래그나 Shift+클릭으로 블록 사이의 구간을 선택하고, 복사·잘라내기·붙여넣기·삭제합니다. Ctrl+Z로 되돌릴 수 있습니다."),
         new("메뉴별 기능", "대체 초안과 규정", "대체 초안 창에서 전달된 설명을 고르고 묵자와 점자를 확인한 뒤 Enter나 닫기를 누르면 선택을 적용합니다. Esc는 취소합니다. 모든 초안과 최초 원문은 작업 파일에 남습니다. 점자 규정 창은 적용 규정과 서버 검색을 제공합니다. 검색 목록에는 요약을 표시하며 펼치면 서버가 제공한 조항 전문과 예시를 볼 수 있습니다. 전문이 없는 항목은 발췌로 표시하고, 검색 전용 조항에는 점역 미지원을 표시합니다."),
         new("결과 편집", "3패널 보기", "보기 메뉴에서 원본·텍스트·점자, 줄 번호, 줄번역을 조정합니다. 패널의 분리 단추는 독립 창을 만듭니다. 분리 창을 닫으면 본창으로 돌아오며 같은 문서와 되돌리기 기록을 공유합니다. 패널 모두 제자리로를 누르면 세 패널을 복원합니다."),
@@ -86,7 +87,7 @@ public sealed class HelpWindow : Window
                 note.Children.Add(new TextBlock { Text = "점자를 직접 고쳐도 텍스트 패널은 그대로 둡니다. 다시 점역할 때 유지 여부를 선택합니다.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
                 doc.Blocks.Add(new BlockUIContainer(new Border { Background = EditorModalDesign.Color("#F9F9F9"), BorderBrush = EditorModalDesign.Color("#005FB8"), BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12), Child = note }) { Margin = new Thickness(0, 16, 0, 20) });
                 doc.Blocks.Add(new Paragraph(new Run("함께 보기")) { FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
-                foreach (var relatedTitle in new[] { "설정과 6점키", "단축키 목록" })
+                foreach (var relatedTitle in new[] { "검토 표시 읽는 법", "설정과 6점키", "단축키 목록" })
                 {
                     var related = Topics.First(t => t.Title == relatedTitle); var link = new Hyperlink(new Run(relatedTitle)) { Foreground = EditorModalDesign.Color("#005FB8") }; link.Click += (_, _) => Visit(related);
                     var paragraph = new Paragraph { Margin = new Thickness(0, 0, 0, 4) }; paragraph.Inlines.Add(new InlineUIContainer(EditorModalDesign.Icon("help-related"))); paragraph.Inlines.Add(link); doc.Blocks.Add(paragraph);
@@ -109,6 +110,19 @@ public sealed class HelpWindow : Window
                     doc.Blocks.Add(new Paragraph(link) { Margin = new(0, 8, 0, 0) });
                 }
             }
+            var feedback = new StackPanel();
+            feedback.Children.Add(new Border { Height = 1, Background = EditorModalDesign.Color("#EAEAEA"), Margin = new Thickness(0, 20, 0, 12) });
+            var feedbackRow = new StackPanel { Orientation = Orientation.Horizontal };
+            feedbackRow.Children.Add(new TextBlock { Text = "이 도움말이 도움이 되었나요?", Foreground = EditorModalDesign.Color("#8A8A8A"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 24, 0) });
+            foreach (var answer in new[] { "예", "아니요" })
+            {
+                var button = new Button { Content = answer, Width = 60, Height = 32, MinWidth = 0, MinHeight = 0, Margin = new Thickness(0, 0, 8, 0), IsEnabled = false,
+                    ToolTip = "의견 보내기 기능을 사용할 수 없습니다." };
+                PublicDialogDesign.StyleAction(button); button.Width = 60;
+                ToolTipService.SetShowOnDisabled(button, true); AutomationProperties.SetName(button, "도움말 의견 " + answer);
+                AutomationProperties.SetHelpText(button, "의견 보내기 기능을 사용할 수 없습니다."); feedbackRow.Children.Add(button);
+            }
+            feedback.Children.Add(feedbackRow); doc.Blocks.Add(new BlockUIContainer(feedback));
             reader.Document = doc;
         }
         void Visit(Topic topic) { if (index >= 0 && history[index] == topic) return; history.RemoveRange(index + 1, history.Count - index - 1); history.Add(topic); index++; Render(topic); }

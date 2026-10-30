@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Semojum.Core;
 using WpfMath.Controls;
+using WpfMath.Parsers;
 
 namespace Semojum.Desktop.Dialogs;
 
@@ -39,13 +40,14 @@ public sealed class MathDialog : CompactDialog
         void Insert(string value) { Input.SelectedText = value; Input.Focus(); }
         foreach (var (label, description, value) in symbols)
         {
-            var button = new Button { Content = label, Width = 34, Height = 32, Margin = new(0, 0, 2, 4), Padding = new(0), ToolTip = description };
+            var button = new Button { Content = label, Width = 34, Height = 32, Margin = new(0, 0, 2, 4), Padding = new(0), ToolTip = description,
+                Background = Brushes.White, BorderBrush = EditorModalDesign.Color("#D1D1D1") };
             if (description == "벡터") button.FontFamily = new("Cambria Math");
             System.Windows.Automation.AutomationProperties.SetName(button, description);
             button.Click += (_, _) =>
             {
-                foreach (Button other in SymbolButtons.Children) { other.Background = Brushes.White; other.BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)); }
-                button.Background = new SolidColorBrush(Color.FromRgb(204, 228, 247)); button.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 95, 184)); Insert(value);
+                foreach (Button other in SymbolButtons.Children) { other.Background = Brushes.White; other.BorderBrush = EditorModalDesign.Color("#D1D1D1"); }
+                button.Background = EditorModalDesign.Color("#EFF6FC"); button.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 95, 184)); Insert(value);
             };
             SymbolButtons.Children.Add(button);
         }
@@ -57,6 +59,22 @@ public sealed class MathDialog : CompactDialog
         body.Children.Add(panes); var left = new StackPanel(); panes.Children.Add(left);
         var preview = new FormulaControl { FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var formula = new Grid(); formula.Children.Add(preview);
+        var previewError = new TextBlock { Text = "수식 미리보기를 표시할 수 없습니다. LaTeX 원문을 확인해 주세요.", Foreground = Brushes.Firebrick, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(previewError, "MathPreviewError");
+        System.Windows.Automation.AutomationProperties.SetLiveSetting(previewError, System.Windows.Automation.AutomationLiveSetting.Polite); formula.Children.Add(previewError);
+        void UpdatePreview()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(Input.Text)) throw new ArgumentException("빈 수식");
+                WpfTeXFormulaParser.Instance.Parse(Input.Text); preview.Formula = Input.Text;
+                preview.Visibility = Visibility.Visible; previewError.Visibility = Visibility.Collapsed;
+            }
+            catch
+            {
+                preview.Formula = ""; preview.Visibility = Visibility.Collapsed; previewError.Visibility = Visibility.Visible;
+            }
+        }
         formula.Children.Add(new TextBlock { Text = "묵자 수식", Foreground = (Brush)FindResource("Muted"), Margin = new(7, 3, 0, 0), VerticalAlignment = VerticalAlignment.Top });
         left.Children.Add(new Border { Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Height = 160, Child = formula });
         Input.Height = 92; Input.Padding = new(7, 20, 7, 7); Input.FontSize = 12; Input.VerticalContentAlignment = VerticalAlignment.Top; EditorModalDesign.Input(Input);
@@ -90,10 +108,10 @@ public sealed class MathDialog : CompactDialog
             : "점자를 직접 수정할 수 있습니다. 자동 점역 결과는 우클릭 메뉴에서 다시 선택하세요.";
         Input.Text = latex ?? @"\frac{a+b}{2}=\sqrt{c}";
         if (Input.Text.StartsWith(@"\frac", StringComparison.Ordinal) && SymbolButtons.Children[0] is Button fraction)
-        { fraction.Background = new SolidColorBrush(Color.FromRgb(204, 228, 247)); fraction.BorderBrush = (Brush)FindResource("Accent"); }
+        { fraction.Background = EditorModalDesign.Color("#EFF6FC"); fraction.BorderBrush = (Brush)FindResource("Accent"); }
         Input.TextChanged += async (_, _) =>
         {
-            try { preview.Formula = Input.Text; } catch { /* The engine reports invalid expressions below. */ }
+            UpdatePreview();
             await RefreshAsync(true);
         };
         Action("취소", () => DialogResult = false);
@@ -107,7 +125,7 @@ public sealed class MathDialog : CompactDialog
         }, true);
         EditorModalDesign.Frame(this, Root, Actions);
         if (Root.Children.OfType<Border>().FirstOrDefault() is { } footer) { footer.BorderThickness = new Thickness(0, 1, 0, 0); footer.BorderBrush = EditorModalDesign.Color("#EAEAEA"); }
-        Loaded += async (_, _) => { preview.Formula = Input.Text; await RefreshAsync(); };
+        Loaded += async (_, _) => { UpdatePreview(); await RefreshAsync(); };
     }
     internal async Task RefreshAsync(bool delay = false)
     {

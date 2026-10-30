@@ -59,6 +59,13 @@ internal static class WindowsRuleDesignChecks
             dialog.UpdateLayout();
             check(dialog.Width == 720 && dialog.Height == 748 && dialog.Title == "점자 규정 찾아보기", "Rule search uses the final Figma dimensions and title");
             CheckIcon(dialog, "rule-browser-close.svg", check); CheckIcon(dialog, "rule-browser-book.svg", check);
+            var query = Descendants(dialog).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "규정 검색어");
+            var hint = Descendants(dialog).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "RuleSearchPlaceholder");
+            check(query.Text == "검색" && hint.Visibility == Visibility.Collapsed && !hint.IsHitTestVisible, "The search hint does not obscure existing text or intercept input");
+            query.Text = ""; dialog.UpdateLayout();
+            check(hint.Visibility == Visibility.Visible && hint.Text == "점역 규정 검색..." && AutomationProperties.GetName(query) == "규정 검색어", "The empty search field exposes the Figma hint and retains its accessible name");
+            query.Text = "검색"; dialog.UpdateLayout();
+            check(hint.Visibility == Visibility.Collapsed && query.Text == "검색", "Typing hides the search hint without changing the input");
             var rows = dialog.RuleResults.Children.OfType<Expander>().ToArray();
             check(rows.Length == 2, "Rule search preserves the server's two results");
             if (rows.Length > 1)

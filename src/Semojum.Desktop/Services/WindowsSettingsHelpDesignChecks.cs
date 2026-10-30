@@ -64,10 +64,20 @@ internal static class WindowsSettingsHelpDesignChecks
             var tabs = Descendants(help).OfType<TabControl>().Single(); var reader = Descendants(help).OfType<FlowDocumentScrollViewer>().Single();
             var search = Descendants(help).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "도움말 검색");
             check(help.Width == 1100 && help.Height == 700 && tabs.Items.Count == 3 && new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("점자 직접 고치기"), "Help opens the requested article in the final Figma layout"); CheckIcons(help, check);
+            var feedback = reader.Document.Blocks.OfType<BlockUIContainer>().Select(b => b.Child).OfType<StackPanel>()
+                .SelectMany(p => p.Children.OfType<StackPanel>()).FirstOrDefault(p => p.Children.OfType<TextBlock>().Any(t => t.Text == "이 도움말이 도움이 되었나요?"));
+            var feedbackButtons = feedback?.Children.OfType<Button>().ToArray() ?? [];
+            check(feedbackButtons.Length == 2 && feedbackButtons.All(b => !b.IsEnabled && AutomationProperties.GetHelpText(b).Contains("사용할 수 없습니다")),
+                "Help feedback controls are visible but do not pretend unsupported feedback can be submitted");
             var tree = Descendants(help).OfType<TreeView>().Single();
             check(tree.SelectedItem is TreeViewItem { Header: "점자 직접 고치기" }, "Help highlights the currently opened article in the navigation tree");
             var selected = (TreeViewItem)tree.SelectedItem;
             check(selected.Template.FindName("TopicSurface", selected) is Border surface && Math.Abs(surface.ActualWidth - tree.ActualWidth) <= 1, "Selected help topic highlight spans the full navigation width");
+            var reviewLink = reader.Document.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Hyperlink>())
+                .Single(h => new TextRange(h.ContentStart, h.ContentEnd).Text == "검토 표시 읽는 법");
+            reviewLink.RaiseEvent(new RoutedEventArgs(Hyperlink.ClickEvent));
+            check(new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("해결되지 않은 메모"), "The related review link opens help describing actual supported indicators");
+            Descendants(help).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "이전").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             search.Text = "점자"; var searchTab = (TabItem)tabs.Items[2]; var list = ((DockPanel)searchTab.Content).Children.OfType<ListBox>().Single();
             check(tabs.SelectedIndex == 2 && list.Items.Count > 0, "Toolbar help search selects and filters the real search results");
             list.SelectedItem = list.Items.Cast<object>().First(item => !item.ToString()!.Contains("점자 직접 고치기", StringComparison.Ordinal));

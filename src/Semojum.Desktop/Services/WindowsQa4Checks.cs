@@ -24,6 +24,7 @@ internal static class WindowsQa4Checks
         await WindowsPublicDesignChecks.RunAsync(check);
         await WindowsBoardDesignChecks.RunAsync(check);
         await WindowsUsageDesignChecks.RunAsync(check);
+        await WindowsUsageFeedbackChecks.RunAsync(check);
         await WindowsCommonDesignChecks.RunAsync(directory, check);
         await WindowsIndividualControlStatesChecks.RunAsync(directory, check);
         await WindowsOwnedModalChecks.RunAsync(check);
@@ -287,7 +288,7 @@ internal static class WindowsQa4Checks
         await Capture(usage, "37-usage.png", () =>
         {
             check(usage.Navigation.Items.Count == 5 && usage.Navigation.TabStripPlacement == Dock.Left, "QA4 my page has five vertical sections");
-            check(Children(usage).OfType<TextBlock>().Any(t => t.Text == "8,251") && Children(usage).OfType<TextBlock>().Any(t => t.Text.Contains("남은 쪽") && t.Text.Contains("10,000")), "QA4 usage uses returned page-unit balance");
+            check(Children(usage).OfType<TextBlock>().Any(t => t.Text == "8,251") && Children(usage).OfType<TextBlock>().Any(t => t.Text.Contains("할당") && t.Text.Contains("10,000") && t.Text.Contains("크레딧")), "QA4 usage uses the returned credit balance and allocation");
             check(Children(usage).OfType<ProgressBar>().Any(b => b.Value == 17.49), "QA4 usage percentage populates the progress bar");
             var displayedUsage = Children(usage).OfType<ProgressBar>().First(b => b.Value == 17.49);
             check(displayedUsage.Template.FindName("RangeFill", displayedUsage) is FrameworkElement fill && fill.ActualWidth > 80,

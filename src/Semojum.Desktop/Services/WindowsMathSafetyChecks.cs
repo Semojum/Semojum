@@ -26,6 +26,12 @@ internal static class WindowsMathSafetyChecks
             var rendered = Descendants(dialog).OfType<FormulaControl>().Single();
             check(rendered.Formula == @"\frac{a+b}{2}" && dialog.Translation is not null,
                 "An existing formula displays its LaTeX and renders it with real engine braille");
+            dialog.Input.Text = @"\frac{";
+            await Dispatcher.Yield(DispatcherPriority.Background); dialog.UpdateLayout();
+            var previewError = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "MathPreviewError");
+            check(rendered.Visibility == Visibility.Collapsed && previewError.IsVisible && dialog.BrailleInput.Text == "⠿⠿", "Invalid LaTeX hides the previous formula and preserves manual braille");
+            dialog.Input.Text = @"\frac{a+b}{2}"; await dialog.RefreshAsync(); dialog.UpdateLayout();
+            check(rendered.Visibility == Visibility.Visible && rendered.Formula == @"\frac{a+b}{2}" && !previewError.IsVisible, "A corrected formula restores the real preview");
             check(dialog.BrailleInput.Text == "⠿⠿" && dialog.Edited,
                 "Opening an existing formula displays and marks its manually corrected braille");
             dialog.Input.Text = @"\sqrt{x}";

@@ -13,7 +13,7 @@ namespace Semojum.Desktop.Dialogs;
 
 public sealed class UsageDialog : CompactDialog
 {
-    private sealed record JobRow(string JobId, string FileName, string Status, string BadgeText, string Pages, string Credits, string Finished);
+    private sealed record JobRow(string JobId, string FileName, string Mode, string Status, string BadgeText, string Pages, string Credits, string Finished);
     public string? JobId { get; private set; }
     public string? FileName { get; private set; }
     public bool LogoutRequested { get; private set; }
@@ -42,19 +42,21 @@ public sealed class UsageDialog : CompactDialog
         var periodText = new TextBlock { Height = 16, Margin = new(0, 2, 0, 8), Foreground = (Brush)FindResource("Muted") }; panel.Children.Add(periodText);
         Border Card(UIElement child, double height) => new() { Child = child, Height = height, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8), Background = Brushes.White };
         var summaryPanel = new StackPanel { Margin = new(15, 11, 15, 0) };
+        summaryPanel.Children.Add(new TextBlock { Text = "기관 크레딧", Foreground = (Brush)FindResource("Muted") });
         var summaryRow = new DockPanel { Height = 50 }; summaryPanel.Children.Add(summaryRow);
         var purchase = Button("쪽 구매", () => { new PublicInquiryDialog(api) { Owner = this }.ShowDialog(); return Task.CompletedTask; }, true);
         purchase.Width = 120; purchase.Margin = new(0, 4, 4, 0); purchase.VerticalAlignment = VerticalAlignment.Top; purchase.IsDefault = false;
         purchase.ToolTip = "쪽 구매 문의를 작성합니다."; DockPanel.SetDock(purchase, Dock.Right); summaryRow.Children.Add(purchase);
-        var summary = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold, Width = 110, VerticalAlignment = VerticalAlignment.Top }; summaryRow.Children.Add(summary);
-        var allocated = new TextBlock { FontSize = 14, Margin = new(0, 16, 0, 0), Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Top }; summaryRow.Children.Add(allocated);
-        var usedBar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 8, Style = (Style)FindResource("FlatUsageBar") }; summaryPanel.Children.Add(usedBar);
-        var usage = new TextBlock { Margin = new(0, 8, 0, 0), Foreground = (Brush)FindResource("Muted") }; summaryPanel.Children.Add(usage);
+        var summary = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold, MinWidth = 110, VerticalAlignment = VerticalAlignment.Top }; summaryRow.Children.Add(summary);
+        var allocated = new TextBlock { FontSize = 12, Margin = new(0, 16, 0, 0), Foreground = (Brush)FindResource("Muted"), VerticalAlignment = VerticalAlignment.Top }; summaryRow.Children.Add(allocated);
+        var orgBar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 8, Template = UsageProgressTemplate() }; System.Windows.Automation.AutomationProperties.SetName(orgBar, "기관 크레딧 사용률"); summaryPanel.Children.Add(orgBar);
+        var orgUsage = new TextBlock { Margin = new(0, 4, 0, 0), Foreground = (Brush)FindResource("Muted") }; summaryPanel.Children.Add(orgUsage);
         var cards = new Grid { Margin = new(0, 0, 0, 16) }; cards.ColumnDefinitions.Add(new()); cards.ColumnDefinitions.Add(new() { Width = new(16) }); cards.ColumnDefinitions.Add(new()); panel.Children.Add(cards);
-        var usedPanel = new StackPanel { Margin = new(19, 15, 19, 0) };
-        usedPanel.Children.Add(new TextBlock { Text = "이 기간 사용", Foreground = (Brush)FindResource("Muted") });
+        var usedPanel = new StackPanel { Margin = new(15, 11, 15, 0) };
+        usedPanel.Children.Add(new TextBlock { Text = "내가 쓴 크레딧", Foreground = (Brush)FindResource("Muted") });
         var usedTotal = new TextBlock { FontSize = 28, FontWeight = FontWeights.SemiBold }; usedPanel.Children.Add(usedTotal);
-        usedPanel.Children.Add(new TextBlock { Text = "사용한 쪽수", Foreground = (Brush)FindResource("Muted") }); cards.Children.Add(Card(usedPanel, 116));
+        var usedBar = new ProgressBar { Minimum = 0, Maximum = 100, Height = 8, Template = UsageProgressTemplate() }; System.Windows.Automation.AutomationProperties.SetName(usedBar, "내 크레딧 사용률"); usedPanel.Children.Add(usedBar);
+        var usage = new TextBlock { Margin = new(0, 4, 0, 0), Foreground = (Brush)FindResource("Muted") }; usedPanel.Children.Add(usage); cards.Children.Add(Card(usedPanel, 116));
         var summaryCard = Card(summaryPanel, 116); Grid.SetColumn(summaryCard, 2); cards.Children.Add(summaryCard);
         var period = new Semojum.Desktop.Controls.SegmentedChoice("이 달", "지난 3달", "올해") { Width = 210 };
         var chartPanel = new DockPanel { Margin = new(15, 11, 19, 10) };
@@ -102,20 +104,30 @@ public sealed class UsageDialog : CompactDialog
         var detailActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(detailActions, Dock.Bottom); detailLayout.Children.Add(detailActions);
         var detailBody = new StackPanel(); detailLayout.Children.Add(new ScrollViewer { Content = detailBody, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         var detailCard = new Border { Background = Brushes.White, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8), Child = detailLayout }; Grid.SetColumn(detailCard, 2); inquiryColumns.Children.Add(detailCard);
-        var boardPage = 1; var boardTotal = 0; var inquiryLoaded = false;
-        async Task LoadInquiriesAsync()
+        var boardPage = 1; var boardTotal = 0; var inquiryLoaded = false; var listRequest = 0; var selectionRequest = 0;
+        Button? previousInquiry = null, nextInquiry = null, selectedInquiry = null;
+        void UpdateInquiryActions()
         {
-            var data = await boardClient.ListAsync(boardPage, "TITLE_CONTENT", "", true, Lifetime.Token);
-            if (Lifetime.IsCancellationRequested) return;
-            boardTotal = data.TotalCount; inquiryList.ItemsSource = data.Items; inquiryLoaded = true;
+            if (previousInquiry is not null) previousInquiry.IsEnabled = inquiryLoaded && boardPage > 1;
+            if (nextInquiry is not null) nextInquiry.IsEnabled = inquiryLoaded && (long)boardPage * 10 < boardTotal;
+            if (selectedInquiry is not null) selectedInquiry.IsEnabled = inquiryList.SelectedItem is BoardRow;
+        }
+        void ClearInquiryError() { if (Status.Text.StartsWith("문의 내역을 불러오지 못했습니다.", StringComparison.Ordinal)) Status.Text = ""; }
+        async Task LoadInquiriesAsync(int? requestedPage = null)
+        {
+            var page = requestedPage ?? boardPage; var request = ++listRequest;
+            var data = await boardClient.ListAsync(page, "TITLE_CONTENT", "", true, Lifetime.Token);
+            if (Lifetime.IsCancellationRequested || request != listRequest) return;
+            boardPage = page; boardTotal = data.TotalCount; inquiryList.ItemsSource = data.Items; inquiryLoaded = true; ClearInquiryError();
             if (data.Items.Length > 0) inquiryList.SelectedIndex = 0;
             else { detailTitle.Text = "보낸 문의가 없습니다."; detailMetadata.Text = ""; detailBody.Children.Clear(); }
+            UpdateInquiryActions();
         }
-        async Task ShowInquiryAsync(BoardRow row)
+        async Task ShowInquiryAsync(BoardRow row, int request)
         {
             var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token);
-            if (Lifetime.IsCancellationRequested || !ReferenceEquals(inquiryList.SelectedItem, row)) return;
-            detailTitle.Text = post.Title; detailMetadata.Text = $"{post.CreatedAt}  ·  {(post.Answers.Length > 0 ? "답변 완료" : "답변 대기")}"; detailBody.Children.Clear();
+            if (Lifetime.IsCancellationRequested || request != selectionRequest || !ReferenceEquals(inquiryList.SelectedItem, row)) return;
+            detailTitle.Text = post.Title; detailMetadata.Text = $"{post.CreatedAt}  ·  {(post.Answers.Length > 0 ? "답변 완료" : "답변 대기")}"; detailBody.Children.Clear(); ClearInquiryError();
             void AddMessage(string title, string text)
             {
                 detailBody.Children.Add(new TextBlock { Text = title, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 0, 0, 6) });
@@ -130,11 +142,26 @@ public sealed class UsageDialog : CompactDialog
         }
         var writeInquiry = Button("새 문의", () => SafeInquiryAsync(async () => { var editor = new PostEditorDialog(boardClient, null, workInfo) { Owner = this }; if (editor.ShowDialog() == true) await LoadInquiriesAsync(); }), true);
         PublicDialogDesign.StyleAction(writeInquiry, true); writeInquiry.Width = 108; writeInquiry.Margin = new(0); DockPanel.SetDock(writeInquiry, Dock.Right); inquiryHeading.Children.Insert(0, writeInquiry);
-        inquiryList.SelectionChanged += async (_, _) => { if (inquiryList.SelectedItem is BoardRow row) await SafeInquiryAsync(() => ShowInquiryAsync(row)); };
-        inquiryActions.Children.Add(Button("이전", () => SafeInquiryAsync(async () => { if (boardPage > 1) { boardPage--; await LoadInquiriesAsync(); } })));
-        inquiryActions.Children.Add(Button("다음", () => SafeInquiryAsync(async () => { if (boardPage * 10 < boardTotal) { boardPage++; await LoadInquiriesAsync(); } })));
-        detailActions.Children.Add(Button("상세 열기", () => SafeInquiryAsync(async () => { if (inquiryList.SelectedItem is BoardRow row) { var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token); new PostDialog(boardClient, post, workInfo) { Owner = this }.ShowDialog(); await LoadInquiriesAsync(); } })));
-        detailActions.Children.Add(Button("게시판 열기", () => { new BoardDialog(boardClient, workInfo, initiallyMine: true) { Owner = this }.ShowDialog(); return SafeInquiryAsync(LoadInquiriesAsync); }));
+        inquiryList.SelectionChanged += async (_, _) =>
+        {
+            var request = ++selectionRequest;
+            UpdateInquiryActions();
+            if (inquiryList.SelectedItem is not BoardRow row) return;
+            detailTitle.Text = "문의 내용을 불러오는 중입니다."; detailMetadata.Text = ""; detailBody.Children.Clear();
+            try { await ShowInquiryAsync(row, request); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                if (request != selectionRequest || !ReferenceEquals(inquiryList.SelectedItem, row) || Lifetime.IsCancellationRequested) return;
+                detailTitle.Text = "문의 내용을 불러오지 못했습니다."; detailMetadata.Text = ""; detailBody.Children.Clear();
+                Status.Text = "문의 내역을 불러오지 못했습니다. " + ex.Message;
+            }
+        };
+        previousInquiry = Button("이전", () => SafeInquiryAsync(async () => { if (boardPage > 1) await LoadInquiriesAsync(boardPage - 1); })); inquiryActions.Children.Add(previousInquiry);
+        nextInquiry = Button("다음", () => SafeInquiryAsync(async () => { if ((long)boardPage * 10 < boardTotal) await LoadInquiriesAsync(boardPage + 1); })); inquiryActions.Children.Add(nextInquiry);
+        selectedInquiry = Button("상세 열기", () => SafeInquiryAsync(async () => { if (inquiryList.SelectedItem is BoardRow row) { var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token); new PostDialog(boardClient, post, workInfo) { Owner = this }.ShowDialog(); await LoadInquiriesAsync(); } })); detailActions.Children.Add(selectedInquiry);
+        detailActions.Children.Add(Button("게시판 열기", () => { new BoardDialog(boardClient, workInfo, initiallyMine: true) { Owner = this }.ShowDialog(); return SafeInquiryAsync(() => LoadInquiriesAsync()); }));
+        UpdateInquiryActions();
         tabs.Items.Add(new TabItem { Header = "문의 내역", Content = inquiryScreen }); tabs.Items.Add(new TabItem { Header = "로그아웃" });
         foreach (var tab in tabs.Items.Cast<TabItem>()) { tab.Padding = new(16, 0, 0, 0); }
         var logoutHeader = new StackPanel();
@@ -144,7 +171,7 @@ public sealed class UsageDialog : CompactDialog
         tabs.SelectionChanged += async (_, e) =>
         {
             if (e.Source != tabs) return;
-            if (tabs.SelectedIndex == 3 && !inquiryLoaded) await SafeInquiryAsync(LoadInquiriesAsync);
+            if (tabs.SelectedIndex == 3 && !inquiryLoaded) await SafeInquiryAsync(() => LoadInquiriesAsync());
             else if (tabs.SelectedIndex == 4) { LogoutRequested = true; DialogResult = true; }
         };
         var history = new DockPanel { Margin = new(19, 12, 19, 16) };
@@ -159,7 +186,7 @@ public sealed class UsageDialog : CompactDialog
         var from = new DatePicker { SelectedDate = DateTime.Today.AddDays(-29), Width = 150 }; var to = new DatePicker { SelectedDate = DateTime.Today, Width = 150 };
         dates.Children.Add(from); dates.Children.Add(new TextBlock { Text = " ~ " }); dates.Children.Add(to);
         var jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, Margin = new(0, 12, 0, 0), RowHeight = 40, Style = (Style)FindResource("BoardGrid") };
-        foreach (var (label, property, width) in new[] { ("작업명", "FileName", 250d), ("쪽수", "Pages", 80d), ("크레딧", "Credits", 90d), ("완료", "Finished", 120d) })
+        foreach (var (label, property, width) in new[] { ("작업명", "FileName", 250d), ("모드", "Mode", 100d), ("쪽수", "Pages", 80d), ("크레딧", "Credits", 90d), ("완료", "Finished", 120d) })
             jobs.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(property), Width = width });
         var badge = new FrameworkElementFactory(typeof(Border)); badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(10)); badge.SetValue(Border.BorderThicknessProperty, new Thickness(1));
         badge.SetValue(FrameworkElement.HeightProperty, 20d); badge.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left); badge.SetValue(Border.PaddingProperty, new Thickness(6, 0, 6, 0)); badge.SetValue(Border.BackgroundProperty, Brushes.White);
@@ -169,6 +196,11 @@ public sealed class UsageDialog : CompactDialog
         var badgeText = new FrameworkElementFactory(typeof(TextBlock)); badgeText.SetBinding(TextBlock.TextProperty, new Binding(nameof(JobRow.BadgeText))); badgeText.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(JobRow.Status)) { Converter = color });
         badgeText.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); badgeText.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); badge.AppendChild(badgeText);
         jobs.Columns.Add(new DataGridTemplateColumn { Header = "상태", Width = 150, CellTemplate = new DataTemplate { VisualTree = badge } });
+        jobs.Columns.Add(new DataGridTextColumn { Header = "", Width = new DataGridLength(1, DataGridLengthUnitType.Star), IsReadOnly = true });
+        var openRow = new FrameworkElementFactory(typeof(Button)); openRow.SetValue(ContentProperty, "열기"); openRow.SetValue(HeightProperty, 24d); openRow.SetValue(MinHeightProperty, 0d); openRow.SetValue(PaddingProperty, new Thickness(8, 0, 8, 0));
+        openRow.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty, new Binding(nameof(JobRow.FileName)) { StringFormat = "{0} 열기" });
+        openRow.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler((sender, _) => { if (sender is FrameworkElement { DataContext: JobRow row }) OpenJob(row); }));
+        jobs.Columns.Add(new DataGridTemplateColumn { Header = "", Width = 80, CellTemplate = new DataTemplate { VisualTree = openRow } });
         history.Children.Add(jobs); var historyCard = Card(history, 420); historyCard.Margin = new(0, 0, 0, 16); panel.Children.Add(historyCard);
         var breakdown = new Expander { Header = "일별 사용량과 사용 내역", Content = new StackPanel(), Margin = new(0, 0, 0, 16) };
         ((StackPanel)breakdown.Content).Children.Add(chartCard); ((StackPanel)breakdown.Content).Children.Add(lower); panel.Children.Add(breakdown);
@@ -178,20 +210,23 @@ public sealed class UsageDialog : CompactDialog
             var data = await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/usage/daily?period=" + code, cancellationToken: Lifetime.Token);
             summary.Text = Number(data, "orgRemaining");
             usedTotal.Text = Number(data, "usedCredits");
-            allocated.Text = $"남은 쪽  /  전체 {Number(data, "orgAllocated")}쪽";
+            allocated.Text = $"잔여  /  할당 {Number(data, "orgAllocated")} 크레딧";
             periodText.Text = $"{Value(data, "from")} ~ {Value(data, "to")}";
-            balanceStatus.Text = $"남은 쪽 {Number(data, "orgRemaining")}     |     이 기간 사용 {Number(data, "usedCredits")}";
+            balanceStatus.Text = $"남은 크레딧 {Number(data, "orgRemaining")}     |     이 기간 사용 {Number(data, "usedCredits")}";
             startDate.Text = Value(data, "from"); endDate.Text = Value(data, "to");
-            summary.ToolTip = "기관에 배정된 사용량입니다. 문서 유형과 처리 방식에 따라 한 쪽당 차감량이 달라집니다.";
-            usedBar.Value = data.TryGetProperty("usedPercent", out var percent) && percent.TryGetDouble(out var p) ? Math.Clamp(p, 0, 100) : 0;
-            usage.Text = $"사용 {Number(data, "usedCredits")}쪽 ({Value(data, "usedPercent")}%)";
+            summary.ToolTip = "기관에 남은 크레딧입니다. 문서 유형과 처리 방식에 따라 한 쪽당 차감량이 달라집니다.";
+            var (personalPercent, orgPercent, orgUsed) = UsagePercentages(data);
+            usedBar.Visibility = personalPercent is null ? Visibility.Collapsed : Visibility.Visible; usedBar.Value = personalPercent ?? 0;
+            orgBar.Visibility = orgPercent is null ? Visibility.Collapsed : Visibility.Visible; orgBar.Value = orgPercent ?? 0;
+            usage.Text = personalPercent is null ? "사용률 정보 없음" : $"{Number(data, "usedCredits")} / {Number(data, "orgAllocated")} 크레딧  ·  {personalPercent:0.##}%";
+            orgUsage.Text = orgPercent is null ? "기관 사용률 정보 없음" : $"{orgUsed:#,0.##} / {Number(data, "orgAllocated")} 크레딧  ·  {orgPercent:0.##}%";
             bars.Children.Clear(); var daily = data.GetProperty("daily").EnumerateArray().ToArray(); var maximum = daily.Select(d => d.GetProperty("credits").GetDouble()).DefaultIfEmpty(1).Max();
             foreach (var day in daily)
             {
                 var number = day.GetProperty("credits").GetDouble();
                 bars.Children.Add(new Border { Background = number > 0 ? new SolidColorBrush(Color.FromRgb(0, 95, 184)) : Brushes.LightGray,
                     Height = Math.Max(3, 134.4 * number / Math.Max(1, maximum)), Margin = new(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Bottom,
-                    ToolTip = $"{Value(day, "date")}: {number}쪽" });
+                    ToolTip = $"{Value(day, "date")}: {number} 크레딧" });
             }
             var sourceRows = data.GetProperty("bySource").EnumerateArray().ToArray(); var sourceTotal = sourceRows.Sum(s => s.GetProperty("credits").GetDouble());
             sources.Children.Clear(); sources.Children.Add(new TextBlock { Text = "사용 내역", FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 20) });
@@ -201,7 +236,7 @@ public sealed class UsageDialog : CompactDialog
                 var label = Value(source, "source") switch { "PDF_HWP" => "PDF · HWP", "IMAGE" => "이미지", "TXT" or "TEXT" => "TXT · 새 문서", var other => other };
                 var row = new DockPanel { Height = 32 };
                 row.Children.Add(new TextBlock { Text = label, Width = 120 });
-                row.Children.Add(new TextBlock { Text = $"{Number(source, "credits")}쪽", Width = 70, FontWeight = FontWeights.SemiBold });
+                row.Children.Add(new TextBlock { Text = $"{Number(source, "credits")} 크레딧", Width = 110, FontWeight = FontWeights.SemiBold });
                 row.Children.Add(new ProgressBar { Maximum = 100, Value = share, Height = 8, Style = (Style)FindResource("FlatUsageBar"), VerticalAlignment = VerticalAlignment.Center }); sources.Children.Add(row);
             }
         }
@@ -221,7 +256,8 @@ public sealed class UsageDialog : CompactDialog
         dates.Children.Add(Button("조회", async () => await RunAsync(LoadJobsAsync)));
         var jobsItem = new MenuItem { Header = "작업별 사용 내역" }; jobsItem.Click += async (_, _) => await RunAsync(async () => { tabs.SelectedIndex = 0; await LoadJobsAsync(); historyCard.BringIntoView(); }); viewMenu.Items.Add(jobsItem);
         var usageItem = new MenuItem { Header = "사용량" }; usageItem.Click += (_, _) => { tabs.SelectedIndex = 0; usageScroll.ScrollToTop(); }; viewMenu.Items.Add(usageItem);
-        void Open() { if (jobs.SelectedItem is JobRow j) { JobId = j.JobId; FileName = j.FileName; DialogResult = true; } }
+        void OpenJob(JobRow j) { if (string.IsNullOrWhiteSpace(j.JobId) || j.JobId == "—") return; JobId = j.JobId; FileName = j.FileName; DialogResult = true; }
+        void Open() { if (jobs.SelectedItem is JobRow j) OpenJob(j); }
         jobs.MouseDoubleClick += (_, _) => Open();
         dates.Children.Add(Button("선택 작업 열기", () => { Open(); return Task.CompletedTask; }));
 
@@ -299,7 +335,8 @@ public sealed class UsageDialog : CompactDialog
             text = $"진행 중 {done}/{total}";
         else if (label == "일부 쪽 실패" && total is > 0 && failed is > 0 && failed < total)
             text = $"부분 실패 {failed}쪽";
-        return new JobRow(Value(job, "jobId"), Value(job, "fileName"), label, text,
+        var mode = Value(job, "mode") switch { "c" => "통합 변환", "b" => "점역 변환", var other => other };
+        return new JobRow(Value(job, "jobId"), Value(job, "fileName"), mode, label, text,
             Value(job, "donePages") + "/" + Value(job, "totalPages"), Value(job, "credits"), Value(job, "finishedAt"));
     }
     private static int? Count(JsonElement job, string name) =>
@@ -312,6 +349,28 @@ public sealed class UsageDialog : CompactDialog
         });
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
-    private static string Number(JsonElement j, string field) => j.TryGetProperty(field, out var v) && v.TryGetDecimal(out var n) ? n.ToString("#,0.##") : "—";
+    internal static (double? Personal, double? Organization, decimal? OrganizationUsed) UsagePercentages(JsonElement data)
+    {
+        static decimal? Read(JsonElement element, string key) => element.TryGetProperty(key, out var field) && field.ValueKind == JsonValueKind.Number && field.TryGetDecimal(out var n) && n >= 0 ? n : null;
+        var allocated = Read(data, "orgAllocated"); var remaining = Read(data, "orgRemaining"); var used = Read(data, "usedCredits"); var reported = Read(data, "usedPercent");
+        if (allocated is not { } total || total <= 0) return (null, null, null);
+        double? personal = null; double? organization = null; decimal? organizationUsed = null;
+        if (used is { } myUsed && myUsed <= total && reported is >= 0 and <= 100 && Math.Abs((double)(myUsed / total * 100 - reported.Value)) <= .11)
+            personal = (double)reported.Value;
+        if (remaining is { } rest && rest <= total)
+        { organizationUsed = total - rest; organization = (double)(organizationUsed.Value / total * 100); }
+        return (personal, organization, organizationUsed);
+    }
+    private static ControlTemplate UsageProgressTemplate()
+    {
+        var template = new ControlTemplate(typeof(ProgressBar));
+        var track = new FrameworkElementFactory(typeof(Border), "UsageTrack"); track.SetValue(Border.BackgroundProperty, ColorBrush("#EDEFF3")); track.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+        var fill = new FrameworkElementFactory(typeof(Border), "RangeFill"); fill.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Left); fill.SetValue(Border.BackgroundProperty, ColorBrush("#5B8DEF")); fill.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+        var width = new MultiBinding { Converter = new Semojum.Desktop.Controls.ProgressWidthConverter() };
+        width.Bindings.Add(new Binding("ActualWidth") { ElementName = "UsageTrack" });
+        foreach (var property in new[] { "Value", "Minimum", "Maximum" }) width.Bindings.Add(new Binding(property) { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
+        fill.SetBinding(WidthProperty, width); track.AppendChild(fill); template.VisualTree = track; return template;
+    }
+    private static string Number(JsonElement j, string field) => j.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var n) ? n.ToString("#,0.##") : "—";
     private static string Value(JsonElement j, string field) => j.TryGetProperty(field, out var v) && v.ValueKind != JsonValueKind.Null ? v.ToString() : "—";
 }
