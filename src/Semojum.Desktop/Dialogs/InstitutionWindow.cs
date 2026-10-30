@@ -29,9 +29,11 @@ public sealed partial class InstitutionWindow : CompactDialog
     internal DataGrid Orders { get; }
     internal DataGrid Notices { get; }
     internal DataGrid Requests { get; }
+    internal Expander RequestsExpander { get; }
     internal Button CancelRequest { get; }
     internal Button Receipt { get; }
     internal Button NoticeDetail { get; }
+    internal Button OrderDetail { get; }
     internal TextBlock ReceiptAddress { get; } = new() { Foreground = ExportRangeDialog.Brush("#5F5F5F") };
     internal TextBlock SessionIdentity { get; } = new() { Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
     internal TextBlock StatusSummary { get; } = new() { Text = "기관 정보 없음", Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -74,13 +76,13 @@ public sealed partial class InstitutionWindow : CompactDialog
         var middle = new Grid { Margin = new(0, 0, 0, 16) }; middle.ColumnDefinitions.Add(new()); middle.ColumnDefinitions.Add(new()); content.Children.Add(middle);
         var graph = new StackPanel(); graph.Children.Add(new ScrollViewer { Content = Chart, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled }); graph.Children.Add(ChartEmpty);
         var graphCard = Card("월별 사용 추이", graph); graphCard.Margin = new(0, 0, 8, 0); graphCard.MinHeight = 230; middle.Children.Add(graphCard);
-        Notices = Table(("받은 날", "CreatedAt"), ("분류", "Scope"), ("제목", "Title"));
-        Notices.MouseDoubleClick += (_, _) => { if (Notices.SelectedItem is InstitutionNotice n) NoticeDialog.Choose(this, n.Title, n.Body, ["닫기"]); };
-        NoticeDetail = Button("선택한 공지 보기", () => { if (Notices.SelectedItem is InstitutionNotice n) NoticeDialog.Choose(this, n.Title, n.Body, ["닫기"]); return Task.CompletedTask; }); NoticeDetail.Height = 32; NoticeDetail.IsEnabled = false;
+        Notices = Table(("받은 날", "CreatedAt"), ("제목", "Title")); Notices.Columns.Insert(1, StatusColumn("분류", "Scope", "notice"));
+        Notices.MouseDoubleClick += async (_, _) => { if (Notices.SelectedItem is InstitutionNotice n) await OpenNoticeAsync(n); };
+        NoticeDetail = Button("선택한 공지 보기", async () => { if (Notices.SelectedItem is InstitutionNotice n) await OpenNoticeAsync(n); }); NoticeDetail.Height = 32; NoticeDetail.IsEnabled = false;
         Notices.SelectionChanged += (_, _) => NoticeDetail.IsEnabled = Notices.SelectedItem is InstitutionNotice;
         var noticeCard = Card("공지", Notices, NoticeDetail); noticeCard.Margin = new(8, 0, 0, 0); noticeCard.MinHeight = 230; Grid.SetColumn(noticeCard, 1); middle.Children.Add(noticeCard);
         AccountRequest = Button("＋ 계정 발급 요청", () => RequestAccountAsync()); AccountRequest.Height = 32; AccountRequest.IsEnabled = false; AccountRequest.ToolTip = "기관 정보를 불러온 뒤 요청할 수 있습니다.";
-        Accounts = Table(("계정 ID", "LoginId"), ("별칭", "Alias"), ("상태", "Status"), ("마지막 로그인", "LastLoginAt"), ("사용", "UsedCredits"));
+        Accounts = Table(("계정 ID", "LoginId"), ("별칭", "Alias"), ("마지막 로그인", "LastLoginAt"), ("사용", "UsedCredits")); Accounts.Columns.Insert(2, StatusColumn("상태", "Status", "account"));
         var accountAction = new FrameworkElementFactory(typeof(Button)); accountAction.SetValue(ContentProperty, "상세"); accountAction.SetValue(HeightProperty, 24d); accountAction.SetValue(MinHeightProperty, 0d); accountAction.SetValue(PaddingProperty, new Thickness(6, 0, 6, 0));
         accountAction.SetBinding(AutomationProperties.NameProperty, new Binding("LoginId") { StringFormat = "계정 {0} 상세" });
         accountAction.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler(async (sender, _) => { if (sender is FrameworkElement { DataContext: InstitutionAccount item }) await OpenAccountAsync(item); }));
@@ -94,11 +96,18 @@ public sealed partial class InstitutionWindow : CompactDialog
         Requests = Table(("요청일", "CreatedAt"), ("유형", "Type"), ("상태", "Status"), ("내용", "Message"));
         CancelRequest = Button("선택한 요청 취소", () => CancelSelectedRequestAsync()); CancelRequest.Height = 32; CancelRequest.IsEnabled = false;
         Requests.SelectionChanged += (_, _) => CancelRequest.IsEnabled = Requests.SelectedItem is InstitutionRequest { Status: "OPEN", Type: "CREDIT_ADD" or "ACCOUNT_ISSUE" or "ERROR_REPORT" };
-        var requestsCard = Card("요청 내역", Requests, CancelRequest); requestsCard.Margin = new(0, 0, 0, 16); content.Children.Add(requestsCard);
+        var requestsCard = Card("요청 내역", Requests, CancelRequest); requestsCard.Margin = new(0, 4, 0, 0);
+        RequestsExpander = new Expander { Header = "요청 내역", Content = requestsCard, IsExpanded = false, Style = new Style(typeof(Expander)), Margin = new(0, 0, 0, 16) };
+        AutomationProperties.SetName(RequestsExpander, "기관 요청 내역");
         Orders = Table(("일자", "OrderDate"), ("내용", "Description"), ("금액", "AmountKrw"), ("결제일", "PaidAt"), ("계산서", "InvoiceStatus"));
+        Orders.MouseDoubleClick += async (_, _) => { if (Orders.SelectedItem is InstitutionOrder order) await OpenOrderAsync(order); };
+        OrderDetail = Button("선택한 주문 상세", async () => { if (Orders.SelectedItem is InstitutionOrder order) await OpenOrderAsync(order); }); OrderDetail.Height = 32; OrderDetail.IsEnabled = false;
         Receipt = Button("선택한 증빙 열기", () => OpenReceiptAsync()); Receipt.Height = 32; Receipt.IsEnabled = false;
-        Orders.SelectionChanged += (_, _) => Receipt.IsEnabled = Orders.SelectedItem is InstitutionOrder { ReceiptFileName: not null };
-        var orderCard = Card("주문 내역", Orders, ReceiptAddress, Receipt); orderCard.MinHeight = 202; content.Children.Add(orderCard);
+        Orders.SelectionChanged += (_, _) => { OrderDetail.IsEnabled = Orders.SelectedItem is InstitutionOrder; Receipt.IsEnabled = Orders.SelectedItem is InstitutionOrder { ReceiptFileName: not null }; };
+        var orderActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        OrderDetail.Width = 144; Receipt.Width = 144; orderActions.Children.Add(OrderDetail); orderActions.Children.Add(Receipt);
+        var orderCard = Card("주문 내역", Orders, ReceiptAddress, orderActions); orderCard.MinHeight = 202; content.Children.Add(orderCard);
+        content.Children.Add(RequestsExpander);
         Refresh = Button("새로 고침", () => RefreshAsync()); Refresh.Height = 32; content.Children.Add(Refresh);
         Loaded += async (_, _) => await RefreshAsync();
     }
@@ -134,6 +143,17 @@ public sealed partial class InstitutionWindow : CompactDialog
         var card = Card(title, children);
         if (card.Child is StackPanel panel && panel.Children[0] is TextBlock heading) { heading.FontSize = 12; heading.FontWeight = FontWeights.Normal; heading.Foreground = ExportRangeDialog.Brush("#5F5F5F"); }
         return card;
+    }
+    private static DataGridTemplateColumn StatusColumn(string title, string property, string kind)
+    {
+        var pill = new FrameworkElementFactory(typeof(Border)); pill.SetValue(Border.BackgroundProperty, Brushes.White); pill.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        pill.SetValue(Border.CornerRadiusProperty, new CornerRadius(9)); pill.SetValue(HeightProperty, 18d); pill.SetValue(MinWidthProperty, 40d);
+        pill.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Left); pill.SetValue(Border.PaddingProperty, new Thickness(8, 0, 8, 0));
+        pill.SetBinding(Border.BorderBrushProperty, new Binding(property) { Converter = new InstitutionStatusBrushConverter(), ConverterParameter = kind });
+        var text = new FrameworkElementFactory(typeof(TextBlock)); text.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); text.SetValue(FontSizeProperty, 12d);
+        text.SetBinding(TextBlock.TextProperty, new Binding(property) { Converter = new InstitutionStatusTextConverter(), ConverterParameter = kind });
+        text.SetBinding(TextBlock.ForegroundProperty, new Binding(property) { Converter = new InstitutionStatusBrushConverter(), ConverterParameter = kind });
+        pill.AppendChild(text); return new DataGridTemplateColumn { Header = title, Width = new DataGridLength(1, DataGridLengthUnitType.Star), CellTemplate = new DataTemplate { VisualTree = pill } };
     }
     private static DataGrid Table(params (string Label, string Path)[] columns)
     {

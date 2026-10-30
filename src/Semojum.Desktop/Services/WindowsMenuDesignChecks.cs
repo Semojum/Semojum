@@ -1,9 +1,12 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Semojum.Core;
 using Semojum.Desktop.Dialogs;
@@ -31,6 +34,56 @@ internal static class WindowsMenuDesignChecks
             if (popupBorder is not null && Environment.GetEnvironmentVariable("MENU_MAIN_CAPTURE") is { Length: > 0 } mainCapture)
                 await WindowsSmoke.RenderElementAsync(popupBorder, mainCapture);
             menus[0].IsSubmenuOpen = false;
+
+            var originalLeft = window.Left; var originalTop = window.Top;
+            window.Width = 480; window.UpdateLayout();
+            MoveToWorkEdge(window, false);
+
+            menus[2].IsSubmenuOpen = true;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            size.IsSubmenuOpen = true;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var nestedPopup = size.Template.FindName("PART_Popup", size) as Popup;
+            var nestedBorder = nestedPopup?.Child as Border;
+            check(nestedBorder is { ActualWidth: 220 } && nestedPopup!.IsOpen, "Font-size submenu opens at Figma's 220-pixel width");
+            check(nestedBorder?.Effect is DropShadowEffect { BlurRadius: 16, ShadowDepth: 8, Opacity: 0.14 } && nestedBorder.Margin == new Thickness(20) && nestedPopup is { Placement: PlacementMode.Custom, CustomPopupPlacementCallback: not null },
+                "Nested menu reserves its shadow margin without displacing its content");
+            if (nestedBorder is not null)
+            {
+                var parentLeft = size.PointToScreen(new Point());
+                var parentRight = size.PointToScreen(new Point(size.ActualWidth, 0));
+                var left = nestedBorder.PointToScreen(new Point());
+                var right = nestedBorder.PointToScreen(new Point(nestedBorder.ActualWidth, 0));
+                var gap = Math.Abs(left.X - parentRight.X);
+                check(gap <= 2, $"Right-opening submenu is adjacent (gap {gap:0.0}px; parent {parentLeft.X:0.0}..{parentRight.X:0.0}; submenu {left.X:0.0}..{right.X:0.0}; dpi {VisualTreeHelper.GetDpi(size).DpiScaleX:0.00}/{VisualTreeHelper.GetDpi(nestedPopup!).DpiScaleX:0.00})");
+                await CheckPointerAsync(size, "right-opening", directory, check);
+            }
+            if (nestedBorder is not null && Environment.GetEnvironmentVariable("MENU_NESTED_CAPTURE") is { Length: > 0 } nestedCapture)
+                await WindowsSmoke.RenderElementAsync(nestedBorder, nestedCapture);
+            size.IsSubmenuOpen = false;
+            menus[2].IsSubmenuOpen = false;
+
+            // Exercise WPF's automatic right-edge flip with the real popup HWND.
+            MoveToWorkEdge(window, true);
+            menus[2].IsSubmenuOpen = true;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            size.IsSubmenuOpen = true;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            nestedPopup = size.Template.FindName("PART_Popup", size) as Popup;
+            nestedBorder = nestedPopup?.Child as Border;
+            if (nestedBorder is not null)
+            {
+                var start = size.PointToScreen(new Point(0, 0));
+                var parentRight = size.PointToScreen(new Point(size.ActualWidth, 0));
+                var surfaceLeft = nestedBorder.PointToScreen(new Point(0, 0));
+                var surfaceRight = nestedBorder.PointToScreen(new Point(nestedBorder.ActualWidth, 0));
+                var gap = Math.Abs(surfaceRight.X - start.X);
+                check(gap <= 2, $"Nested menu stays adjacent to its parent at the screen edge (gap {gap:0.0}px; parent {start.X:0.0}..{parentRight.X:0.0}; submenu {surfaceLeft.X:0.0}..{surfaceRight.X:0.0})");
+                await CheckPointerAsync(size, "flipped", directory, check);
+            }
+            else check(false, "Nested menu is visible at the screen edge");
+            size.IsSubmenuOpen = false; menus[2].IsSubmenuOpen = false;
+            window.Width = 1440; window.Left = originalLeft; window.Top = originalTop; window.UpdateLayout();
 
             var textMenu = window.PageEditor.Editor.ContextMenu; textMenu.PlacementTarget = window.PageEditor.Editor; textMenu.IsOpen = true;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); textMenu.UpdateLayout();
@@ -104,10 +157,52 @@ internal static class WindowsMenuDesignChecks
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }
+    private static async Task CheckPointerAsync(MenuItem parent, string direction, string directory, Action<bool, string> check)
+    {
+        GetCursorPos(out var cursor);
+        try
+        {
+            var from = parent.PointToScreen(new Point(parent.ActualWidth / 2, parent.ActualHeight / 2));
+            var first = parent.Items.OfType<MenuItem>().First();
+            var to = first.PointToScreen(new Point(first.ActualWidth / 2, first.ActualHeight / 2));
+            for (var i = 0; i <= 12; i++)
+            {
+                SetCursorPos((int)(from.X + (to.X - from.X) * i / 12), (int)(from.Y + (to.Y - from.Y) * i / 12));
+                await Task.Delay(25);
+            }
+            GetCursorPos(out var actualCursor);
+            if (Math.Abs(actualCursor.X - to.X) <= 2 && Math.Abs(actualCursor.Y - to.Y) <= 2)
+                check(parent.IsSubmenuOpen && first.IsHighlighted, $"Pointer can move to the {direction} submenu without closing it");
+            else
+                System.IO.File.AppendAllText(System.IO.Path.Combine(directory, "menu-pointer-unavailable.txt"), $"SKIP {direction}: Requested {to}; actual {actualCursor.X},{actualCursor.Y}. Pointer movement is unavailable.\n");
+        }
+        finally { SetCursorPos(cursor.X, cursor.Y); }
+    }
+
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {
         yield return parent;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
             foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, i))) yield return child;
     }
+    [StructLayout(LayoutKind.Sequential)] private struct CursorPosition { public int X; public int Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)] private struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
+    private static void MoveToWorkEdge(Window window, bool right)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(MonitorFromWindow(handle, 2), ref info) || !GetWindowRect(handle, out var bounds))
+            throw new InvalidOperationException("Cannot determine the active monitor work area for the menu test.");
+        var x = right ? info.Work.Right - (bounds.Right - bounds.Left) : info.Work.Left;
+        if (!SetWindowPos(handle, IntPtr.Zero, x, info.Work.Top, 0, 0, 0x0001 | 0x0004 | 0x0010))
+            throw new InvalidOperationException("Cannot position the menu test window.");
+        window.UpdateLayout();
+    }
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPosition point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
 }

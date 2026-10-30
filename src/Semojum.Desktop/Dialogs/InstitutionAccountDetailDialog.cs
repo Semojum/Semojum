@@ -22,7 +22,8 @@ internal sealed class InstitutionAccountDetailDialog : CompactDialog
         var close = new Button { Width = 28, Height = 28, MinWidth = 0, MinHeight = 0, Padding = new(0), Background = Brushes.Transparent, BorderBrush = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Right,
             Content = ExportRangeDialog.DesignIcon("institution-account-detail-close.svg", 16, 16), Template = ExportRangeDialog.SurfaceTemplate(0) };
         AutomationProperties.SetName(close, "닫기"); close.Click += (_, _) => Close(); header.Children.Add(close); layout.Children.Add(header);
-        var body = new StackPanel { Margin = new(24, 15, 24, 0) }; Grid.SetRow(body, 1); layout.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var body = new StackPanel { Margin = new(24, 15, 24, 0) };
+        var bodyScroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(bodyScroll, 1); layout.Children.Add(bodyScroll);
         void Section(string title, params (string Label, string Value)[] fields)
         {
             body.Children.Add(new TextBlock { Text = title, Foreground = ExportRangeDialog.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
@@ -38,7 +39,8 @@ internal sealed class InstitutionAccountDetailDialog : CompactDialog
         Section("계정", ("별칭", account.Alias ?? "정보 없음"), ("메일", "제공되지 않음"), ("만든 날", "제공되지 않음"));
         Section("이 달 쓴 양", ("크레딧", account.UsedCredits.ToString("N0")), ("마지막 로그인", account.LastLoginAt ?? "정보 없음"));
         body.Children.Add(new TextBlock { Text = $"최근 작업 · {jobs.From} ~ {jobs.To}", Foreground = ExportRangeDialog.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        Jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, HeadersVisibility = DataGridHeadersVisibility.Column, BorderThickness = new(0), Background = ExportRangeDialog.Brush("#F9F9F9"), ItemsSource = jobs.Items, MinHeight = 100, MaxHeight = 150 };
+        Jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, HeadersVisibility = DataGridHeadersVisibility.None, BorderThickness = new(0), Background = ExportRangeDialog.Brush("#F9F9F9"),
+            GridLinesVisibility = DataGridGridLinesVisibility.None, RowHeight = 32, Style = (Style)FindResource("BoardGrid"), ItemsSource = jobs.Items, MinHeight = 100, MaxHeight = 150 };
         foreach (var (label, path) in new[] { ("파일", "FileName"), ("쪽", "TotalPages"), ("크레딧", "Credits") }) Jobs.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(path) { TargetNullValue = "—" }, Width = new(1, DataGridLengthUnitType.Star) });
         AutomationProperties.SetName(Jobs, "해당 계정의 최근 작업"); body.Children.Add(Jobs);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 24, 0) }; Grid.SetRow(actions, 2); layout.Children.Add(actions);

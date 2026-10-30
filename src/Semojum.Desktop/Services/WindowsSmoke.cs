@@ -32,8 +32,8 @@ internal static class WindowsSmoke
         Check(window.PageEditor.Editor.ActualWidth > 250 && window.Braille.ActualWidth > 250, "Three-panel layout has usable editor widths");
         Check(window.LineStrip.ActualHeight == 64 && Math.Abs(window.LineStrip.ActualWidth - window.PanelGrid.ActualWidth) < 2,
             "Figma line translation strip spans all panels at 64px");
-        Check(window.SourceHeader.ActualHeight == 36 && window.ZoomPicker.ActualHeight == 32,
-            "Figma panel headers and toolbar controls retain compact geometry");
+        Check(window.SourceHeader.ActualHeight == 36 && window.StatusZoom.ActualHeight > 0 && window.ZoomSlider.ActualWidth == 106,
+            "Figma panel headers and status-bar zoom controls retain compact geometry");
         Check(window.Braille.GridView.Items.Count > 0 && window.Braille.GridView.ActualHeight > 100,
             "Service plan braille grid renders editable block coordinates");
         foreach (var icon in new[] { window.CutIcon, window.DraftIcon, window.LinenoIcon })

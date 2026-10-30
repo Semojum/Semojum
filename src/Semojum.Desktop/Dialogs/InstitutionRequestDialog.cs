@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Controls.Primitives;
 
 namespace Semojum.Desktop.Dialogs;
 
@@ -44,10 +45,36 @@ internal sealed class InstitutionRequestDialog : CompactDialog
         }
         else
         {
-            Field(0, "크레딧", First);
+            var number = new Grid { Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
+            number.ColumnDefinitions.Add(new()); number.ColumnDefinitions.Add(new() { Width = new(22) });
+            AutomationProperties.SetName(First, "크레딧"); number.Children.Add(First);
+            var spin = new Grid(); spin.RowDefinitions.Add(new()); spin.RowDefinitions.Add(new()); Grid.SetColumn(spin, 1); number.Children.Add(spin);
+            void AddSpin(int row, int delta, string label, string asset, double width, double height)
+            {
+                var icon = ExportRangeDialog.DesignIcon(asset, width, height);
+                if (delta > 0) { icon.RenderTransformOrigin = new(.5, .5); icon.RenderTransform = new ScaleTransform(1, -1); }
+                var button = new Button { Content = icon, Height = 15, MinHeight = 0, MinWidth = 0, Padding = new(0), Margin = new(0), Background = ExportRangeDialog.Brush("#F0F0F0"), BorderBrush = Brushes.Transparent, Template = ExportRangeDialog.SurfaceTemplate(0) };
+                AutomationProperties.SetName(button, label); button.Click += (_, _) =>
+                {
+                    var parsed = int.TryParse(First.Text.Replace(",", "").Trim(), out var value) && value > 0 ? value : 0;
+                    First.Text = Math.Clamp((long)parsed + delta, 1, int.MaxValue).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                };
+                Grid.SetRow(button, row); spin.Children.Add(button);
+            }
+            AddSpin(0, 1, "크레딧 1 증가", "institution-credit-spin-up.svg", 9.60063, 5.19934);
+            AddSpin(1, -1, "크레딧 1 감소", "institution-credit-spin-down.svg", 16, 16);
+            Field(0, "크레딧", number); number.HorizontalAlignment = HorizontalAlignment.Left;
             Field(1, "예상 금액", new TextBlock { Text = "금액 정보가 제공되지 않았습니다.", Foreground = ExportRangeDialog.Brush("#5F5F5F"), VerticalAlignment = VerticalAlignment.Center });
             Option.ItemsSource = new[] { "기관 명의 발행", "개인 명의 발행", "발행 안 함" }; Option.SelectedIndex = 0; Field(2, "세금계산서", Option);
         }
+        Option.Width = 240; Option.HorizontalAlignment = HorizontalAlignment.Left; Option.ItemContainerStyle = ChoiceItemStyle();
+        Option.Loaded += (_, _) =>
+        {
+            Option.ApplyTemplate();
+            if (Option.Template.FindName("PART_Popup", Option) is Popup { Child: Border surface })
+            { surface.Background = ExportRangeDialog.Brush("#FBFBFB"); surface.BorderBrush = ExportRangeDialog.Brush("#EAEAEA"); surface.CornerRadius = new(6); surface.Padding = new(3, 6, 3, 6);
+                surface.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 8, ShadowDepth = 8, Direction = 270, Opacity = .14 }; }
+        };
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 24, 0) }; Grid.SetRow(actions, 2); layout.Children.Add(actions);
         var cancel = Button("취소", () => { Close(); return Task.CompletedTask; }); cancel.Width = 88; cancel.Height = 32; actions.Children.Add(cancel);
         Submit = Button("요청 보내기", async () => await RunAsync(async () =>
@@ -65,5 +92,20 @@ internal sealed class InstitutionRequestDialog : CompactDialog
             }
             await submit(message); SubmissionMessage = message; DialogResult = true;
         }), true); Submit.Width = 110; Submit.Height = 32; actions.Children.Add(Submit);
+    }
+    private static Style ChoiceItemStyle()
+    {
+        var style = new Style(typeof(ComboBoxItem));
+        style.Setters.Add(new Setter(HeightProperty, 32d)); style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(12, 0, 12, 0)));
+        style.Setters.Add(new Setter(Control.ForegroundProperty, ExportRangeDialog.Brush("#1A1A1A")));
+        var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty)); border.SetValue(Border.PaddingProperty, new TemplateBindingExtension(Control.PaddingProperty));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(content);
+        style.Setters.Add(new Setter(Control.TemplateProperty, new ControlTemplate(typeof(ComboBoxItem)) { VisualTree = border }));
+        foreach (var property in new[] { ComboBoxItem.IsSelectedProperty, ComboBoxItem.IsHighlightedProperty })
+        {
+            var trigger = new Trigger { Property = property, Value = true }; trigger.Setters.Add(new Setter(Control.BackgroundProperty, ExportRangeDialog.Brush("#F0F0F0"))); style.Triggers.Add(trigger);
+        }
+        return style;
     }
 }

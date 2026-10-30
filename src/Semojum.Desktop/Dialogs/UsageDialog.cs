@@ -13,7 +13,7 @@ namespace Semojum.Desktop.Dialogs;
 
 public sealed class UsageDialog : CompactDialog
 {
-    private sealed record JobRow(string JobId, string FileName, string Status, string Pages, string Credits, string Finished);
+    private sealed record JobRow(string JobId, string FileName, string Status, string BadgeText, string Pages, string Credits, string Finished);
     public string? JobId { get; private set; }
     public string? FileName { get; private set; }
     public bool LogoutRequested { get; private set; }
@@ -163,9 +163,11 @@ public sealed class UsageDialog : CompactDialog
             jobs.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(property), Width = width });
         var badge = new FrameworkElementFactory(typeof(Border)); badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(10)); badge.SetValue(Border.BorderThicknessProperty, new Thickness(1));
         badge.SetValue(FrameworkElement.HeightProperty, 20d); badge.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left); badge.SetValue(Border.PaddingProperty, new Thickness(6, 0, 6, 0)); badge.SetValue(Border.BackgroundProperty, Brushes.White);
+        badge.SetBinding(FrameworkElement.ToolTipProperty, new Binding(nameof(JobRow.BadgeText)));
         var color = new StatusBadgeBrushConverter(); badge.SetBinding(Border.BorderBrushProperty, new Binding(nameof(JobRow.Status)) { Converter = color });
-        var badgeText = new FrameworkElementFactory(typeof(TextBlock)); badgeText.SetBinding(TextBlock.TextProperty, new Binding(nameof(JobRow.Status))); badgeText.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(JobRow.Status)) { Converter = color });
-        badgeText.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); badge.AppendChild(badgeText);
+        badge.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty, new Binding(nameof(JobRow.BadgeText)));
+        var badgeText = new FrameworkElementFactory(typeof(TextBlock)); badgeText.SetBinding(TextBlock.TextProperty, new Binding(nameof(JobRow.BadgeText))); badgeText.SetBinding(TextBlock.ForegroundProperty, new Binding(nameof(JobRow.Status)) { Converter = color });
+        badgeText.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); badgeText.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); badge.AppendChild(badgeText);
         jobs.Columns.Add(new DataGridTemplateColumn { Header = "상태", Width = 150, CellTemplate = new DataTemplate { VisualTree = badge } });
         history.Children.Add(jobs); var historyCard = Card(history, 420); historyCard.Margin = new(0, 0, 0, 16); panel.Children.Add(historyCard);
         var breakdown = new Expander { Header = "일별 사용량과 사용 내역", Content = new StackPanel(), Margin = new(0, 0, 0, 16) };
@@ -207,9 +209,7 @@ public sealed class UsageDialog : CompactDialog
         {
             if (from.SelectedDate is not { } start || to.SelectedDate is not { } end || start > end) throw new ArgumentException("조회 시작일과 종료일을 확인해 주세요.");
             var data = await api.SendAuthenticatedAsync(HttpMethod.Get, $"/api/users/usage/jobs?from={start:yyyy-MM-dd}&to={end:yyyy-MM-dd}", cancellationToken: Lifetime.Token);
-            jobs.ItemsSource = data.GetProperty("items").EnumerateArray().Select(j => new JobRow(Value(j, "jobId"), Value(j, "fileName"),
-                StatusLabel(Value(j, "status"), Value(j, "failedPages") is not ("—" or "0")),
-                Value(j, "donePages") + "/" + Value(j, "totalPages"), Value(j, "credits"), Value(j, "finishedAt"))).ToArray();
+            jobs.ItemsSource = data.GetProperty("items").EnumerateArray().Select(ReadJobRow).ToArray();
         }
         period.SelectionChanged += async (_, _) => await RunAsync(LoadUsageAsync);
         range.SelectionChanged += async (_, _) => await RunAsync(async () =>
@@ -284,6 +284,26 @@ public sealed class UsageDialog : CompactDialog
         "COMPLETED" or "DONE" => failed ? "일부 쪽 실패" : "완료", "FAILED" => "변환 실패", "PARTIALLY_COMPLETED" or "PARTIAL_SUCCESS" => "일부 쪽 실패",
         "CANCELLED" or "CANCELED" => "취소됨", "PENDING" or "QUEUED" => "대기 중", "IN_PROGRESS" or "PROCESSING" => "변환 중", _ => "상태 확인 필요"
     };
+    private static JobRow ReadJobRow(JsonElement job)
+    {
+        var status = Value(job, "status");
+        var total = Count(job, "totalPages");
+        var done = Count(job, "donePages");
+        var failed = Count(job, "failedPages");
+        var hasFailedValue = job.TryGetProperty("failedPages", out var rawFailed) && rawFailed.ValueKind != JsonValueKind.Null;
+        var invalidFailed = hasFailedValue && (failed is null || total is > 0 && failed > total ||
+            (status is "COMPLETED" or "DONE") && total is > 0 && failed == total);
+        var label = (status is "COMPLETED" or "DONE") && invalidFailed ? "상태 확인 필요" : StatusLabel(status, failed is > 0);
+        var text = label;
+        if (label == "변환 중" && total is > 0 && done is >= 0 && done <= total)
+            text = $"진행 중 {done}/{total}";
+        else if (label == "일부 쪽 실패" && total is > 0 && failed is > 0 && failed < total)
+            text = $"부분 실패 {failed}쪽";
+        return new JobRow(Value(job, "jobId"), Value(job, "fileName"), label, text,
+            Value(job, "donePages") + "/" + Value(job, "totalPages"), Value(job, "credits"), Value(job, "finishedAt"));
+    }
+    private static int? Count(JsonElement job, string name) =>
+        job.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var count) && count >= 0 ? count : null;
     private sealed class StatusBadgeBrushConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => ColorBrush((value as string) switch

@@ -38,6 +38,7 @@ internal static class WindowsQa4Checks
         await WindowsMenuDesignChecks.RunAsync(directory, check);
         WindowsEditorDialogDesignChecks.Run(owner, check);
         await WindowsPanelDesignChecks.RunAsync(directory, check);
+        await WindowsStatusZoomChecks.RunAsync(directory, check);
         await WindowsFormDesignChecks.RunAsync(check);
         WindowsFooterFormulaDesignChecks.Run(owner, check);
         WindowsVisualDescriptionDesignChecks.Run(owner, check);
@@ -85,6 +86,7 @@ internal static class WindowsQa4Checks
         await WindowsLogoutDocumentSafetyChecks.RunAsync(check);
         await WindowsInstitutionClientChecks.RunAsync(check);
         await WindowsInstitutionDesignChecks.RunAsync(check);
+        await WindowsInstitutionVisualChecks.RunAsync(check);
         WindowsLoginDesignChecks.Run(check);
         WindowsAccountChecks.CheckLoginNetworkMessage(owner, check);
         WindowsAccountChecks.CheckInstitutionLoginRouting(owner, check);

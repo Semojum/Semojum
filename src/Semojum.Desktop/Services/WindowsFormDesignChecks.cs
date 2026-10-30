@@ -61,6 +61,8 @@ internal static class WindowsFormDesignChecks
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); deletion.UpdateLayout();
             check(deletion.Width == 380 && deletion.Height == 218 && HasIcon(deletion, "form-delete-close.svg"), "Deletion confirmation matches the Figma modal and close icon");
+            var actionFooter = Descendants(deletion).OfType<Border>().Single(b => b.Child is StackPanel panel && panel.Children.OfType<Button>().Any(button => Equals(button.Content, "지우기")));
+            check(actionFooter.BorderThickness == new Thickness(0), "Form deletion confirmation has no footer divider, matching the Figma screen");
             check(Descendants(deletion).OfType<TextBlock>().Any(t => t.Text.Contains("이미 변환한 문서", StringComparison.Ordinal)), "Deletion confirmation explains that existing documents remain");
             if (Environment.GetEnvironmentVariable("FORM_DELETE_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(deletion, capture);
         }

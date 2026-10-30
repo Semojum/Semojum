@@ -509,6 +509,8 @@ public partial class MainWindow : Window
         FontSizeLabel.SelectedItem = choice;
         var percent = (SourceEditor.FontSize / 14 * 100).ToString("0") + "%";
         if (ZoomPicker.Text != percent) ZoomPicker.Text = percent;
+        ZoomPercent.Text = percent;
+        ZoomSlider.Value = SourceEditor.FontSize <= 14 ? (SourceEditor.FontSize - 10) * 50 / 4 : 50 + (SourceEditor.FontSize - 14) * 50 / 18;
         }
         finally { settingFontSize = false; }
     }

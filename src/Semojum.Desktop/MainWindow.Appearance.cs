@@ -70,6 +70,13 @@ public partial class MainWindow
         if (double.TryParse(text.TrimEnd('%'), out var percent)) SetFontSize(14 * percent / 100);
     }
 
+    private void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (settingFontSize || SourceEditor is null) return;
+        var size = e.NewValue <= 50 ? 10 + e.NewValue * 4 / 50 : 14 + (e.NewValue - 50) * 18 / 50;
+        SetFontSize(size);
+    }
+
     private void FontSizePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (SourceEditor is not null && FontSizeLabel.SelectedItem is ComboBoxItem item && double.TryParse(item.Content?.ToString(), out var size)) SetFontSize(size);

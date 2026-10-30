@@ -16,7 +16,7 @@ internal static class BoardDesign
 {
     internal static Brush Brush(string color) => (Brush)new BrushConverter().ConvertFromString(color)!;
     internal static SvgViewbox Icon(string name) => new() { Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/board-{name}.svg"), Width = 16, Height = 16, Stretch = Stretch.None };
-    internal static DockPanel Shell(Window window, DockPanel root, out StackPanel sidebar)
+    internal static DockPanel Shell(Window window, DockPanel root, string? loginId, out StackPanel sidebar)
     {
         if (window.Content is Grid frame && frame.Children[0] is Border { Child: DockPanel heading })
         {
@@ -34,7 +34,9 @@ internal static class BoardDesign
         var view = new MenuItem { Header = "보기(_V)", Width = 64 }; menu.Items.Add(view);
         var information = new MenuItem { Header = "정보(_A)", Width = 64 }; var help = new MenuItem { Header = "도움말" }; help.Click += (_, _) => new HelpWindow("게시판") { Owner = window }.Show(); information.Items.Add(help); menu.Items.Add(information);
         DockPanel.SetDock(menu, Dock.Top); shell.Children.Add(menu);
-        var status = new Border { Height = 28, Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0) }; DockPanel.SetDock(status, Dock.Bottom); shell.Children.Add(status);
+        var status = new Border { Height = 28, Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0),
+            Child = new TextBlock { Text = loginId ?? "", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(12, 0, 24, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis } };
+        DockPanel.SetDock(status, Dock.Bottom); shell.Children.Add(status);
         sidebar = new StackPanel { Margin = new(0, 14, 0, 0) };
         var navigation = new Border { Width = 220, Background = Brush("#F9F9F9"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 0, 1, 0), Child = sidebar };
         DockPanel.SetDock(navigation, Dock.Left); shell.Children.Add(navigation);
@@ -72,7 +74,7 @@ public sealed class BoardDialog : CompactDialog
         foreach (var (label, name, width) in new[] { ("번호", "Number", 70d), ("제목", "DisplayTitle", 570d), ("글쓴이", "Author", 120d), ("작성일", "CreatedAt", 100d), ("조회", "ViewCount", 80d) })
             grid.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(name), Width = width });
         var previousFooter = (Border)Actions.Parent; previousFooter.Child = null; previousFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar);
+        var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar);
         var heading = new DockPanel { Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var headerButtons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(headerButtons, Dock.Right); heading.Children.Add(headerButtons);
         var count = new TextBlock { Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Muted") };
@@ -86,6 +88,12 @@ public sealed class BoardDialog : CompactDialog
         var chevron = BoardDesign.Icon("chevron-down"); chevron.HorizontalAlignment = HorizontalAlignment.Right; chevron.Margin = new(0, 0, 5, 0); chevron.IsHitTestVisible = false; fieldsView.Children.Add(chevron);
         Actions.Children.Add(fieldsView); Actions.Children.Add(query);
         int page = 1, total = 0; bool mine = initiallyMine, loadingList = false;
+        var pageInput = new TextBox { Width = 44, Height = 24, MinHeight = 0, Padding = new(8, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center };
+        System.Windows.Automation.AutomationProperties.SetName(pageInput, "게시판 쪽 번호");
+        var pageTotal = new TextBlock { Foreground = BoardDesign.Brush("#5F5F5F"), Margin = new(8, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
+        var numberButtons = new StackPanel { Orientation = Orientation.Horizontal };
+        Button? previous = null, next = null;
+        int TotalPages() => Math.Max(1, Math.Max(0, total) / 10 + (total > 0 && total % 10 != 0 ? 1 : 0));
         // A delayed list request must not trap the user in the dialog. Other
         // operations keep the shared busy guard to protect pending edits.
         Closing += (_, e) => { if (loadingList) { e.Cancel = false; Lifetime.Cancel(); } };
@@ -98,11 +106,37 @@ public sealed class BoardDialog : CompactDialog
                 var data = await client.ListAsync(page, field, query.Text, mine, Lifetime.Token);
                 if (Lifetime.IsCancellationRequested) return;
                 total = data.TotalCount; grid.ItemsSource = data.Notices.Concat(data.Items).ToArray();
-                count.Text = $"전체 {total}건 · 10건씩 · {page}/{Math.Max(1, (total + 9) / 10)}쪽";
+                count.Text = $"{total}건";
                 ((TextBlock)title.Children[0]).Text = mine ? "내 글" : "전체 글";
                 if (sidebar.Children.Count >= 3) { ((Button)sidebar.Children[0]).Background = BoardDesign.Brush(mine ? "#F9F9F9" : "#EFF6FC"); ((Button)sidebar.Children[2]).Background = BoardDesign.Brush(mine ? "#EFF6FC" : "#F9F9F9"); }
+                RenderPages();
             }
             finally { loadingList = false; }
+        }
+        async Task GoPageAsync(int target)
+        {
+            if (target < 1 || target > TotalPages()) { Status.Text = $"1부터 {TotalPages()}까지의 쪽 번호를 입력해 주세요."; RenderPages(); return; }
+            var oldPage = page; page = target;
+            try { await LoadAsync(); }
+            catch { page = oldPage; RenderPages(); throw; }
+        }
+        void RenderPages()
+        {
+            pageInput.Text = page.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            pageTotal.Text = "/ " + TotalPages().ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (previous is not null) previous.IsEnabled = page > 1;
+            if (next is not null) next.IsEnabled = page < TotalPages();
+            numberButtons.Children.Clear();
+            var first = Math.Max(1, Math.Min(page - 1, Math.Max(1, TotalPages() - 2)));
+            for (var n = first; n <= Math.Min(TotalPages(), first + 2); n++)
+            {
+                var target = n;
+                var button = Button(n.ToString(System.Globalization.CultureInfo.InvariantCulture), async () => await RunAsync(() => GoPageAsync(target)));
+                PublicDialogDesign.StyleAction(button, target == page);
+                button.Width = 24; button.Height = 24; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new(0); button.Margin = new(0, 0, 2, 0);
+                System.Windows.Automation.AutomationProperties.SetName(button, $"게시판 {n}쪽");
+                numberButtons.Children.Add(button);
+            }
         }
         async Task OpenAsync()
         {
@@ -114,7 +148,6 @@ public sealed class BoardDialog : CompactDialog
         }
         grid.MouseDoubleClick += async (_, _) => await RunAsync(OpenAsync);
         Action("검색", async () => { page = 1; await LoadAsync(); });
-        Actions.Children.Add(new Border { Width = 72 });
         var mineButton = Action("내 글 보기", async () => { mine = !mine; page = 1; await LoadAsync(); }); mineButton.Width = 94; mineButton.Margin = new(0);
         var notifications = Action("알림", () => new NotificationsDialog(client, workInfo) { Owner = this }.ShowDialog());
         notifications.Margin = new(8, 0, 0, 0);
@@ -128,16 +161,36 @@ public sealed class BoardDialog : CompactDialog
         var navigation = new StackPanel { Orientation = Orientation.Horizontal }; var pageMenu = new ContextMenu(); pageMenu.Items.Add(new MenuItem { Header = navigation, StaysOpenOnClick = true }); grid.ContextMenu = pageMenu;
         count.ToolTip = "이전·다음 쪽: 목록에서 마우스 오른쪽 단추 또는 PageUp·PageDown";
         navigation.Children.Add(Button("이전", async () => await RunAsync(async () => { if (page > 1) { page--; await LoadAsync(); } })));
-        navigation.Children.Add(Button("다음", async () => await RunAsync(async () => { if (page * 10 < total) { page++; await LoadAsync(); } })));
-        var previous = Button("이전", async () => await RunAsync(async () => { if (page > 1) { page--; await LoadAsync(); } }));
-        previous.Content = BoardDesign.Icon("chevron-left"); previous.ToolTip = "이전 쪽"; System.Windows.Automation.AutomationProperties.SetName(previous, "이전 쪽"); PublicDialogDesign.StyleAction(previous); previous.Width = 32; Actions.Children.Add(previous);
-        var next = Button("다음", async () => await RunAsync(async () => { if (page * 10 < total) { page++; await LoadAsync(); } }));
-        next.Content = BoardDesign.Icon("chevron-right"); next.ToolTip = "다음 쪽"; System.Windows.Automation.AutomationProperties.SetName(next, "다음 쪽"); PublicDialogDesign.StyleAction(next); next.Width = 32; Actions.Children.Add(next);
+        navigation.Children.Add(Button("다음", async () => await RunAsync(async () => { if (page < TotalPages()) { page++; await LoadAsync(); } })));
+        previous = Button("이전", async () => await RunAsync(() => GoPageAsync(page - 1)));
+        previous.Content = BoardDesign.Icon("chevron-left"); previous.ToolTip = "이전 쪽"; System.Windows.Automation.AutomationProperties.SetName(previous, "이전 쪽"); PublicDialogDesign.StyleAction(previous); previous.Width = 24; previous.MinWidth = 0; previous.Height = 24; previous.MinHeight = 0; previous.Padding = new(0); previous.Margin = new(0, 0, 4, 0);
+        next = Button("다음", async () => await RunAsync(() => GoPageAsync(page + 1)));
+        next.Content = BoardDesign.Icon("chevron-right"); next.ToolTip = "다음 쪽"; System.Windows.Automation.AutomationProperties.SetName(next, "다음 쪽"); PublicDialogDesign.StyleAction(next); next.Width = 24; next.MinWidth = 0; next.Height = 24; next.MinHeight = 0; next.Padding = new(0); next.Margin = new(2, 0, 0, 0);
+        var pager = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        pager.Children.Add(previous); pager.Children.Add(pageInput); pager.Children.Add(pageTotal); pager.Children.Add(numberButtons); pager.Children.Add(next);
+        // Keep page navigation centered in the remaining footer space; on small windows
+        // the whole footer can scroll horizontally so neither search nor paging is lost.
+        root.Children.Remove(Actions); Actions.Margin = new(0);
+        var footer = new Grid { MinWidth = 650 };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footer.ColumnDefinitions.Add(new ColumnDefinition());
+        footer.Children.Add(Actions); Grid.SetColumn(pager, 1); pager.HorizontalAlignment = HorizontalAlignment.Center; footer.Children.Add(pager);
+        var footerScroll = new ScrollViewer { Content = footer, Margin = new(0, 12, 0, 0), HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        System.Windows.Automation.AutomationProperties.SetName(footerScroll, "게시판 검색 및 쪽 이동");
+        DockPanel.SetDock(footerScroll, Dock.Bottom); root.Children.Insert(1, footerScroll);
+        pageInput.KeyDown += async (_, e) =>
+        {
+            if (e.Key != System.Windows.Input.Key.Enter) return;
+            e.Handled = true;
+            if (!int.TryParse(pageInput.Text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var target))
+            { Status.Text = "쪽 번호를 숫자로 입력해 주세요."; RenderPages(); return; }
+            await RunAsync(() => GoPageAsync(target));
+        };
         grid.PreviewKeyDown += async (_, e) =>
         {
             if (e.Key == System.Windows.Input.Key.Enter) { e.Handled = true; await RunAsync(OpenAsync); }
             else if (e.Key is System.Windows.Input.Key.PageDown or System.Windows.Input.Key.PageUp)
-            { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && page * 10 < total) page++; else if (e.Key == System.Windows.Input.Key.PageUp && page > 1) page--; await LoadAsync(); }); }
+            { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && page < TotalPages()) page++; else if (e.Key == System.Windows.Input.Key.PageUp && page > 1) page--; await LoadAsync(); }); }
         };
         OnLoad(LoadAsync);
     }
@@ -151,10 +204,15 @@ public sealed class PostEditorDialog : CompactDialog
     public PostEditorDialog(BoardClient client, BoardPost? post, string workInfo) : base(post is null ? "게시판 — 글쓰기 - 세모점" : "게시판 — 글 수정 - 세모점", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White; var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
+        var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
         var heading = new TextBlock { Text = post is null ? "글쓰기" : "글 수정", FontSize = 20, FontWeight = FontWeights.SemiBold, Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var card = new DockPanel(); Actions.HorizontalAlignment = HorizontalAlignment.Right; Actions.Margin = new(0, 16, 0, 0); DockPanel.SetDock(Actions, Dock.Bottom); card.Children.Add(Actions);
         var panel = new StackPanel(); card.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); root.Children.Add(BoardDesign.Card(card, new(19, 15, 19, 19)));
+        panel.Children.Add(new TextBlock { Text = "분류", Height = 16, Foreground = (Brush)FindResource("Muted") });
+        var category = Choices(["지원하지 않음"], "지원하지 않음"); category.Width = 220; category.Height = 32; category.MinHeight = 32; category.HorizontalAlignment = HorizontalAlignment.Left;
+        category.Margin = new(0, 2, 0, 10); category.IsEnabled = false; category.ToolTip = "현재 서버는 게시글 분류를 제공하지 않습니다.";
+        ToolTipService.SetShowOnDisabled(category, true); System.Windows.Automation.AutomationProperties.SetName(category, "게시글 분류");
+        System.Windows.Automation.AutomationProperties.SetHelpText(category, "현재 서버는 게시글 분류를 제공하지 않습니다."); panel.Children.Add(category);
         var title = new TextBox { Text = post?.Title ?? "", MaxLength = 100, Height = 32, Margin = new(0, 6, 0, 0) }; panel.Children.Add(new TextBlock { Text = "제목", Height = 16, Foreground = (Brush)FindResource("Muted") }); panel.Children.Add(title);
         var content = new TextBox { Text = post?.Content ?? "", MaxLength = 10000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 220, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new(0, 2, 0, 12) };
         panel.Children.Add(new TextBlock { Text = "본문", Height = 16, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 12, 0, 0) }); panel.Children.Add(content);
@@ -206,7 +264,7 @@ public sealed class PostDialog : CompactDialog
     {
         Background = Brushes.White; var panel = new StackPanel();
         var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
+        var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
         Actions.Margin = new(0, 0, 0, 8); Actions.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(Actions, Dock.Top); root.Children.Add(Actions);
         root.Children.Add(BoardDesign.Card(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, new(19, 15, 19, 15)));
         void Render()

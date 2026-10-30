@@ -35,10 +35,26 @@ internal static class WindowsUsageDesignChecks
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "내 작업별 크레딧") && fixture.JobRequests > 0,
                 "The usage page displays the real job list without switching views");
             check(Descendants(dialog).OfType<DataGrid>().Any(g => g.Items.Cast<object>().Any(x => x.ToString()!.Contains("실제 작업.pdf", StringComparison.Ordinal))), "The job list shows the returned document");
-            var badges = Descendants(dialog).OfType<Border>().Where(b => b.Child is TextBlock t && new[] { "완료", "일부 쪽 실패", "변환 중", "대기 중" }.Contains(t.Text)).ToArray();
+            var badges = Descendants(dialog).OfType<Border>().Where(b => b.Child is TextBlock t && new[] { "완료", "부분 실패 1쪽", "진행 중 2/4", "대기 중" }.Contains(t.Text)).ToArray();
             check(badges.Length == 4 && badges.All(b => b.CornerRadius.TopLeft >= 9 && b.BorderThickness.Left == 1), "Returned job states are shown as four distinct Figma pill badges");
-            var expectedColors = new Dictionary<string, Color> { ["완료"] = Color.FromRgb(15, 123, 15), ["일부 쪽 실패"] = Color.FromRgb(196, 43, 28), ["변환 중"] = Color.FromRgb(157, 93, 0), ["대기 중"] = Color.FromRgb(95, 95, 95) };
+            var expectedColors = new Dictionary<string, Color> { ["완료"] = Color.FromRgb(15, 123, 15), ["부분 실패 1쪽"] = Color.FromRgb(196, 43, 28), ["진행 중 2/4"] = Color.FromRgb(157, 93, 0), ["대기 중"] = Color.FromRgb(95, 95, 95) };
             check(badges.Length == 4 && badges.All(b => b.Child is TextBlock t && b.BorderBrush is SolidColorBrush edge && t.Foreground is SolidColorBrush text && edge.Color == expectedColors[t.Text] && text.Color == edge.Color), "Each real job status uses its corresponding Figma label and color");
+            check(badges.Length == 4 && badges.All(b => b.Child is TextBlock t && System.Windows.Automation.AutomationProperties.GetName(b) == t.Text), "Badge accessibility names include the same actual status and counts");
+            var jobGrid = Descendants(dialog).OfType<DataGrid>().Single(g => g.Items.Cast<object>().Any(x => x.ToString()!.Contains("실제 작업.pdf", StringComparison.Ordinal)));
+            string Row(string filename, string property)
+            {
+                var row = jobGrid.Items.Cast<object>().Single(x => Equals(x.GetType().GetProperty("FileName")?.GetValue(x), filename));
+                return row.GetType().GetProperty(property)?.GetValue(row)?.ToString() ?? "";
+            }
+            check(Row("진행 중.pdf", "BadgeText") == "진행 중 2/4" && Row("진행 중.pdf", "Pages") == "2/4", "Actual progress appears in the badge and the separate pages column remains unchanged");
+            check(Row("부분 실패.pdf", "BadgeText") == "부분 실패 1쪽", "The partial failure badge uses the actual server-provided count");
+            check(Row("완료 일부 실패.pdf", "BadgeText") == "부분 실패 1쪽", "A completed job with failed pages shows partial failure as in the server contract");
+            check(Row("진행 0.pdf", "BadgeText") == "진행 중 0/4", "A valid zero progress count is displayed");
+            check(new[] { "진행 없음.pdf", "진행 null.pdf", "진행 음수.pdf", "진행 초과.pdf", "진행 문자.pdf", "전체 0.pdf" }.All(n => Row(n, "BadgeText") == "변환 중"), "Missing, null, negative, excessive, nonnumeric or zero-total progress never fabricates a count");
+            check(new[] { "실패 없음.pdf", "실패 0.pdf", "실패 초과.pdf", "실패 음수.pdf", "실패 전체.pdf", "실패 소수.pdf", "실패 총수 없음.pdf" }.All(n => Row(n, "BadgeText") == "일부 쪽 실패"), "Partial failure omits unverifiable or inconsistent counts");
+            check(Row("완료 0.pdf", "BadgeText") == "완료" && Row("완료 null.pdf", "BadgeText") == "완료", "Completed jobs keep their state for valid zero and server-null failure counts");
+            check(Row("완료 오류.pdf", "BadgeText") == "상태 확인 필요", "A malformed completed failure count is not misreported as successful completion");
+            check(Row("완전 실패.pdf", "BadgeText") == "변환 실패", "A fully failed job is not described as a partial failure");
             check(!fixture.Paths.Any(p => p.StartsWith("/api/org/", StringComparison.Ordinal)), "My page does not call privileged organization APIs");
             if (Environment.GetEnvironmentVariable("USAGE_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(dialog, capture);
             dialog.Navigation.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -87,11 +103,30 @@ internal static class WindowsUsageDesignChecks
         private object Jobs()
         {
             JobRequests++;
-            return new { items = new[] {
+            return new { items = new object[] {
                 new { jobId = "job:1", fileName = "실제 작업.pdf", status = "COMPLETED", failedPages = 0, donePages = 4, totalPages = 4, credits = 4, finishedAt = "2026-10-21" },
                 new { jobId = "job:2", fileName = "부분 실패.pdf", status = "PARTIALLY_COMPLETED", failedPages = 1, donePages = 3, totalPages = 4, credits = 3, finishedAt = "2026-10-21" },
                 new { jobId = "job:3", fileName = "진행 중.pdf", status = "IN_PROGRESS", failedPages = 0, donePages = 2, totalPages = 4, credits = 2, finishedAt = "" },
-                new { jobId = "job:4", fileName = "대기.pdf", status = "PENDING", failedPages = 0, donePages = 0, totalPages = 4, credits = 0, finishedAt = "" }
+                new { jobId = "job:4", fileName = "대기.pdf", status = "PENDING", failedPages = 0, donePages = 0, totalPages = 4, credits = 0, finishedAt = "" },
+                new { jobId = "job:5", fileName = "진행 0.pdf", status = "IN_PROGRESS", donePages = 0, totalPages = 4 },
+                new { jobId = "job:6", fileName = "진행 없음.pdf", status = "IN_PROGRESS", totalPages = 4 },
+                new { jobId = "job:7", fileName = "진행 null.pdf", status = "IN_PROGRESS", donePages = (int?)null, totalPages = 4 },
+                new { jobId = "job:8", fileName = "진행 음수.pdf", status = "IN_PROGRESS", donePages = -1, totalPages = 4 },
+                new { jobId = "job:9", fileName = "진행 초과.pdf", status = "IN_PROGRESS", donePages = 5, totalPages = 4 },
+                new { jobId = "job:10", fileName = "진행 문자.pdf", status = "IN_PROGRESS", donePages = "2", totalPages = 4 },
+                new { jobId = "job:11", fileName = "전체 0.pdf", status = "IN_PROGRESS", donePages = 0, totalPages = 0 },
+                new { jobId = "job:12", fileName = "실패 없음.pdf", status = "PARTIALLY_COMPLETED", totalPages = 4 },
+                new { jobId = "job:13", fileName = "실패 0.pdf", status = "PARTIALLY_COMPLETED", failedPages = 0, totalPages = 4 },
+                new { jobId = "job:14", fileName = "실패 초과.pdf", status = "PARTIALLY_COMPLETED", failedPages = 5, totalPages = 4 },
+                new { jobId = "job:15", fileName = "실패 음수.pdf", status = "PARTIALLY_COMPLETED", failedPages = -1, totalPages = 4 },
+                new { jobId = "job:16", fileName = "실패 전체.pdf", status = "PARTIALLY_COMPLETED", failedPages = 4, totalPages = 4 },
+                new { jobId = "job:17", fileName = "실패 소수.pdf", status = "PARTIALLY_COMPLETED", failedPages = 1.5, totalPages = 4 },
+                new { jobId = "job:18", fileName = "실패 총수 없음.pdf", status = "PARTIALLY_COMPLETED", failedPages = 1 },
+                new { jobId = "job:19", fileName = "완료 0.pdf", status = "COMPLETED", failedPages = 0, totalPages = 4 },
+                new { jobId = "job:20", fileName = "완료 null.pdf", status = "COMPLETED", failedPages = (int?)null, totalPages = 4 },
+                new { jobId = "job:21", fileName = "완료 오류.pdf", status = "COMPLETED", failedPages = -1, totalPages = 4 },
+                new { jobId = "job:22", fileName = "완전 실패.pdf", status = "FAILED", failedPages = 4, totalPages = 4 },
+                new { jobId = "job:23", fileName = "완료 일부 실패.pdf", status = "COMPLETED", failedPages = 1, totalPages = 4 }
             } };
         }
         private object Posts(string query)

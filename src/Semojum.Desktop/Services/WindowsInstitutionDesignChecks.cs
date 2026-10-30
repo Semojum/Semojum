@@ -5,6 +5,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
+using System.Windows.Input;
+using System.Windows.Controls.Primitives;
 using Semojum.Core.Integration;
 using Semojum.Desktop.Dialogs;
 using SharpVectors.Converters;
@@ -36,6 +40,29 @@ internal static class WindowsInstitutionDesignChecks
                 "Contract date uses strict ISO dates and handles future, expiry, past and invalid dates");
             check(window.Accounts.Items.Count == 2 && window.Requests.Items.Count == 2 && window.Orders.Items.Count == 1 && window.Notices.Items.Count == 1,
                 "Institution lists display only the API-provided accounts, requests, orders and notices");
+            check(InstitutionStatusTextConverter.Label("ACTIVE", "account") == "활성" && InstitutionStatusTextConverter.Label("INACTIVE", "account") == "잠김"
+                && InstitutionStatusTextConverter.Label("ORG", "notice") == "우리 기관" && InstitutionStatusTextConverter.Label("FUTURE_STATUS", "account") == "FUTURE_STATUS"
+                && InstitutionStatusTextConverter.Label("FUTURE_SCOPE", "notice") == "FUTURE_SCOPE", "Known institution status labels are translated while unknown server codes remain intact");
+            check(!window.RequestsExpander.IsExpanded && window.Orders.Items.Count == 1, "Request history starts collapsed while the order list retains actual data");
+            var peer = UIElementAutomationPeer.CreatePeerForElement(window.RequestsExpander);
+            var expand = peer?.GetPattern(PatternInterface.ExpandCollapse) as IExpandCollapseProvider;
+            expand?.Expand(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            check(expand is not null && window.RequestsExpander.IsExpanded && window.Requests.IsVisible && window.Requests.Items.Count == 2 && window.Requests.ActualHeight > 0,
+                "The accessible expand action reveals the complete real request list");
+            expand?.Collapse(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(!window.RequestsExpander.IsExpanded && window.Requests.Items.Count == 2, "The accessible collapse action preserves the request data");
+            var toggle = Descendants(window.RequestsExpander).OfType<ToggleButton>().FirstOrDefault();
+            if (toggle is not null && PresentationSource.FromVisual(toggle) is { } source)
+            {
+                toggle.Focus();
+                toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
+                toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                check(window.RequestsExpander.IsExpanded && window.Requests.Items.Count == 2, "The request expander opens through its keyboard Space handler");
+                expand?.Collapse();
+            }
+            else check(false, "The request expander has a keyboard-focusable header");
+            foreach (var scroll in Descendants(window).OfType<ScrollViewer>().Where(s => s.Content is StackPanel)) scroll.ScrollToTop();
             check(window.AccountRequest.IsEnabled && window.CreditRequest.IsEnabled && window.ReceiptAddress.Text.Contains("billing@example.test"),
                 "Available request actions and receipt recipient reflect the current institution response");
             check(window.CreditRequest.Background is SolidColorBrush { Color: var orange } && orange == Color.FromRgb(232, 115, 12)
@@ -47,6 +74,23 @@ internal static class WindowsInstitutionDesignChecks
             window.Requests.SelectedIndex = 1; check(!window.CancelRequest.IsEnabled, "Unknown open request types cannot be cancelled");
             window.Requests.SelectedIndex = 0; check(window.CancelRequest.IsEnabled, "A supported open institution request can be cancelled");
             if (Environment.GetEnvironmentVariable("INSTITUTION_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(window, capture);
+            if (Environment.GetEnvironmentVariable("INSTITUTION_FULL_CAPTURE") is { Length: > 0 } fullCapture)
+            {
+                window.Width = 1440; window.Height = 1000; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                var orderTop = window.Orders.TransformToAncestor(window).Transform(new Point()).Y;
+                check(window.Orders.IsVisible && window.Orders.Items.Count == 1 && orderTop >= 0 && orderTop + window.Orders.ActualHeight <= window.ActualHeight - 28,
+                    "At the 1440px Figma window size the real order list is visible without scrolling");
+                var actionTop = window.Receipt.TransformToAncestor(window).Transform(new Point()).Y;
+                check(actionTop + window.Receipt.ActualHeight <= window.ActualHeight - 28 && window.Receipt.IsVisible,
+                    "The order action buttons fit above the status bar at the 1440px window size");
+                await WindowsSmoke.RenderElementAsync(window, fullCapture); window.Width = 960; window.Height = 650; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            }
+            window.Orders.SelectedIndex = 0; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(window.OrderDetail.IsEnabled && !window.Receipt.IsEnabled, "Selecting an order enables its detail while withholding an unavailable receipt");
+            window.OrderDetail.BringIntoView(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            var narrowTop = window.OrderDetail.TransformToAncestor(window).Transform(new Point()).Y;
+            check(window.ActualWidth <= 960 && narrowTop >= 32 && narrowTop + window.OrderDetail.ActualHeight <= window.ActualHeight - 28,
+                "At 960px the selected order action can be brought into view without being covered by the status bar");
             window.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(30);
             check(logoutCalls == 1 && window.IsVisible && !window.LogoutRequested, "Cancelled or failed logout keeps the institution window open");
 

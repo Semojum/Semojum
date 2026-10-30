@@ -10,12 +10,13 @@ public sealed partial class InstitutionWindow
 {
     private InstitutionClient Client => new(api);
     private bool refreshing;
+    private string? receiptEmail;
     private void ClearInstitutionData()
     {
         AccountRequest.IsEnabled = CreditRequest.IsEnabled = false;
         Identity.Text = "정보 없음"; Allocated.Text = Balance.Text = Contract.Text = "—"; CreditDetail.Text = "사용량 정보 없음"; UsagePercent.Text = "정보 없음";
         ContractDetail.Text = "계약 정보 없음"; ContractRemaining.Text = "정보 없음"; StatusSummary.Text = "기관 정보 없음"; UsageBar.Value = 0; UsageBar.Visibility = Visibility.Collapsed;
-        Chart.Children.Clear(); ChartEmpty.Visibility = Visibility.Visible; Accounts.ItemsSource = Requests.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; ReceiptAddress.Text = "증빙 받는 사람 정보 없음";
+        Chart.Children.Clear(); ChartEmpty.Visibility = Visibility.Visible; Accounts.ItemsSource = Requests.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; receiptEmail = null; ReceiptAddress.Text = "증빙 받는 사람 정보 없음";
         SessionIdentity.Text = api.Account?.LoginId ?? "로그인 정보 없음";
     }
     private async Task RefreshAsync()
@@ -63,7 +64,7 @@ public sealed partial class InstitutionWindow
             await Load("공지", async () => Notices.ItemsSource = await Client.NoticesAsync(Lifetime.Token));
             await Load("주문 내역", async () =>
             {
-                var orders = await Client.OrdersAsync(Lifetime.Token); Orders.ItemsSource = orders.Items;
+                var orders = await Client.OrdersAsync(Lifetime.Token); Orders.ItemsSource = orders.Items; receiptEmail = orders.ReceiptEmail;
                 ReceiptAddress.Text = orders.ReceiptEmail is { Length: > 0 } email ? "증빙 받는 사람: " + email : "증빙 받는 사람 정보 없음";
             });
             if (api.Account?.Role != "ROLE_ORG_ADMIN")
@@ -109,9 +110,24 @@ public sealed partial class InstitutionWindow
         }
         catch (Exception ex) { ErrorText.Text = "계정 정보를 불러오지 못했습니다. " + ex.Message; }
     }
+    private async Task OpenNoticeAsync(InstitutionNotice notice)
+    {
+        var dialog = new InstitutionNoticeDialog(notice, CreditRequest.IsEnabled) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.CreditRequested) await RequestCreditAsync();
+    }
+    private Task OpenOrderAsync(InstitutionOrder order)
+    {
+        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenReceiptForAsync(order)) { Owner = this };
+        dialog.ShowDialog(); return Task.CompletedTask;
+    }
     private async Task OpenReceiptAsync()
     {
         if (Orders.SelectedItem is not InstitutionOrder order || order.ReceiptFileName is null) return;
+        await OpenReceiptForAsync(order);
+    }
+    private async Task OpenReceiptForAsync(InstitutionOrder order)
+    {
+        if (order.ReceiptFileName is null) return;
         try
         {
             var receipt = await Client.ReceiptAsync(order.Id, Lifetime.Token);

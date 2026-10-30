@@ -110,8 +110,7 @@
           <Border Width="1" Height="20" Background="#B5B5B5" Margin="8,0"/>
           <Button Tag="translate" ToolTip="현재 블록 다시 점역" AutomationProperties.Name="현재 블록 다시 점역" Click="Action_Click" Style="{StaticResource IconButton}"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/main-toolbar-recon.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
           <Button Tag="export" ToolTip="문서 내보내기" AutomationProperties.Name="문서 내보내기" Click="Action_Click" Style="{StaticResource IconButton}"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/main-toolbar-export.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
-          <Border Width="1" Height="20" Background="#B5B5B5" Margin="8,0"/>
-          <ComboBox x:Name="ZoomPicker" Width="92" Height="32" FontSize="12" SelectionChanged="ZoomPicker_SelectionChanged" AutomationProperties.Name="편집기 확대 비율"/>
+          <ComboBox x:Name="ZoomPicker" Visibility="Collapsed" Width="92" Height="32" FontSize="12" SelectionChanged="ZoomPicker_SelectionChanged" AutomationProperties.Name="편집기 확대 비율"/>
         </StackPanel>
       </DockPanel>
       </ScrollViewer>
@@ -142,8 +141,16 @@
       </StackPanel>
       </ScrollViewer>
     </Border>
-    <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="24" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">
+    <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="#F3F3F3" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0">
       <DockPanel>
+        <StackPanel x:Name="StatusZoom" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,12,0">
+          <Button Width="16" Height="20" Padding="0" BorderThickness="0" Background="Transparent" ToolTip="축소" AutomationProperties.Name="축소" Tag="zoomOut" Click="Action_Click"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/zoom-minus.svg" Width="16" Height="16" IsHitTestVisible="False"/></Button>
+          <Slider x:Name="ZoomSlider" Width="106" Height="20" Margin="6,0" Minimum="0" Maximum="100" Value="50" SmallChange="1" LargeChange="5" ValueChanged="ZoomSlider_ValueChanged" AutomationProperties.Name="편집기 확대 비율">
+            <Slider.Template><ControlTemplate TargetType="Slider"><Grid><Border Height="4" CornerRadius="2" Background="#D1D1D1"/><Track x:Name="PART_Track"><Track.DecreaseRepeatButton><RepeatButton Command="Slider.DecreaseLarge" Opacity="0"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb Width="12" Height="12"><Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse Fill="#005FB8"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="Slider.IncreaseLarge" Opacity="0"/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Slider.Template>
+          </Slider>
+          <Button Width="16" Height="20" Padding="0" BorderThickness="0" Background="Transparent" ToolTip="확대" AutomationProperties.Name="확대" Tag="zoomIn" Click="Action_Click"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/zoom-plus.svg" Width="16" Height="16" IsHitTestVisible="False"/></Button>
+          <TextBlock x:Name="ZoomPercent" Width="40" Margin="8,0,0,0" Text="100%" FontSize="12" Foreground="#5F5F5F" VerticalAlignment="Center"/>
+        </StackPanel>
         <TextBlock x:Name="AccountLabel" DockPanel.Dock="Right" Text="로그인 안 됨" FontSize="12" Foreground="{StaticResource Muted}" Margin="12,0,12,0"/>
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" TextElement.FontSize="12">
           <Border Width="88" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="8,0"><TextBlock x:Name="StatusInput"/></Border>
