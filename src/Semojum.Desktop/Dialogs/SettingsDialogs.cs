@@ -165,7 +165,8 @@ public sealed class FormDialog : CompactDialog
         var pickerField = new Grid { Height = 32, Margin = new(0, 0, 0, 16) }; pickerField.Children.Add(picker);
         pickerField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = Brush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
         var pickerIcon = DesignIcon("form-main-chevron.svg", 16, 16); pickerIcon.HorizontalAlignment = HorizontalAlignment.Right; pickerIcon.Margin = new(0, 0, 5, 0); pickerIcon.IsHitTestVisible = false; pickerField.Children.Add(pickerIcon); panel.Children.Add(pickerField);
-        FormPickerDialog.Attach(picker, this, async selected => { picker.SelectedItem = selected; await RunAsync(() => EditAsync(selected.Builtin)); });
+        FormPickerDialog.Attach(picker, this, async selected => { picker.SelectedItem = selected; await RunAsync(() => EditAsync(selected.Builtin)); },
+            selected => RunAsync(() => DeleteAsync(selected)));
         var values = new Dictionary<string, TextBlock>();
         foreach (var label in new[] { "줄·칸", "한글", "줄바꿈", "페이지행" })
         {
@@ -176,12 +177,8 @@ public sealed class FormDialog : CompactDialog
             panel.Children.Add(new System.Windows.Controls.Border { BorderBrush = (System.Windows.Media.Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = row });
         }
         var edit = new MenuItem { Header = "수정…" }; edit.Click += async (_, _) => await RunAsync(() => EditAsync(false));
-        var delete = new MenuItem { Header = "삭제…" }; delete.Click += async (_, _) => await RunAsync(async () =>
-        {
-            if (picker.SelectedItem is not BrailleForm f || f.Builtin) return;
-            if (new DeleteFormDialog(f.Name) { Owner = this }.ShowDialog() != true) return;
-            await client.DeleteFormAsync(f, Lifetime.Token); await ReloadAsync(null);
-        });
+        var delete = new MenuItem { Header = "삭제…" }; delete.Click += async (_, _) =>
+        { if (picker.SelectedItem is BrailleForm f) await RunAsync(() => DeleteAsync(f)); };
         picker.ContextMenu = new ContextMenu(); picker.ContextMenu.Items.Add(edit); picker.ContextMenu.Items.Add(delete);
         picker.SelectionChanged += (_, _) =>
         {
@@ -201,6 +198,14 @@ public sealed class FormDialog : CompactDialog
             var forms = await client.FormsAsync(Lifetime.Token);
             picker.ItemsSource = forms.Any(f => !f.Builtin) ? forms : [.. forms, new BrailleForm("user:new", "사용자 양식", false, null, currentLayout, currentOptions)];
             picker.SelectedItem = picker.Items.Cast<BrailleForm>().FirstOrDefault(f => f.FormId == id); if (picker.SelectedIndex < 0) picker.SelectedIndex = 0;
+        }
+        async Task DeleteAsync(BrailleForm form)
+        {
+            if (form.Builtin || form.FormId == "user:new") return;
+            if (new DeleteFormDialog(form.Name) { Owner = this }.ShowDialog() != true) return;
+            var retainedId = (picker.SelectedItem as BrailleForm)?.FormId;
+            await client.DeleteFormAsync(form, Lifetime.Token);
+            await ReloadAsync(retainedId == form.FormId ? null : retainedId);
         }
         async Task EditAsync(bool create)
         {

@@ -52,16 +52,32 @@ internal static class WindowsFormDesignChecks
         }
         finally { form.Close(); }
 
-        var picker = new FormPickerDialog(forms, forms[0]); picker.Show();
+        var picker = new FormPickerDialog(forms, forms[0], canEdit: true, canDelete: true); picker.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); picker.UpdateLayout();
             check(picker.Width == 380 && picker.Height == 208, "Five-form picker matches the final Figma 380x208 panel");
             check(HasIcon(picker, "form-picker-close.svg") && HasIcon(picker, "form-picker-edit.svg"), "Form picker uses final Figma close and edit icons");
             check(picker.ChoicesList.Items.Count == 5 && picker.Selected?.FormId == forms[0].FormId, "Form picker retains every individual form and its selected value");
+            var deleteButtons = Descendants(picker).OfType<Button>().Where(b => AutomationProperties.GetName(b).EndsWith(" 지우기", StringComparison.Ordinal)).ToArray();
+            check(deleteButtons.Length == 5 && deleteButtons.Count(b => b.IsEnabled) == 1
+                && deleteButtons.Single(b => b.IsEnabled).ToolTip?.ToString() == "이 양식 지우기"
+                && HasIcon(picker, "footer-trash.svg"), "Only a personal form has an enabled delete action in its picker row");
             if (Environment.GetEnvironmentVariable("FORM_PICKER_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(picker, capture);
         }
         finally { picker.Close(); }
+
+        var deletePicker = new FormPickerDialog(forms, forms[0], canEdit: true, canDelete: true);
+        deletePicker.Loaded += (_, _) => deletePicker.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            Descendants(deletePicker).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "사용자 양식 A 지우기")
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+        check(deletePicker.ShowDialog() == false && deletePicker.DeleteRequest?.FormId == "user:1" && deletePicker.Selected?.FormId == forms[0].FormId,
+            "Deleting an unselected row requests that personal form without changing the selected form");
+        var protectedPicker = new FormPickerDialog(forms, forms[0], canDelete: true);
+        protectedPicker.Loaded += (_, _) => protectedPicker.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+        { protectedPicker.Delete(forms[0]); protectedPicker.Close(); }));
+        protectedPicker.ShowDialog();
+        check(protectedPicker.DeleteRequest is null, "Built-in forms remain protected even if deletion is invoked directly");
 
         var personal = forms.Single(f => !f.Builtin);
         var editor = new FormEditDialog(client, forms, personal, personal.Layout, personal.Options, personal.BaseFormId); editor.Show();
@@ -104,6 +120,39 @@ internal static class WindowsFormDesignChecks
         }
         finally { builtInEditor.Close(); }
 
+        foreach (var label in new[] { "취소", "지우기" })
+        {
+            var flow = new FormDialog(client, new(), new(), forms[0].FormId); flow.Show();
+            try
+            {
+                await WaitAsync(() => Descendants(flow).OfType<ComboBox>().Any(c => c.SelectedItem is BrailleForm { FormId: "builtin:0" }));
+                var flowPicker = Descendants(flow).OfType<ComboBox>().Single();
+                var clicked = false; var completed = false;
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+                timer.Tick += (_, _) =>
+                {
+                    if (!clicked && Application.Current.Windows.OfType<FormPickerDialog>().FirstOrDefault() is { } choice)
+                    {
+                        choice.UpdateLayout();
+                        var button = Descendants(choice).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "사용자 양식 A 지우기");
+                        clicked = true; button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    }
+                    if (clicked && Application.Current.Windows.OfType<DeleteFormDialog>().FirstOrDefault() is { } confirm)
+                    {
+                        timer.Stop(); completed = true;
+                        Descendants(confirm).OfType<Button>().Single(b => Equals(b.Content, label)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    }
+                };
+                timer.Start(); flowPicker.IsDropDownOpen = true;
+                try { await WaitAsync(() => completed && (label == "취소" || fixture.DeleteCount == 1)); }
+                finally { timer.Stop(); }
+                check(fixture.DeleteCount == (label == "취소" ? 0 : 1)
+                    && (flowPicker.SelectedItem as BrailleForm)?.FormId == forms[0].FormId,
+                    label == "취소" ? "Cancelling a row deletion sends no request and preserves selection" : "Confirming a row deletion sends one request and preserves a different selection");
+            }
+            finally { flow.Close(); }
+        }
+
         var deleteEditor = new FormEditDialog(client, forms, personal, personal.Layout, personal.Options, personal.BaseFormId);
         deleteEditor.Loaded += (_, _) => deleteEditor.Dispatcher.BeginInvoke(() =>
         {
@@ -123,7 +172,7 @@ internal static class WindowsFormDesignChecks
             Descendants(deleteEditor).OfType<Button>().Single(b => Equals(b.Content, "지우기")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         });
         deleteEditor.ShowDialog();
-        check(deleteEditor.Deleted && fixture.DeleteCount == 1 && fixture.DeletedPath is { } path && Uri.UnescapeDataString(path).EndsWith("/user:1", StringComparison.Ordinal),
+        check(deleteEditor.Deleted && fixture.DeleteCount == 2 && fixture.DeletedPath is { } path && Uri.UnescapeDataString(path).EndsWith("/user:1", StringComparison.Ordinal),
             "Confirmed personal form deletion sends one request for the selected form");
     }
     private static bool HasIcon(DependencyObject root, string asset) => Descendants(root).OfType<SvgViewbox>()

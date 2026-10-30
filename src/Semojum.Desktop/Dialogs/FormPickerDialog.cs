@@ -14,10 +14,13 @@ public sealed class FormPickerDialog : CompactDialog
     public BrailleForm? Selected => ChoicesList.SelectedItem as BrailleForm;
     internal ListBox ChoicesList { get; } = new();
     internal BrailleForm? EditRequest { get; private set; }
+    internal BrailleForm? DeleteRequest { get; private set; }
     private readonly bool canEdit;
-    public FormPickerDialog(IEnumerable<BrailleForm> forms, BrailleForm? selected, bool canEdit = false) : base("양식 고르기", 380, 208, popover: true)
+    private readonly bool canDelete;
+    public FormPickerDialog(IEnumerable<BrailleForm> forms, BrailleForm? selected, bool canEdit = false, bool canDelete = false) : base("양식 고르기", 380, 208, popover: true)
     {
         this.canEdit = canEdit;
+        this.canDelete = canDelete;
         var available = forms.ToArray(); Height = 32 + 16 + 32 * Math.Clamp(available.Length, 1, 6);
         if (Content is Border frame) { frame.CornerRadius = new(8); frame.BorderBrush = Brush("#5F5F5F"); frame.Background = Brushes.White; }
         var panel = new DockPanel(); Body(panel);
@@ -70,16 +73,23 @@ public sealed class FormPickerDialog : CompactDialog
         EditRequest = form; DialogResult = false;
     }
     internal bool CanEdit => canEdit;
-    internal static void Attach(ComboBox picker, Window owner, Func<BrailleForm, Task>? edit = null)
+    internal bool CanDelete => canDelete;
+    internal void Delete(BrailleForm form)
+    {
+        if (!canDelete || form.Builtin || form.FormId == "user:new") return;
+        DeleteRequest = form; DialogResult = false;
+    }
+    internal static void Attach(ComboBox picker, Window owner, Func<BrailleForm, Task>? edit = null, Func<BrailleForm, Task>? delete = null)
     {
         picker.DropDownOpened += (_, _) =>
         {
             picker.IsDropDownOpen = false;
             owner.Dispatcher.BeginInvoke(new Action(async () =>
             {
-                var dialog = new FormPickerDialog(picker.Items.Cast<BrailleForm>(), picker.SelectedItem as BrailleForm, edit is not null) { Owner = owner };
+                var dialog = new FormPickerDialog(picker.Items.Cast<BrailleForm>(), picker.SelectedItem as BrailleForm, edit is not null, delete is not null) { Owner = owner };
                 if (dialog.ShowDialog() == true) picker.SelectedItem = dialog.Selected;
                 else if (dialog.EditRequest is { } requested && edit is not null) { picker.SelectedItem = requested; await edit(requested); }
+                else if (dialog.DeleteRequest is { } deleted && delete is not null) await delete(deleted);
             }));
         };
     }
@@ -95,8 +105,18 @@ public sealed class FormPickerRow : Grid
         var edit = new Button { Width = 24, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0), Background = Brushes.Transparent, BorderBrush = Brushes.Transparent,
             Template = SurfaceTemplate(0), Content = DesignIcon("form-picker-edit.svg", 16, 16), ToolTip = "이 양식 편집" };
         Grid.SetColumn(edit, 1); Children.Add(edit);
-        Loaded += (_, _) => { edit.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanEdit: true } && DataContext is BrailleForm { FormId: not "user:new" }; };
-        DataContextChanged += (_, _) => { if (DataContext is BrailleForm f) AutomationProperties.SetName(edit, $"{f.Name} 편집"); };
+        var delete = new Button { Width = 24, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0), Background = Brushes.Transparent, BorderBrush = Brushes.Transparent,
+            Template = SurfaceTemplate(0), Content = DesignIcon("footer-trash.svg", 16, 16), ToolTip = "이 양식 지우기" };
+        Grid.SetColumn(delete, 2); Children.Add(delete);
+        void Refresh()
+        {
+            edit.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanEdit: true } && DataContext is BrailleForm { FormId: not "user:new" };
+            delete.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanDelete: true } && DataContext is BrailleForm { Builtin: false, FormId: not "user:new" };
+            if (DataContext is BrailleForm f) { AutomationProperties.SetName(edit, $"{f.Name} 편집"); AutomationProperties.SetName(delete, $"{f.Name} 지우기"); }
+        }
+        Loaded += (_, _) => Refresh();
+        DataContextChanged += (_, _) => Refresh();
         edit.Click += (_, e) => { e.Handled = true; if (DataContext is BrailleForm f && Window.GetWindow(this) is FormPickerDialog owner) owner.Edit(f); };
+        delete.Click += (_, e) => { e.Handled = true; if (DataContext is BrailleForm f && Window.GetWindow(this) is FormPickerDialog owner) owner.Delete(f); };
     }
 }
