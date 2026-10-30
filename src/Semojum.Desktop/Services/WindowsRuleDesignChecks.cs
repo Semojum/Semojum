@@ -20,11 +20,12 @@ internal static class WindowsRuleDesignChecks
         var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
         var evidence = new AppliedRuleRow("원본 자료 (원문)", "", "제1항", "근거", "제공된 원문", "규정", "id", true);
         var applied = new AppliedRulesDialog(api, [evidence], false, "원문", "⠁", "1줄 1칸");
+        check(applied.Width == 900 && applied.Height == 488, "Applied rules requests its final Figma dimensions");
         applied.Show();
         try
         {
             await Task.Delay(100); applied.UpdateLayout();
-            check(applied.Width == 900 && applied.Height == 488, "Applied rules dialog uses the final Figma dimensions");
+            WindowsDialogBoundsChecks.CheckFitted(applied, 900, 488, "Applied rules dialog", check);
             check(applied.Rules.Columns.Select(c => c.Header?.ToString()).SequenceEqual(["걸린 자리", "점형", "규정", "조항 원문"]),
                 "Applied rules exposes the final Figma four-column headings");
             var source = Descendants(applied).OfType<TextBlock>().FirstOrDefault(t => AutomationProperties.GetAutomationId(t) == "RulesSourcePreview");
@@ -52,14 +53,19 @@ internal static class WindowsRuleDesignChecks
             try { match.Show(); await WindowsSmoke.RenderElementAsync(match, matchingCapture); } finally { match.Close(); }
         }
 
-        var dialog = new RuleDialog(api, [], "", "", "검색"); dialog.Show();
+        var dialog = new RuleDialog(api, [], "", "", "검색");
+        check(dialog.Width == 720 && dialog.Height == 748 && dialog.Title == "점자 규정 찾아보기", "Rule search requests the final Figma dimensions and title");
+        dialog.Show();
         try
         {
             for (var i = 0; i < 30 && dialog.RuleResults.Children.Count == 0; i++) await Task.Delay(30);
             dialog.UpdateLayout();
-            check(dialog.Width == 720 && dialog.Height == 748 && dialog.Title == "점자 규정 찾아보기", "Rule search uses the final Figma dimensions and title");
+            WindowsDialogBoundsChecks.CheckFitted(dialog, 720, 748, "Rule search", check);
             CheckIcon(dialog, "rule-browser-close.svg", check); CheckIcon(dialog, "rule-browser-book.svg", check);
             var query = Descendants(dialog).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "규정 검색어");
+            var queryBounds = query.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, query.ActualWidth, query.ActualHeight));
+            check(query.IsEnabled && query.Focusable && queryBounds.Left >= 0 && queryBounds.Right <= dialog.ActualWidth + 1 && queryBounds.Top >= 0 && queryBounds.Bottom <= dialog.ActualHeight + 1,
+                "Fitted rule search keeps the query field reachable inside the window");
             var hint = Descendants(dialog).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "RuleSearchPlaceholder");
             check(query.Text == "검색" && hint.Visibility == Visibility.Collapsed && !hint.IsHitTestVisible, "The search hint does not obscure existing text or intercept input");
             query.Text = ""; dialog.UpdateLayout();

@@ -57,13 +57,22 @@ internal static class WindowsSettingsHelpDesignChecks
         }
         finally { about.Close(); }
 
-        var help = new HelpWindow("점자 직접 고치기") { Owner = owner }; help.Show();
+        var help = new HelpWindow("점자 직접 고치기") { Owner = owner };
+        check(help.Width == 1100 && help.Height == 700, "Help requests the final Figma dimensions before work-area fitting");
+        help.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); help.UpdateLayout();
             var tabs = Descendants(help).OfType<TabControl>().Single(); var reader = Descendants(help).OfType<FlowDocumentScrollViewer>().Single();
             var search = Descendants(help).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "도움말 검색");
-            check(help.Width == 1100 && help.Height == 700 && tabs.Items.Count == 3 && new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("점자 직접 고치기"), "Help opens the requested article in the final Figma layout"); CheckIcons(help, check);
+            WindowsDialogBoundsChecks.CheckFitted(help, 1100, 700, "Help window", check);
+            check(tabs.Items.Count == 3 && reader.IsVisible && new TextRange(reader.Document.ContentStart, reader.Document.ContentEnd).Text.Contains("점자 직접 고치기"), "Fitted help opens the requested article and retains its navigation tabs"); CheckIcons(help, check);
+            var noteCard = reader.Document.Blocks.OfType<BlockUIContainer>().Select(block => block.Child).OfType<Border>()
+                .FirstOrDefault(border => border.Child is Border { Child: StackPanel });
+            check(noteCard is { CornerRadius.TopLeft: 6, BorderThickness: var noteThickness, BorderBrush: SolidColorBrush noteStroke, Child: Border noteAccent } &&
+                noteThickness == new Thickness(1) && noteStroke.Color == Color.FromRgb(234, 234, 234) &&
+                noteAccent.BorderThickness == new Thickness(3, 0, 0, 0) && noteAccent.BorderBrush is SolidColorBrush accent && accent.Color == Color.FromRgb(0, 95, 184),
+                "Help information card retains the Figma rounded outline and blue accent");
             var feedback = reader.Document.Blocks.OfType<BlockUIContainer>().Select(b => b.Child).OfType<StackPanel>()
                 .SelectMany(p => p.Children.OfType<StackPanel>()).FirstOrDefault(p => p.Children.OfType<TextBlock>().Any(t => t.Text == "이 도움말이 도움이 되었나요?"));
             var feedbackButtons = feedback?.Children.OfType<Button>().ToArray() ?? [];

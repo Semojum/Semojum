@@ -84,8 +84,10 @@ public sealed class HelpWindow : Window
                     var paragraph = new Paragraph { LineHeight = 24, Margin = new Thickness(0, 0, 0, 4) }; paragraph.Inlines.Add(new InlineUIContainer(badge)); paragraph.Inlines.Add(new Run("  " + steps[i])); doc.Blocks.Add(paragraph);
                 }
                 var note = new StackPanel(); var noteHeading = new StackPanel { Orientation = Orientation.Horizontal }; noteHeading.Children.Add(EditorModalDesign.Icon("help-info")); noteHeading.Children.Add(new TextBlock { Text = "알아 두기", FontWeight = FontWeights.Bold, Margin = new Thickness(8, 0, 0, 0) }); note.Children.Add(noteHeading);
-                note.Children.Add(new TextBlock { Text = "점자를 직접 고쳐도 텍스트 패널은 그대로 둡니다. 다시 점역할 때 유지 여부를 선택합니다.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
-                doc.Blocks.Add(new BlockUIContainer(new Border { Background = EditorModalDesign.Color("#F9F9F9"), BorderBrush = EditorModalDesign.Color("#005FB8"), BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12), Child = note }) { Margin = new Thickness(0, 16, 0, 20) });
+                note.Children.Add(new TextBlock { Text = "점자를 직접 고쳐도 텍스트 패널은 그대로 둡니다. 다시 점역할 때 유지 여부를 선택합니다.", TextWrapping = TextWrapping.Wrap, FontSize = 12, LineHeight = 16, Margin = new Thickness(0, 8, 0, 0) });
+                var noteAccent = new Border { BorderBrush = EditorModalDesign.Color("#005FB8"), BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12), Child = note };
+                var noteCard = new Border { Background = EditorModalDesign.Color("#F9F9F9"), BorderBrush = EditorModalDesign.Color("#EAEAEA"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6), Child = noteAccent };
+                doc.Blocks.Add(new BlockUIContainer(noteCard) { Margin = new Thickness(0, 16, 0, 20) });
                 doc.Blocks.Add(new Paragraph(new Run("함께 보기")) { FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 6) });
                 foreach (var relatedTitle in new[] { "검토 표시 읽는 법", "설정과 6점키", "단축키 목록" })
                 {
