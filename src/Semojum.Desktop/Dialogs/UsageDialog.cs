@@ -202,6 +202,15 @@ public sealed class UsageDialog : CompactDialog
         openRow.AddHandler(System.Windows.Controls.Button.ClickEvent, new RoutedEventHandler((sender, _) => { if (sender is FrameworkElement { DataContext: JobRow row }) OpenJob(row); }));
         jobs.Columns.Add(new DataGridTemplateColumn { Header = "", Width = 80, CellTemplate = new DataTemplate { VisualTree = openRow } });
         history.Children.Add(jobs); var historyCard = Card(history, 420); historyCard.Margin = new(0, 0, 0, 16); panel.Children.Add(historyCard);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(historyCard, "UsageWorkHistoryCard");
+        System.Windows.Automation.AutomationProperties.SetAutomationId(usageScroll, "UsageOverviewScroll");
+        // Fill the normal viewport like the Figma work-history card while leaving
+        // short windows scrollable and preserving the expandable usage breakdown.
+        usageScroll.ScrollChanged += (_, e) =>
+        {
+            if (!ReferenceEquals(e.OriginalSource, usageScroll) || e.ViewportHeightChange == 0 || e.ViewportHeight <= 0) return;
+            historyCard.Height = Math.Max(420, e.ViewportHeight - 212);
+        };
         var breakdown = new Expander { Header = "일별 사용량과 사용 내역", Content = new StackPanel(), Margin = new(0, 0, 0, 16) };
         ((StackPanel)breakdown.Content).Children.Add(chartCard); ((StackPanel)breakdown.Content).Children.Add(lower); panel.Children.Add(breakdown);
         async Task LoadUsageAsync()

@@ -31,7 +31,22 @@ internal static class WindowsUsageDesignChecks
             }
             var usageBar = Descendants(dialog).OfType<ProgressBar>().FirstOrDefault(b => b.Value == 17.49);
             var fill = usageBar?.Template.FindName("RangeFill", usageBar) as FrameworkElement;
-            check(fill is { ActualWidth: > 80 }, $"The returned 17.49% usage fills the visible bar ({fill?.ActualWidth:0.##} px)");
+            var track = usageBar?.Template.FindName("UsageTrack", usageBar) as FrameworkElement;
+            var originalWidth = dialog.Width;
+            foreach (var requestedWidth in new[] { originalWidth, 960d, 480d })
+            {
+                dialog.Width = requestedWidth;
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+                var trackWidth = track?.ActualWidth ?? 0;
+                var fillWidth = fill?.ActualWidth ?? 0;
+                var trackBounds = track?.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, trackWidth, track.ActualHeight)) ?? Rect.Empty;
+                check(usageBar is { Value: 17.49, IsVisible: true } && trackWidth > 0 && fillWidth > 0 &&
+                      Math.Abs(fillWidth - trackWidth * 0.1749) <= 1.5 &&
+                      trackBounds.Left >= -1 && trackBounds.Right <= dialog.ActualWidth + 1,
+                    $"The returned 17.49% usage remains proportional and visible at {dialog.ActualWidth:0.#}px (fill={fillWidth:0.##}, track={trackWidth:0.##})");
+            }
+            dialog.Width = originalWidth;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "내 작업별 크레딧") && fixture.JobRequests > 0,
                 "The usage page displays the real job list without switching views");
             check(Descendants(dialog).OfType<DataGrid>().Any(g => g.Items.Cast<object>().Any(x => x.ToString()!.Contains("실제 작업.pdf", StringComparison.Ordinal))), "The job list shows the returned document");

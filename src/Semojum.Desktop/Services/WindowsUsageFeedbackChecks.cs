@@ -44,6 +44,29 @@ internal static class WindowsUsageFeedbackChecks
             var job = jobs.Items[0];
             check(Equals(job.GetType().GetProperty("Mode")?.GetValue(job), "통합 변환") && jobs.Columns.Any(c => c is DataGridTemplateColumn && Equals(c.Header, "")),
                 "The job list uses the server mode and provides a per-row open action");
+            var historyCard = Descendants(dialog).OfType<Border>().Single(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b) == "UsageWorkHistoryCard");
+            var overviewScroll = Descendants(dialog).OfType<ScrollViewer>().Single(s => System.Windows.Automation.AutomationProperties.GetAutomationId(s) == "UsageOverviewScroll");
+            var expectedHeight = Math.Max(420, overviewScroll.ViewportHeight - 212);
+            check(Math.Abs(historyCard.ActualHeight - expectedHeight) < 2,
+                $"Work history follows the available viewport without clipping its minimum height (height={historyCard.ActualHeight:F1}, viewport={overviewScroll.ViewportHeight:F1})");
+            var oldWidth = dialog.Width; var oldHeight = dialog.Height;
+            if (dialog.MaxWidth >= 1440 && dialog.MaxHeight >= 1000)
+            {
+                dialog.Width = 1440; dialog.Height = 1000;
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+                check(historyCard.ActualHeight >= 680 && historyCard.ActualHeight <= 710,
+                    $"At 1440x1000 work history matches the Figma 696px card (height={historyCard.ActualHeight:F1})");
+            }
+            dialog.Width = 960; dialog.Height = 400; dialog.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            overviewScroll.ScrollToBottom(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var breakdown = Descendants(dialog).OfType<Expander>().Single(e => Equals(e.Header, "일별 사용량과 사용 내역"));
+            var breakdownRect = breakdown.TransformToAncestor(overviewScroll).TransformBounds(new Rect(0, 0, breakdown.ActualWidth, breakdown.ActualHeight));
+            check(historyCard.ActualHeight >= 420 && overviewScroll.ScrollableHeight > 0 && breakdownRect.Bottom <= overviewScroll.ViewportHeight + 2 && breakdownRect.Top >= -1,
+                "A short usage window scrolls to its existing expandable usage breakdown");
+            breakdown.IsExpanded = true; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(breakdown.IsExpanded && jobs.Items.Count > 0, "Expanding the breakdown retains loaded work history");
+            breakdown.IsExpanded = false; dialog.Width = oldWidth; dialog.Height = oldHeight; overviewScroll.ScrollToTop();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             dialog.Navigation.SelectedIndex = 3;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             await Wait(() => Descendants(dialog).OfType<ListBox>().Any());
