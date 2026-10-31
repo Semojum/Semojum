@@ -27,6 +27,11 @@ internal static class WindowsMenuDesignChecks
             var menus = window.ApplicationMenu.Items.OfType<MenuItem>().ToArray();
             check(menus.Length == 6 && menus.Select(m => m.Header?.ToString()).SequenceEqual(["파일(_F)", "편집(_E)", "보기(_V)", "삽입(_I)", "설정(_M)", "정보(_A)"]), "Main menu preserves the six final Figma categories");
             check(!window.AllTagsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Header, "빈칸")), "The insert menu no longer includes the blank submenu");
+            var tagMenus = window.AllTagsMenu.Items.OfType<MenuItem>().ToArray();
+            var tags = tagMenus.SelectMany(m => new[] { m }.Concat(m.Items.OfType<MenuItem>()))
+                .Where(m => m.Tag is string tag && tag.StartsWith("tag:")).Select(m => (string)m.Tag).ToArray();
+            check(tags.Length == 22 && tagMenus.Count(m => m.Items.Count > 0) == 3
+                && !tags.Any(t => t is "tag:밑줄빈칸" or "tag:네모빈칸"), "Insert tag structure excludes both blank commands and retains the remaining tags");
             check(!Descendants(window.FormatToolbarScroll).OfType<ComboBox>().Any(c => c.Items.OfType<ComboBoxItem>().Any(i => Equals(i.Content, "3칸"))), "The format toolbar no longer includes the indentation dropdown");
             check(window.AccountLabel.Visibility == Visibility.Collapsed, "The lower status bar does not show the account name");
             var size = menus[2].Items.OfType<MenuItem>().First(m => Equals(m.Header, "글자 크기"));
