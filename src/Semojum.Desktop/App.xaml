@@ -1,7 +1,7 @@
 <Application x:Class="Semojum.Desktop.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:svg="http://sharpvectors.codeplex.com/svgc/" xmlns:controls="clr-namespace:Semojum.Desktop.Controls">
   <Application.Resources>
    <ResourceDictionary>
-    <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Controls/FigmaIcons.xaml"/></ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Controls/FigmaIcons.xaml"/><ResourceDictionary Source="Styles/BoardListGrid.xaml"/><ResourceDictionary Source="Styles/UsageJobsGrid.xaml"/><ResourceDictionary Source="Styles/InstitutionListGrid.xaml"/><ResourceDictionary Source="Styles/InstitutionJobsGrid.xaml"/><ResourceDictionary Source="Styles/AppliedRulesGrid.xaml"/></ResourceDictionary.MergedDictionaries>
     <SolidColorBrush x:Key="Ink" Color="#1A1A1A" />
     <SolidColorBrush x:Key="Muted" Color="#5F5F5F" />
     <SolidColorBrush x:Key="Line" Color="#D1D1D1" />
@@ -44,20 +44,6 @@
       </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="{StaticResource Accent}"/><Setter Property="BorderBrush" Value="{StaticResource Accent}"/><Setter Property="Foreground" Value="White"/></Style>
-    <Style x:Key="BoardGrid" TargetType="DataGrid">
-      <Setter Property="BorderThickness" Value="0"/><Setter Property="Background" Value="White"/><Setter Property="HeadersVisibility" Value="Column"/>
-      <Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="#D6D6D6"/>
-      <Setter Property="ColumnHeaderHeight" Value="24"/><Setter Property="CanUserResizeColumns" Value="False"/><Setter Property="CanUserReorderColumns" Value="False"/>
-      <Setter Property="ColumnHeaderStyle"><Setter.Value><Style TargetType="{x:Type DataGridColumnHeader}">
-        <Setter Property="Background" Value="#FAFAFA"/><Setter Property="Foreground" Value="#5F646D"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="Padding" Value="12,0"/>
-        <Setter Property="BorderBrush" Value="#D6D6D6"/><Setter Property="BorderThickness" Value="0,0,0,1"/>
-      </Style></Setter.Value></Setter>
-      <Setter Property="CellStyle"><Setter.Value><Style TargetType="DataGridCell">
-        <Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,0"/><Setter Property="Foreground" Value="#1F1F1F"/>
-        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DataGridCell"><Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter>
-        <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#EFF6FC"/></Trigger></Style.Triggers>
-      </Style></Setter.Value></Setter>
-    </Style>
     <Style x:Key="UsageNavigation" TargetType="TabControl">
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">

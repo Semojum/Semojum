@@ -23,6 +23,7 @@ internal static class WindowsQa4Checks
         await WindowsNotificationChecks.RunAsync(check);
         await WindowsPublicInquiryFieldsChecks.RunAsync(check);
         await WindowsPublicDesignChecks.RunAsync(check);
+        WindowsGridIsolationChecks.Run(check);
         await WindowsBoardDesignChecks.RunAsync(check);
         await WindowsUsageDesignChecks.RunAsync(check);
         await WindowsUsageFeedbackChecks.RunAsync(check);
@@ -115,9 +116,9 @@ internal static class WindowsQa4Checks
         var face = (BrailleGridFace)faceElement.GetType().GetProperty("Data")!.GetValue(faceElement)!;
         var firstCell = face.Rows.SelectMany((row, y) => row.Select((cell, x) => (cell, x, y))).First(c => c.cell is not null);
         var hit = (GridCell?)faceElement.GetType().GetMethod("Hit", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .Invoke(faceElement, [new Point(52 + firstCell.x * 16 + 4, firstCell.y * 28 + 4)]);
+            .Invoke(faceElement, [new Point(61 + firstCell.x * 16 + 4, firstCell.y * 28 + 4)]);
         check(hit?.Block == firstCell.cell!.Block && hit.Offset == firstCell.cell.Offset,
-            "Visual parity braille pointer geometry maps the 52px gutter and 16x28 cells to the original document offsets");
+            "Visual parity braille pointer geometry maps the 61px first cell position and 16x28 cells to the original document offsets");
         owner.ZoomPicker.SelectedItem = "125%";
         check(owner.SourceEditor.FontSize == 17.5 && owner.Braille.GridView.FontSize == 27.5,
             "Editor zoom resizes the visible braille grid and source text together");

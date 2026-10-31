@@ -88,6 +88,27 @@ internal static class WindowsBoardDesignChecks
             check(footer.ScrollableWidth > 0 && inputRect.Left >= 0 && inputRect.Right <= footer.ViewportWidth + 1, "Narrow board footer scrolls to keep page input accessible");
         }
         finally { board.Close(); }
+        fixture.IncludeNotice = true;
+        var noticeBoard = new BoardDialog(client, "검수"); noticeBoard.Show();
+        try
+        {
+            var noticeGrid = Descendants(noticeBoard).OfType<DataGrid>().Single();
+            await WaitAsync(() => noticeGrid.Items.Count == 2);
+            noticeBoard.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var noticeRow = noticeGrid.Items.Cast<BoardRow>().Single(row => row.NoticeId is not null);
+            var postRow = noticeGrid.Items.Cast<BoardRow>().Single(row => row.NoticeId is null);
+            var noticeNumber = (TextBlock)noticeGrid.Columns[0].GetCellContent(noticeRow);
+            var noticeTitle = (TextBlock)noticeGrid.Columns[1].GetCellContent(noticeRow);
+            var noticeAuthor = (TextBlock)noticeGrid.Columns[2].GetCellContent(noticeRow);
+            var postNumber = (TextBlock)noticeGrid.Columns[0].GetCellContent(postRow);
+            var postTitle = (TextBlock)noticeGrid.Columns[1].GetCellContent(postRow);
+            check(noticeNumber.Text == "공지" && noticeNumber.FontSize == 14 && noticeNumber.FontWeight == FontWeights.Bold
+                && noticeTitle.Text == "서버 점검 안내" && noticeTitle.FontSize == 14 && noticeTitle.FontWeight == FontWeights.Bold
+                && noticeAuthor.FontWeight != FontWeights.Bold && postNumber.FontSize == 12 && postNumber.FontWeight == FontWeights.Normal
+                && postTitle.FontSize == 12 && postTitle.FontWeight == FontWeights.Normal,
+                "Board notice number and title use Figma bold typography without changing ordinary posts or notice authors");
+        }
+        finally { noticeBoard.Close(); fixture.IncludeNotice = false; }
         var editor = new PostEditorDialog(client, null, "검수");
         check(editor.Width == 1440 && editor.Height == 1000, "Post editor requests the final Figma geometry before work-area fitting");
         editor.Show();
@@ -169,6 +190,9 @@ internal static class WindowsBoardDesignChecks
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             CheckWorkAreaFit(detail, "Post detail", check);
+            check(Descendants(detail).OfType<TextBlock>().Any(t => t.Text == "작성자 · 2026-10-21 · 조회 4")
+                && !Descendants(detail).OfType<TextBlock>().Any(t => t.Text.Contains("글쓴이와 운영자만 열람", StringComparison.Ordinal)),
+                "Public post details do not claim that the post is restricted");
             check(Descendants(detail).OfType<TextBlock>().Any(t => t.Text == "운영자 답변 내용"), "Post detail retains the actual operator answer");
             check(HasIcon(detail, "board-export.svg"), "Post attachments render the Figma download icon");
             var attachment = Descendants(detail).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "첨부.pdf 다운로드");
@@ -188,6 +212,16 @@ internal static class WindowsBoardDesignChecks
                 "The attachment download stays within a 480px detail window and remains enabled");
         }
         finally { detail.Close(); }
+        var secretDetail = new PostDialog(client, post with { Secret = true }, "검수"); secretDetail.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var secretByline = Descendants(secretDetail).OfType<TextBlock>().Single(t => t.Text.Contains("글쓴이와 운영자만 열람", StringComparison.Ordinal));
+            check(secretByline.Text == "작성자 · 2026-10-21 · 조회 4 · 글쓴이와 운영자만 열람" && secretByline.FontSize == 12
+                && secretByline.TextWrapping == TextWrapping.Wrap,
+                "Secret post details display the Figma access explanation after the author, date and views, wrapping in narrow windows");
+        }
+        finally { secretDetail.Close(); }
         var longName = new string('가', 160) + ".pdf";
         var longPost = post with { Attachments = [new(4, longName, 1024, "https://example.invalid/long.pdf")] };
         var longDetail = new PostDialog(client, longPost, "검수"); longDetail.Show();
@@ -253,6 +287,7 @@ internal static class WindowsBoardDesignChecks
         internal List<bool> RequestedModes { get; } = [];
         internal int? FailPage { get; set; }
         internal bool? FailMine { get; set; }
+        internal bool IncludeNotice { get; set; }
         internal int SaveRequests { get; private set; }
         internal string LastSaveBody { get; private set; } = "";
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -277,7 +312,7 @@ internal static class WindowsBoardDesignChecks
             object result = request.RequestUri!.AbsolutePath switch
             {
                 "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER" },
-                "/api/board/posts" => new { page, totalCount = 23, notices = Array.Empty<object>(), items = new[] { new { postId = 42, title = "문의 제목", answerCount = 1, author = "작성자", secret = false, createdAt = "2026-10-21", viewCount = 4 } } },
+                "/api/board/posts" => new { page, totalCount = 23, notices = IncludeNotice ? new object[] { new { postId = 0, title = "서버 점검 안내", answerCount = 0, author = "운영자", secret = false, createdAt = "2026-10-21", viewCount = 4, noticeId = "notice-1" } } : Array.Empty<object>(), items = new[] { new { postId = 42, title = "문의 제목", answerCount = 1, author = "작성자", secret = false, createdAt = "2026-10-21", viewCount = 4 } } },
                 "/api/board/notifications" => new { unreadCount = 1, items = new[] { new { notificationId = 1, postId = 42, title = "문의 제목", answerCount = 1, lastAnsweredAt = "2026-10-22", read = false } } },
                 _ => new { }
             };

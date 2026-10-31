@@ -26,29 +26,35 @@ internal static class WindowsEditorHighlightChecks
             grid.SetLinkedRanges([new BlockSpan(block, 0, 1)]);
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
             var visual = Descendants(grid).OfType<FrameworkElement>().First(x => x.GetType().Name == "Face");
+            var hit = visual.GetType().GetMethod("Hit", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            int CellStart(GridCell cell) => Enumerable.Range(0, (int)visual.ActualWidth)
+                .First(x => ReferenceEquals(hit.Invoke(visual, [new Point(x, 2)]), cell));
+            var firstX = CellStart(first); var secondX = CellStart(second); var cellWidth = secondX - firstX;
+            check(firstX == 61 && cellWidth == 16, $"Braille cell hit targets match Figma geometry (first={firstX}, width={cellWidth})");
+            var markerX = firstX - 12;
             var bitmap = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth), (int)Math.Ceiling(visual.ActualHeight), 96, 96, PixelFormats.Pbgra32);
             bitmap.Render(visual);
-            var selected = Pixel(bitmap, 55, 2); var neighbor = Pixel(bitmap, 72, 2);
+            var selected = Pixel(bitmap, firstX + 3, 2); var neighbor = Pixel(bitmap, secondX + 4, 2);
             check(selected == Color.FromRgb(204, 228, 247) && neighbor == Colors.White,
                 $"A source-linked braille cell uses Figma selection blue without coloring its neighbor (selected {selected}; neighbor {neighbor})");
             grid.ActiveBlock = block; grid.CaretOffset = 1; grid.InvalidateFaces();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 40, 2) == Color.FromRgb(0, 95, 184), "The current braille row renders the Figma 2px blue marker");
+            check(Pixel(bitmap, markerX, 2) == Color.FromRgb(0, 95, 184), "The current braille row renders the Figma 2px blue marker");
             grid.SetLinkedRanges([]); grid.Point(first, false); grid.Point(second, true);
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 55, 2) == Color.FromRgb(204, 228, 247) && grid.Selection is [{ Start: 0, Length: 1 }],
+            check(Pixel(bitmap, firstX + 3, 2) == Color.FromRgb(204, 228, 247) && grid.Selection is [{ Start: 0, Length: 1 }],
                 "Direct braille selection uses the Figma color without changing its selected cell range");
             grid.SelectionHighlightBrush = new SolidColorBrush(Color.FromRgb(18, 52, 86));
             grid.SelectionTextBrush = Brushes.White; grid.InvalidateFaces();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 55, 2) == Color.FromRgb(18, 52, 86) && HasColor(bitmap, 52, 0, 16, 28, Colors.White),
+            check(Pixel(bitmap, firstX + 3, 2) == Color.FromRgb(18, 52, 86) && HasColor(bitmap, firstX, 0, cellWidth, 28, Colors.White),
                 "Custom dark selection retains a readable custom selected-text color");
             grid.HighContrast = true; grid.InvalidateFaces(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 40, 2) == Colors.White && Pixel(bitmap, 55, 2) == Colors.DarkBlue && HasColor(bitmap, 52, 0, 16, 28, Colors.White),
+            check(Pixel(bitmap, markerX, 2) == Colors.White && Pixel(bitmap, firstX + 3, 2) == Colors.DarkBlue && HasColor(bitmap, firstX, 0, cellWidth, 28, Colors.White),
                 "High contrast keeps the current-row marker and selected text visible");
             grid.HighContrast = false; grid.SelectionHighlightBrush = Brushes.Black;
             grid.CurrentLineBrush = Brushes.Black; grid.Point(first, false);
@@ -56,25 +62,25 @@ internal static class WindowsEditorHighlightChecks
             window.Activate(); grid.Focus(); grid.InvalidateFaces();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(grid.IsKeyboardFocusWithin && Pixel(bitmap, 52, 2) == Colors.White && Pixel(bitmap, 53, 2) == Colors.Black,
-                $"Focused caret remains visible over a black user selection (focus={grid.IsKeyboardFocusWithin}, center={Pixel(bitmap, 52, 2)})");
+            check(grid.IsKeyboardFocusWithin && Pixel(bitmap, firstX, 2) == Colors.White && Pixel(bitmap, firstX + 1, 2) == Colors.Black,
+                $"Focused caret remains visible over a black user selection (focus={grid.IsKeyboardFocusWithin}, center={Pixel(bitmap, firstX, 2)})");
             grid.SetLinkedRanges([]); grid.InvalidateFaces(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 52, 2) == Colors.White && Pixel(bitmap, 55, 2) == Colors.Black,
+            check(Pixel(bitmap, firstX, 2) == Colors.White && Pixel(bitmap, firstX + 3, 2) == Colors.Black,
                 "Focused caret remains visible over a black user current-line color");
             grid.HighContrast = true; grid.InvalidateFaces(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 52, 2) == Colors.White && Pixel(bitmap, 55, 2) == Colors.DarkBlue,
+            check(Pixel(bitmap, firstX, 2) == Colors.White && Pixel(bitmap, firstX + 3, 2) == Colors.DarkBlue,
                 "Focused caret remains visible on the high contrast current line");
             grid.HighContrast = false; grid.CurrentLineBrush = Brushes.White; grid.InvalidateFaces();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(Pixel(bitmap, 51, 2) == Colors.Black && Pixel(bitmap, 52, 2) == Colors.White && Pixel(bitmap, 54, 2) == Colors.White,
+            check(Pixel(bitmap, firstX - 1, 2) == Colors.Black && Pixel(bitmap, firstX, 2) == Colors.White && Pixel(bitmap, firstX + 2, 2) == Colors.White,
                 "Focused caret retains a dark edge over a white current line");
             grid.HighContrast = true;
             Keyboard.ClearFocus(); grid.InvalidateFaces(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             bitmap = Render(visual);
-            check(!grid.IsKeyboardFocusWithin && Pixel(bitmap, 52, 2) == Colors.DarkBlue,
+            check(!grid.IsKeyboardFocusWithin && Pixel(bitmap, firstX, 2) == Colors.DarkBlue,
                 "Caret is hidden when the braille grid loses keyboard focus");
         }
         finally { window.Close(); }

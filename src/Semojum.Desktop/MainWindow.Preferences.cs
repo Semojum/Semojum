@@ -13,6 +13,7 @@ namespace Semojum.Desktop;
 public partial class MainWindow
 {
     private EditorAppearance appearance = new();
+    private Brush currentLineNumberColor = Brushes.Gray;
     private readonly DotSpeech dotSpeech = new();
     private readonly Dictionary<TextEditor, WideCaret> wideCarets = [];
     internal void ApplyAppearance(EditorAppearance value) => ApplyAppearance(value, explicitAppearance: false);
@@ -22,6 +23,9 @@ public partial class MainWindow
         Brush C(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
         var customLine = explicitAppearance || accountPreferences.Appearance is not null || !value.CurrentLineColor.Equals(new EditorAppearance().CurrentLineColor, StringComparison.OrdinalIgnoreCase);
         var gridLine = C(customLine ? value.CurrentLineColor : AppearanceDialog.DefaultCurrentLineColor);
+        var defaultLineColor = value.LineNumberColor.Equals(new EditorAppearance().LineNumberColor, StringComparison.OrdinalIgnoreCase);
+        var lineNumberColor = !explicitAppearance && accountPreferences.Appearance is null && defaultLineColor ? C(AppearanceDialog.DefaultLineNumberColor) : C(value.LineNumberColor);
+        currentLineNumberColor = lineNumberColor;
         var foreground = value.HighContrast ? Brushes.White : C(value.TextColor);
         var background = value.HighContrast ? Brushes.Black : C(value.BackgroundColor);
         void Apply(TextEditor editor, bool braille)
@@ -44,19 +48,19 @@ public partial class MainWindow
             view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
             editor.Options.ShowSpaces = editor.Options.ShowTabs = editor.Options.ShowEndOfLine = value.ShowFormattingMarks;
             editor.ShowLineNumbers = value.ShowLineNumbers;
-            ApplyLineNumberAppearance(editor, value);
+            ApplyLineNumberAppearance(editor, value, lineNumberColor);
             if (editor == PageEditor.Editor)
             {
                 PageEditor.OverviewHighContrast = value.HighContrast;
-                foreach (var memo in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { memo.GutterWidth = 12; memo.Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground); memo.InvalidateMeasure(); }
+                foreach (var memo in editor.TextArea.LeftMargins.OfType<MemoMargin>()) { memo.GutterWidth = 17; memo.SlotPadding = 1; memo.Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground); memo.InvalidateMeasure(); }
                 foreach (var separator in editor.TextArea.LeftMargins.OfType<System.Windows.Shapes.Line>().ToArray())
                 {
                     editor.TextArea.LeftMargins.Remove(separator);
                 }
                 if (!editor.TextArea.LeftMargins.OfType<SourceTextInset>().Any()) editor.TextArea.LeftMargins.Add(new SourceTextInset(editor));
-                foreach (var inset in editor.TextArea.LeftMargins.OfType<SourceTextInset>()) { inset.LineBrush = value.HighContrast ? Brushes.White : C("#D6D6D6"); inset.CurrentLineMarkerBrush = value.HighContrast ? Brushes.White : C("#005FB8"); inset.InvalidateVisual(); }
+                foreach (var inset in editor.TextArea.LeftMargins.OfType<SourceTextInset>()) { inset.LineBrush = value.HighContrast ? Brushes.White : C("#EAEAEA"); inset.CurrentLineMarkerBrush = value.HighContrast ? Brushes.White : C("#005FB8"); inset.InvalidateVisual(); }
             }
-            editor.LineNumbersForeground = value.HighContrast ? Brushes.White : C(value.LineNumberColor);
+            editor.LineNumbersForeground = value.HighContrast ? Brushes.White : lineNumberColor;
             foreach (var colorizer in view.LineTransformers.OfType<TagColorizer>()) colorizer.TagBrush = value.HighContrast ? Brushes.Cyan : C(value.TagColor);
             if (!wideCarets.TryGetValue(editor, out var caret)) { caret = new(editor); wideCarets[editor] = caret; view.BackgroundRenderers.Add(caret); }
             caret.Width = value.CursorWidth; view.Redraw();
@@ -65,6 +69,15 @@ public partial class MainWindow
         Braille.NormalForeground = value.HighContrast ? Brushes.White : C(value.BrailleColor);
         if (detachedPane is not null) detachedPane.NormalForeground = Braille.NormalForeground;
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
+        void ApplyGridAppearance(BrailleGridView grid)
+        {
+            grid.LineNumberForeground = value.HighContrast ? Brushes.White : lineNumberColor;
+            grid.LineNumberBackground = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground);
+            grid.CustomLineNumberForeground = !IsDefaultLineNumberColor(value.LineNumberColor);
+            grid.CustomLineNumberBackground = !value.LineNumberBackground.Equals(new EditorAppearance().LineNumberBackground, StringComparison.OrdinalIgnoreCase);
+        }
+        ApplyGridAppearance(Braille.GridView);
+        if (detachedPane is not null) ApplyGridAppearance(detachedPane.GridView);
         Braille.GridView.FontSize = value.BrailleSize; Braille.GridView.HighContrast = value.HighContrast; Braille.GridView.CurrentLineBrush = gridLine; Braille.GridView.SelectionHighlightBrush = C(value.SelectionColor); Braille.GridView.SelectionTextBrush = C(value.SelectionTextColor); Braille.GridView.ShowLineNumbers = value.ShowLineNumbers; Braille.GridView.InvalidateFaces();
         if (detachedPane is not null) { detachedPane.GridView.FontSize = value.BrailleSize; detachedPane.GridView.HighContrast = value.HighContrast; detachedPane.GridView.CurrentLineBrush = gridLine; detachedPane.GridView.SelectionHighlightBrush = C(value.SelectionColor); detachedPane.GridView.SelectionTextBrush = C(value.SelectionTextColor); detachedPane.GridView.ShowLineNumbers = value.ShowLineNumbers; detachedPane.GridView.InvalidateFaces(); }
         LineNumbersToggle.IsChecked = value.ShowLineNumbers;
@@ -73,23 +86,28 @@ public partial class MainWindow
         EditorToolbar.Visibility = value.ShowToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (!value.SpeakDots) dotSpeech.Stop();
     }
-    private void ApplyLineNumberAppearance(TextEditor editor, EditorAppearance value)
+    private void ApplyLineNumberAppearance(TextEditor editor, EditorAppearance value, Brush lineNumberColor)
     {
         Brush C(string hex) => new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
         foreach (var margin in editor.TextArea.LeftMargins.OfType<LineNumberMargin>().ToArray())
         {
             var index = editor.TextArea.LeftMargins.IndexOf(margin);
             editor.TextArea.LeftMargins[index] = new ColoredLineNumbers { Background = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground), Margin = margin.Margin,
-                NumberBrush = value.HighContrast ? Brushes.White : C(value.LineNumberColor), Compact = editor == PageEditor.Editor, HighContrast = value.HighContrast,
-                CustomNumberColor = !value.LineNumberColor.Equals(new EditorAppearance().LineNumberColor, StringComparison.OrdinalIgnoreCase),
+                NumberBrush = value.HighContrast ? Brushes.White : lineNumberColor, Compact = editor == PageEditor.Editor, HighContrast = value.HighContrast,
+                CustomNumberColor = !IsDefaultLineNumberColor(value.LineNumberColor),
                 CustomBackground = !value.LineNumberBackground.Equals(new EditorAppearance().LineNumberBackground, StringComparison.OrdinalIgnoreCase),
                 MinWidth = editor == PageEditor.Editor ? 32 : 0 };
         }
     }
+    private static bool IsDefaultLineNumberColor(string color) =>
+        color.Equals(new EditorAppearance().LineNumberColor, StringComparison.OrdinalIgnoreCase)
+        || color.Equals(AppearanceDialog.DefaultLineNumberColor, StringComparison.OrdinalIgnoreCase);
     private async Task EditAppearanceAsync(bool colors)
     {
         var initial = accountPreferences.Appearance is null && appearance.CurrentLineColor.Equals(new EditorAppearance().CurrentLineColor, StringComparison.OrdinalIgnoreCase)
             ? appearance with { CurrentLineColor = AppearanceDialog.DefaultCurrentLineColor } : appearance;
+        if (accountPreferences.Appearance is null && initial.LineNumberColor.Equals(new EditorAppearance().LineNumberColor, StringComparison.OrdinalIgnoreCase))
+            initial = initial with { LineNumberColor = AppearanceDialog.DefaultLineNumberColor };
         var dialog = new AppearanceDialog(initial, value => ApplyAppearance(value, !ReferenceEquals(value, initial)), colors) { Owner = this };
         if (dialog.ShowDialog() != true) return;
         accountPreferences = accountPreferences with { Appearance = dialog.Result }; await PersistAccountPreferencesAsync();

@@ -94,9 +94,20 @@ public sealed class BoardDialog : CompactDialog
     public BoardDialog(BoardClient client, string workInfo, bool initiallyMine = false) : base("게시판 - 세모점", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White;
-        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Style = (Style)FindResource("BoardGrid") };
+        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Style = (Style)FindResource("BoardListGrid") };
+        var noticeText = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle);
+        noticeText.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d));
+        noticeText.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
+        var regularPost = new DataTrigger { Binding = new Binding(nameof(BoardRow.NoticeId)), Value = null };
+        regularPost.Setters.Add(new Setter(TextBlock.FontSizeProperty, 12d));
+        regularPost.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Normal));
+        noticeText.Triggers.Add(regularPost);
         foreach (var (label, name, width) in new[] { ("번호", "Number", 70d), ("제목", "DisplayTitle", 570d), ("글쓴이", "Author", 120d), ("작성일", "CreatedAt", 100d), ("조회", "ViewCount", 80d) })
-            grid.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(name), Width = width });
+        {
+            var column = new DataGridTextColumn { Header = label, Binding = new Binding(name), Width = width };
+            if (name is "Number" or "DisplayTitle") column.ElementStyle = noticeText;
+            grid.Columns.Add(column);
+        }
         var previousFooter = (Border)Actions.Parent; previousFooter.Child = null; previousFooter.Visibility = Visibility.Collapsed;
         var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar);
         var heading = new DockPanel { Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
@@ -306,7 +317,7 @@ public sealed class PostDialog : CompactDialog
             var heading = new DockPanel { MinHeight = 28 };
             if (post.Secret) heading.Children.Add(new Border { BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(1), Width = 34, Height = 18, Margin = new(0, 0, 8, 0), Child = new TextBlock { Text = "비밀", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Center } });
             heading.Children.Add(new TextBlock { Text = post.Title, FontSize = 20, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap }); panel.Children.Add(heading);
-            panel.Children.Add(new TextBlock { Text = $"{post.Author} · {post.CreatedAt} · 조회 {post.ViewCount}", Margin = new(0, 10, 0, 6), Foreground = (Brush)FindResource("Muted"), FontSize = 12 });
+            panel.Children.Add(new TextBlock { Text = $"{post.Author} · {post.CreatedAt} · 조회 {post.ViewCount}" + (post.Secret ? " · 글쓴이와 운영자만 열람" : ""), Margin = new(0, 10, 0, 6), Foreground = (Brush)FindResource("Muted"), FontSize = 12, TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Line"), Margin = new(0, 0, 0, 13) });
             panel.Children.Add(new TextBlock { Text = post.Content, TextWrapping = TextWrapping.Wrap, FontSize = 14, LineHeight = 22 });
             foreach (var a in post.Attachments)

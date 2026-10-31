@@ -5,7 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.Win32;
-using static Semojum.Desktop.Dialogs.ExportRangeDialog;
+using static Semojum.Desktop.Dialogs.FigmaDialogElements;
 
 namespace Semojum.Desktop.Dialogs;
 

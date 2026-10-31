@@ -8,6 +8,7 @@ using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Semojum.Core.Integration;
@@ -55,15 +56,17 @@ internal static class WindowsPublicInquiryFieldsChecks
                 var provider = (UIElementAutomationPeer.CreatePeerForElement(consent) as CheckBoxAutomationPeer)?.GetPattern(PatternInterface.Toggle) as IToggleProvider;
                 provider?.Toggle();
                 check(provider is not null && consent.IsChecked == true, "Privacy consent is accessible through the checkbox automation toggle");
-                consent.Focus();
+                var focusGranted = consent.Focus() && consent.IsKeyboardFocused && dialog.IsActive
+                    && GetForegroundWindow() == new WindowInteropHelper(dialog).Handle;
                 var source = PresentationSource.FromVisual(consent);
-                if (source is not null)
+                if (focusGranted && source is not null)
                 {
                     consent.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
                     consent.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
+                    check(consent.IsChecked == false, "The focused consent checkbox can be unchecked using the WPF Space key path");
                 }
-                check(source is not null && consent.IsChecked == false, "The focused consent checkbox can be unchecked using the WPF Space key path");
-                provider?.Toggle();
+                else Console.WriteLine("SKIP: inquiry Space key requires keyboard focus on the consent checkbox.");
+                if (consent.IsChecked != true) provider?.Toggle();
                 send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 var deadline = DateTime.UtcNow.AddSeconds(5);
                 while (fixture.Bodies.Count < 1 && DateTime.UtcNow < deadline) await Task.Delay(25);
@@ -180,6 +183,8 @@ internal static class WindowsPublicInquiryFieldsChecks
         }
         finally { if (purchase.IsVisible) purchase.Close(); }
     }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
     {
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)

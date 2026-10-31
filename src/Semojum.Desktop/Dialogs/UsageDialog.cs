@@ -243,7 +243,7 @@ public sealed class UsageDialog : CompactDialog
         var dates = new StackPanel { Orientation = Orientation.Horizontal }; DockPanel.SetDock(dates, Dock.Top); history.Children.Add(dates);
         var from = new DatePicker { SelectedDate = DateTime.Today.AddDays(-29), Width = 150 }; var to = new DatePicker { SelectedDate = DateTime.Today, Width = 150 };
         dates.Children.Add(from); dates.Children.Add(new TextBlock { Text = " ~ " }); dates.Children.Add(to);
-        var jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, Margin = new(0, 12, 0, 0), RowHeight = 40, Style = (Style)FindResource("BoardGrid") };
+        var jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, Margin = new(0, 12, 0, 0), RowHeight = 40, Style = (Style)FindResource("UsageJobsGrid") };
         foreach (var (label, property, width) in new[] { ("작업명", "FileName", 250d), ("모드", "Mode", 100d), ("쪽수", "Pages", 80d), ("크레딧", "Credits", 90d), ("완료", "Finished", 120d) })
             jobs.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(property), Width = width });
         var badge = new FrameworkElementFactory(typeof(Border)); badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(10)); badge.SetValue(Border.BorderThicknessProperty, new Thickness(1));

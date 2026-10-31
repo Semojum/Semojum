@@ -38,6 +38,7 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
     }
     public Func<int, (EditorBlock? Block, int Line)>? ResolveLine { get; init; }
     public double GutterWidth { get; set; } = 16;
+    public double SlotPadding { get; set; }
     public Brush? Background { get; set; }
     public bool ShowMemos { get; set; } = true;
     public bool ShowReviews { get; set; } = true;
@@ -112,7 +113,7 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
     }
     protected override void OnMouseLeave(MouseEventArgs e)
     { if (ToolTip is ToolTip tip) tip.IsOpen = false; base.OnMouseLeave(e); }
-    protected override Size MeasureOverride(Size availableSize) => new(Math.Max(GutterWidth, markerSlots * 16), 0);
+    protected override Size MeasureOverride(Size availableSize) => new(Math.Max(GutterWidth, markerSlots * 16 + SlotPadding), 0);
     protected override void OnTextViewChanged(TextView oldTextView, TextView newTextView)
     {
         if (oldTextView is not null) oldTextView.VisualLinesChanged -= Changed;
@@ -124,10 +125,11 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
     }
     private void Changed(object? sender, EventArgs e) => InvalidateVisual();
     internal bool IsReviewHit(int line, double x) => ReviewPreview(line).Length > 0 &&
-        (int)(x / 16) == (Preview(line).Length > 0 ? 1 : 0);
+        x >= SlotPadding && (int)((x - SlotPadding) / 16) == (Preview(line).Length > 0 ? 1 : 0);
     internal void ActivateLine(int line, double x)
     {
-        var memo = Preview(line).Length > 0; var warning = ReviewPreview(line).Length > 0; var slot = (int)(x / 16);
+        if (x < SlotPadding) return;
+        var memo = Preview(line).Length > 0; var warning = ReviewPreview(line).Length > 0; var slot = (int)((x - SlotPadding) / 16);
         if (memo && slot == 0) open(line);
         else if (IsReviewHit(line, x)) ReviewRequested?.Invoke(line);
         else if (slot >= (memo ? 1 : 0) + (warning ? 1 : 0) && slot < (memo ? 1 : 0) + (warning ? 1 : 0) + ManualKinds(line).Length) ManualReviewRequested?.Invoke();
@@ -154,9 +156,9 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
             if (!memo && !review && kinds.Length == 0) continue;
             var y = line.VisualTop - TextView.VerticalOffset + (line.Height - 16) / 2;
             void Icon(Drawing drawing, double x) { drawingContext.PushTransform(new TranslateTransform(x, y)); drawingContext.DrawDrawing(drawing); drawingContext.Pop(); }
-            if (memo) Icon(MemoDrawing, 0);
-            if (review) Icon(WarningDrawing, memo ? 16 : 0);
-            var x = ((memo ? 1 : 0) + (review ? 1 : 0)) * 16;
+            if (memo) Icon(MemoDrawing, SlotPadding);
+            if (review) Icon(WarningDrawing, SlotPadding + (memo ? 16 : 0));
+            var x = SlotPadding + ((memo ? 1 : 0) + (review ? 1 : 0)) * 16;
             foreach (var kind in kinds) { Icon(ReviewVisuals.Icon(kind), x); x += 16; }
             if (kinds.Length > 0) drawingContext.DrawRectangle(SystemParameters.HighContrast ? SystemColors.WindowTextBrush : ReviewVisuals.Ink(kinds[^1]), null,
                 new Rect(0, line.VisualTop - TextView.VerticalOffset, 2, line.Height));

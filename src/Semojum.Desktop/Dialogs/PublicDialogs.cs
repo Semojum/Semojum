@@ -8,7 +8,7 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using Semojum.Core.Integration;
 using SharpVectors.Converters;
-using static Semojum.Desktop.Dialogs.ExportRangeDialog;
+using static Semojum.Desktop.Dialogs.FigmaDialogElements;
 
 namespace Semojum.Desktop.Dialogs;
 

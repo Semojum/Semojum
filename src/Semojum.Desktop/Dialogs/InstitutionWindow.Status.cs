@@ -33,7 +33,7 @@ internal sealed class InstitutionStatusTextConverter : IValueConverter
 
 internal sealed class InstitutionStatusBrushConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => ExportRangeDialog.Brush((parameter as string, value as string) switch
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => FigmaDialogElements.Brush((parameter as string, value as string) switch
     { ("account", "ACTIVE") => "#0F7B0F", ("notice", "ORG") => "#C42B1C", _ => "#5F5F5F" });
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
 }

@@ -20,7 +20,7 @@ internal static class WindowsIndividualControlStatesChecks
         var button = new Button { Content = "확인" }; PublicDialogDesign.StyleAction(button);
         var primary = new Button { Content = "확인" }; PublicDialogDesign.StyleAction(primary, true);
         var nested = new TextBox { Text = "업로드" };
-        var stretch = new Button { Width = 130, Height = 32, Content = nested, Template = ExportRangeDialog.SurfaceTemplate(4, true) };
+        var stretch = new Button { Width = 130, Height = 32, Content = nested, Template = FigmaDialogElements.SurfaceTemplate(4, true) };
         var input = new TextBox { Text = "첫 줄\n두 번째 줄", AcceptsReturn = true, Height = 60, Width = 180 };
         EditorModalDesign.Input(input);
         var plain = new TextBox { Text = "경계 없음", BorderThickness = new Thickness(0) }; EditorModalDesign.Input(plain); plain.BorderThickness = new Thickness(0);
