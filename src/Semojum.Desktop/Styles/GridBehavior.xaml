@@ -1,0 +1,12 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Shared interaction and cell rendering only. Screen-specific appearance belongs in each screen dictionary. -->
+  <Style x:Key="GridBehavior" TargetType="DataGrid">
+    <Setter Property="CanUserResizeColumns" Value="False"/>
+    <Setter Property="CanUserReorderColumns" Value="False"/>
+  </Style>
+  <Style x:Key="GridCellBehavior" TargetType="DataGridCell">
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DataGridCell">
+      <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Center"/></Border>
+    </ControlTemplate></Setter.Value></Setter>
+  </Style>
+</ResourceDictionary>

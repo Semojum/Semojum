@@ -7,7 +7,7 @@ namespace Semojum.Desktop.Services;
 internal static class WindowsFocusedChecks
 {
     private static readonly HashSet<string> Areas = new(StringComparer.OrdinalIgnoreCase)
-        { "board", "institution", "editor", "appearance" };
+        { "board", "institution", "editor", "appearance", "usage", "rules", "dialogs" };
 
     internal static bool IsKnownArea(string area) => Areas.Contains(area);
 
@@ -30,6 +30,7 @@ internal static class WindowsFocusedChecks
             switch (area.ToLowerInvariant())
             {
                 case "board":
+                    WindowsGridIsolationChecks.Run(Check);
                     await WindowsBoardDesignChecks.RunAsync(Check);
                     await WindowsBoardLatencyChecks.RunAsync(Check);
                     break;
@@ -37,6 +38,22 @@ internal static class WindowsFocusedChecks
                     await WindowsInstitutionClientChecks.RunAsync(Check);
                     await WindowsInstitutionDesignChecks.RunAsync(Check);
                     await WindowsInstitutionVisualChecks.RunAsync(Check);
+                    break;
+                case "usage":
+                    await WindowsUsageDesignChecks.RunAsync(Check);
+                    await WindowsUsageFeedbackChecks.RunAsync(Check);
+                    break;
+                case "rules":
+                    await WindowsRuleDesignChecks.RunAsync(Check);
+                    break;
+                case "dialogs":
+                    await WindowsPublicInquiryFieldsChecks.RunAsync(Check);
+                    await WindowsPublicDesignChecks.RunAsync(Check);
+                    await WindowsFormDesignChecks.RunAsync(Check);
+                    await WindowsRangeDesignChecks.RunAsync(Check);
+                    await WindowsGoToDesignChecks.RunAsync(Check);
+                    await WindowsNoticeDesignChecks.RunAsync(directory, Check);
+                    WindowsFileDialogDesignChecks.Run(Check);
                     break;
                 case "editor":
                     await WindowsReviewMarginChecks.RunAsync(Check);

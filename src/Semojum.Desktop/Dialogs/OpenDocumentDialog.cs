@@ -6,7 +6,7 @@ using System.Windows.Media;
 using Microsoft.Win32;
 using Semojum.Core;
 using Semojum.Core.Integration;
-using static Semojum.Desktop.Dialogs.ExportRangeDialog;
+using static Semojum.Desktop.Dialogs.FigmaDialogElements;
 
 namespace Semojum.Desktop.Dialogs;
 

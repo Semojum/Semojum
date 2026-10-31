@@ -11,7 +11,7 @@ public partial class App : Application
         var focused = e.Args.Length > 0 && e.Args[0] == "--check-area";
         if (focused && (e.Args.Length != 3 || !WindowsFocusedChecks.IsKnownArea(e.Args[1])))
         {
-            Console.Error.WriteLine("Usage: --check-area <board|institution|editor|appearance> <output-directory>");
+            Console.Error.WriteLine("Usage: --check-area <board|institution|editor|appearance|usage|rules|dialogs> <output-directory>");
             Shutdown(2);
             return;
         }

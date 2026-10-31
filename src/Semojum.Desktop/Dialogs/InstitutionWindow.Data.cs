@@ -109,19 +109,19 @@ public sealed partial class InstitutionWindow
         }
         SizeChartColumns(); ApplyChartContrast(chartHighContrast);
     }
-    private System.Windows.Media.Brush ChartBarBrush() => chartHighContrast ? SystemColors.HighlightBrush : ExportRangeDialog.Brush("#5B8DEF");
+    private System.Windows.Media.Brush ChartBarBrush() => chartHighContrast ? SystemColors.HighlightBrush : FigmaDialogElements.Brush("#5B8DEF");
     internal void ApplyChartContrast(bool highContrast)
     {
         chartHighContrast = highContrast;
         if (chartCard is not null)
         {
             chartCard.Background = highContrast ? SystemColors.WindowBrush : System.Windows.Media.Brushes.White;
-            chartCard.BorderBrush = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#EAEAEA");
+            chartCard.BorderBrush = highContrast ? SystemColors.WindowTextBrush : FigmaDialogElements.Brush("#EAEAEA");
             if (chartCard.Child is StackPanel { Children.Count: > 0 } panel && panel.Children[0] is TextBlock title)
-                title.Foreground = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#1A1A1A");
+                title.Foreground = highContrast ? SystemColors.WindowTextBrush : FigmaDialogElements.Brush("#1A1A1A");
         }
-        var text = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#5F5F5F");
-        var axis = highContrast ? SystemColors.WindowTextBrush : ExportRangeDialog.Brush("#8A8A8A");
+        var text = highContrast ? SystemColors.WindowTextBrush : FigmaDialogElements.Brush("#5F5F5F");
+        var axis = highContrast ? SystemColors.WindowTextBrush : FigmaDialogElements.Brush("#8A8A8A");
         ChartMaximum.Foreground = ChartMiddle.Foreground = ChartLower.Foreground = axis;
         ChartAverage.Foreground = ChartEmpty.Foreground = chartLegendText.Foreground = text;
         chartLegendDot.Background = ChartBarBrush();

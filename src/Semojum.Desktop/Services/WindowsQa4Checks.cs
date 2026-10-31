@@ -23,6 +23,7 @@ internal static class WindowsQa4Checks
         await WindowsNotificationChecks.RunAsync(check);
         await WindowsPublicInquiryFieldsChecks.RunAsync(check);
         await WindowsPublicDesignChecks.RunAsync(check);
+        WindowsGridIsolationChecks.Run(check);
         await WindowsBoardDesignChecks.RunAsync(check);
         await WindowsUsageDesignChecks.RunAsync(check);
         await WindowsUsageFeedbackChecks.RunAsync(check);

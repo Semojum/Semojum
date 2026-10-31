@@ -94,7 +94,7 @@ public sealed class BoardDialog : CompactDialog
     public BoardDialog(BoardClient client, string workInfo, bool initiallyMine = false) : base("게시판 - 세모점", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White;
-        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Style = (Style)FindResource("BoardGrid") };
+        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Style = (Style)FindResource("BoardListGrid") };
         var noticeText = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle);
         noticeText.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d));
         noticeText.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
