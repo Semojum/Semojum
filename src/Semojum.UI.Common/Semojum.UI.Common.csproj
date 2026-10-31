@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework><UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting></PropertyGroup>
+  <ItemGroup><PackageReference Include="SharpVectors.Wpf" Version="1.8.5" /></ItemGroup>
+  <ItemGroup><Resource Include="Assets/Figma/*.svg" /></ItemGroup>
+</Project>

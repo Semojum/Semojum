@@ -16,7 +16,7 @@ internal static class WindowsImageOrderChecks
     {
         var folder = Path.Combine(Path.GetTempPath(), "semojum-image-order-" + Guid.NewGuid());
         Directory.CreateDirectory(folder);
-        var paths = Enumerable.Range(1, 3).Select(i => Path.Combine(folder, $"{i}.png")).ToArray();
+        var paths = Enumerable.Range(1, 3).Select(i => Path.Combine(folder, i == 1 ? "가.png".Normalize(System.Text.NormalizationForm.FormD) : $"{i}.png")).ToArray();
         try
         {
             for (var i = 0; i < paths.Length; i++)
@@ -39,6 +39,8 @@ internal static class WindowsImageOrderChecks
                         .Single(x => AutomationProperties.GetName(x) == "선택한 이미지 미리보기");
                     check(items.Items.Cast<string>().SequenceEqual(input),
                         "Image selection order is not sorted by filename");
+                    check(items.Items.Cast<string>().Contains(paths[0]) && Descendants(items).OfType<TextBlock>().Any(t => t.Text.Contains("가.png", StringComparison.Ordinal)),
+                        "Image list composes Korean for display while retaining the original filesystem path");
                     check(preview.Source is BitmapSource, "First image preview loads on initial selection");
                     var first = preview.Source;
                     items.SelectedIndex = 1;

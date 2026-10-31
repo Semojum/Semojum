@@ -2,4 +2,11 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/Semojum.Core/Semojum.Core.csproj"/></ItemGroup>
   <ItemGroup><Content Include="../../scripts/engine-entry.py" Link="engine-adapter/engine-entry.py" CopyToOutputDirectory="PreserveNewest" /><Content Include="../../scripts/editor_composition.py" Link="engine-adapter/editor_composition.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Semojum.Feature.Board/Semojum.Feature.Board.csproj" />
+    <ProjectReference Include="../../src/Semojum.Feature.Rules/Semojum.Feature.Rules.csproj" />
+    <ProjectReference Include="../../src/Semojum.Feature.Settings/Semojum.Feature.Settings.csproj" />
+    <ProjectReference Include="../../src/Semojum.Feature.Editor/Semojum.Feature.Editor.csproj" />
+    <ProjectReference Include="../../src/Semojum.Feature.Institution/Semojum.Feature.Institution.csproj" />
+  </ItemGroup>
 </Project>

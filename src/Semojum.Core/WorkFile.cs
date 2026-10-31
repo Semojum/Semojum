@@ -29,7 +29,7 @@ public static class WorkFile
         var snapshot = JsonSerializer.Deserialize<WorkSnapshot>(await File.ReadAllTextAsync(path), JsonOptions)
             ?? throw new InvalidDataException("작업 파일을 읽을 수 없습니다.");
         if (snapshot.Format != Format || snapshot.Version != 1 || snapshot.Layout is null || snapshot.Blocks is not { Length: > 0 })
-            throw new InvalidDataException("세모점 목업에서 저장한 .mock.smi 파일만 열 수 있습니다.");
+            throw new InvalidDataException("누리닷 목업에서 저장한 .mock.smi 파일만 열 수 있습니다.");
         snapshot.Layout.Validate();
         if (snapshot.Blocks.Any(b => b is null || b.Source is null || b.Braille is null || b.Memo is null)
             || snapshot.Blocks.Select(b => b.Id).Distinct().Count() != snapshot.Blocks.Length)

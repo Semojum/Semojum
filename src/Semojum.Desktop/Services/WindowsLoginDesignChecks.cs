@@ -22,7 +22,7 @@ internal static class WindowsLoginDesignChecks
         var hasChoice = LogicalDescendants(preview).OfType<CheckBox>().Any(c => AutomationProperties.GetName(c) == "로그인 상태 유지");
         check(hasChoice, "Login exposes a keep-signed-in choice");
         if (!hasChoice) { preview.Close(); return; }
-        check(preview.WindowStyle == WindowStyle.None && System.Windows.Shell.WindowChrome.GetWindowChrome(preview)?.CaptionHeight == 32 && preview.Title == "세모점 로그인",
+        check(preview.WindowStyle == WindowStyle.None && System.Windows.Shell.WindowChrome.GetWindowChrome(preview)?.CaptionHeight == 32 && preview.Title == "누리닷 로그인",
             "Login preserves a draggable 32px Windows title bar and a meaningful title");
         preview.Close();
         RunChoice(true, null, "editor", check);

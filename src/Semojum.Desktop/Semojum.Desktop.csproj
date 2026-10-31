@@ -9,6 +9,23 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Semojum.Core/Semojum.Core.csproj" />
+    <ProjectReference Include="../Semojum.UI.Common/Semojum.UI.Common.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Account/Semojum.Feature.Account.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Account.Wpf/Semojum.Feature.Account.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Public.Wpf/Semojum.Feature.Public.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Usage.Wpf/Semojum.Feature.Usage.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Shell.Wpf/Semojum.Feature.Shell.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Board/Semojum.Feature.Board.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Board.Wpf/Semojum.Feature.Board.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Rules/Semojum.Feature.Rules.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Rules.Wpf/Semojum.Feature.Rules.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Settings/Semojum.Feature.Settings.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Settings.Wpf/Semojum.Feature.Settings.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Editor/Semojum.Feature.Editor.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Editor.Wpf/Semojum.Feature.Editor.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Documents.Wpf/Semojum.Feature.Documents.Wpf.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Institution/Semojum.Feature.Institution.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Institution.Wpf/Semojum.Feature.Institution.Wpf.csproj" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
     <Resource Include="Assets/Figma/*.svg" />

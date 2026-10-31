@@ -68,11 +68,11 @@ public partial class MainWindow : Window
         translator = new(engine);
         InitializeComponent();
         InitializeOriginalUpload();
-        WindowFrame.Apply(this, editor: true);
+        WindowFrame.Apply(this, editor: true, mainEditor: true);
         NativeIme.Attach(SourceEditor);
         Loaded += (_, _) =>
         {
-            WindowBounds.Fit(this);
+            WindowBounds.Fit(this, constrainFutureResize: false);
             if (!smoke) WindowState = WindowState.Maximized;
         };
         PopulateTagMenu();
@@ -322,9 +322,9 @@ public partial class MainWindow : Window
                     break;
                 case "new": await NewTextDocumentAsync(); break;
                 case "closeDocument": if (openDocument is not null) await CloseDocumentAsync(openDocument); break;
-                case "defaults": if (EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog(); break;
+                case "defaults": if (await EnsureAccountAsync()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog(); break;
                 case "forms":
-                    if (EnsureAccount()) { var form = new FormDialog(new(api), session.Layout, session.Options) { Owner = this }; if (form.ShowDialog() == true && form.Selected is { } selected) { session.Layout = selected.Layout; session.Options = selected.Options; } }
+                    if (await EnsureAccountAsync()) { var form = new FormDialog(new(api), session.Layout, session.Options) { Owner = this }; if (form.ShowDialog() == true && form.Selected is { } selected) { session.Layout = selected.Layout; session.Options = selected.Options; } }
                     break;
                 case "sample": SetSession(DocumentSession.Sample(), null, true); break;
                 case "open": await OpenAsync(); break;
@@ -336,7 +336,7 @@ public partial class MainWindow : Window
                 case "composition": await ShowCompositionAsync(); break;
                 case "export": await ExportAsync(); break;
                 case "version": await CheckVersionAsync(); break;
-                case "login": if (api.Account is not null) await LogoutAccountAsync(); else { EnsureAccount(); LoadAccountPreferences(); } break;
+                case "login": if (api.Account is not null) await LogoutAccountAsync(); else { await EnsureAccountAsync(); LoadAccountPreferences(); } break;
                 case "logout": await LogoutAccountAsync(); break;
                 case "serverOpen": await OpenServerAsync(); break;
                 case "upload": await UploadAsync(); break;
@@ -376,8 +376,8 @@ public partial class MainWindow : Window
                 case "clearLine": ClearCurrentLine(); break;
                 case "clearBlock": if (lastEditor?.IsReadOnly != true) EditStructure(() => { if (ActiveSearchPanel == SearchPanel.Text) session.ActiveBlock!.Source = ""; else session.ActiveBlock!.EditBraille(""); }); break;
                 case "table": await EditTableAsync(); break;
-                case "board": if (EnsureAccount()) new BoardDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
-                case "notifications": if (EnsureAccount()) new NotificationsDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
+                case "board": if (await EnsureAccountAsync()) new BoardDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
+                case "notifications": if (await EnsureAccountAsync()) new NotificationsDialog(new BoardClient(api), WorkInformation()) { Owner = this }.ShowDialog(); break;
                 case "hideOriginal": case "hideSource": case "hideBraille": HidePanel(action); break;
                 case "lineNumbers": LineNumbersToggle.IsChecked = !LineNumbersToggle.IsChecked; ApplyLineNumbers(); break;
                 case "formatMarks": ApplyAppearance(appearance with { ShowFormattingMarks = !appearance.ShowFormattingMarks }); break;
@@ -440,7 +440,7 @@ public partial class MainWindow : Window
                     if (options.ShowDialog() == true) { autoTranslate = options.AutoTranslate; session.Options = options.Result; }
                     break;
                 case "visualDescriptions":
-                    if (EnsureAccount())
+                    if (await EnsureAccountAsync())
                     {
                         var settings = new SettingsClient(api); var defaults = await settings.DefaultsAsync(documentLifetime.Token);
                         var visual = new VisualDescriptionDialog(new(defaults.Options.VisualDescriptions ?? VisualDescriptions.Defaults())) { Owner = this };
@@ -449,9 +449,10 @@ public partial class MainWindow : Window
                     break;
                 case "help": new HelpWindow(ActiveSearchPanel == SearchPanel.Text ? "텍스트 고치기" : "점자 직접 고치기", ExecuteAsync) { Owner = this }.Show(); break;
                 case "usage":
-                    if (EnsureAccount())
+                    if (await EnsureAccountAsync())
                     {
-                        var usage = new UsageDialog(api, WorkInformation()) { Owner = this };
+                        var workInfo = WorkInformation();
+                        var usage = new UsageDialog(api, workInfo, DesktopUsageActions.Create(api, workInfo)) { Owner = this };
                         if (usage.ShowDialog() == true)
                         {
                             if (usage.LogoutRequested) await LogoutAccountAsync();
@@ -535,7 +536,7 @@ public partial class MainWindow : Window
         BrailleToggle.IsChecked = true;
         CopyBrailleSettings(); ApplyAppearance(appearance);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => { if (detachedPane is not null) SpeakCaret(detachedPane.Editor); };
-        detachedWindow = new Window { Title = $"점자 — {session.Title} - 세모점", Owner = this, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        detachedWindow = new Window { Title = $"점자 — {session.Title} - 누리닷", Owner = this, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         WindowFrame.Apply(detachedWindow, editor: true);
         detachedWindow.Closed += (_, _) =>
         {
@@ -585,7 +586,7 @@ public partial class MainWindow : Window
         }
         else if (session.IsReadOnly || path is null)
         {
-            var dialog = new SaveFileDialog { Title = saveAs ? "다른 이름으로 저장" : "세모점 작업 저장", Filter = saveAs ? "세모점 작업 파일|*.smj|BRF 점자문서|*.brf|원문 텍스트|*.txt" : "세모점 작업 파일|*.smj", DefaultExt = ".smj", FileName = session.Title, AddExtension = true };
+            var dialog = new SaveFileDialog { Title = saveAs ? "다른 이름으로 저장" : "누리닷 작업 저장", Filter = saveAs ? "누리닷 작업 파일|*.smj|BRF 점자문서|*.brf|원문 텍스트|*.txt" : "누리닷 작업 파일|*.smj", DefaultExt = ".smj", FileName = session.Title, AddExtension = true };
             if (dialog.ShowDialog(this) != true) return false;
             if (saveAs && dialog.FilterIndex > 1) { await ExportAsync(dialog.FileName, dialog.FilterIndex - 1, false); return false; }
             path = dialog.FileName;
@@ -690,7 +691,7 @@ public partial class MainWindow : Window
         try
         {
             if (!Path.GetExtension(path).Equals(".smj", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("시작할 때는 세모점 작업 파일(.smj)을 열 수 있습니다.");
+                throw new InvalidDataException("시작할 때는 누리닷 작업 파일(.smj)을 열 수 있습니다.");
             await OpenAsync(path);
         }
         catch (Exception ex) { ShowError(ex); }
@@ -703,7 +704,7 @@ public partial class MainWindow : Window
         { Activate(); SourceEditor.Focus(); return; }
         var existing = openDocuments.FirstOrDefault(d => d.Path is not null && LocalWorkspace.SamePath(d.Path, requestedPath));
         if (existing is not null) { SetSession(existing.Model, existing.Path, existing.ShowOriginal); return; }
-        if (!smoke && !EnsureAccount()) return;
+        if (!smoke && !await EnsureAccountAsync()) return;
         fileBusy = true; IsEnabled = false;
         try
         {

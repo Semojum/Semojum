@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('board', 'institution', 'editor', 'appearance', 'usage', 'rules', 'dialogs')]
+    [ValidateSet('board', 'institution', 'editor', 'appearance', 'usage', 'rules', 'dialogs', 'windows', 'account')]
     [string[]]$Area,
     [switch]$NoBuild,
     [string]$OutputRoot

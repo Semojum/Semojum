@@ -118,12 +118,6 @@ public partial class MainWindow
         if (SourceEditor is null || TextStylePicker.SelectedIndex <= 0 || TextStylePicker.SelectedItem is not ComboBoxItem item) return;
         InsertTag(item.Content.ToString()!); TextStylePicker.SelectedIndex = 0;
     }
-    private void IndentPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!IsLoaded || !IndentPicker.IsKeyboardFocusWithin || session.IsReadOnly) return;
-        SelectionEdit("indent", IndentPicker.SelectedIndex + 1);
-    }
-
     private void LineNumbersToggle_Click(object sender, RoutedEventArgs e) => ApplyLineNumbers();
     private void ApplyLineNumbers()
     {

@@ -14,6 +14,7 @@ public partial class MainWindow
     private const string UnconfirmedRestartNotice = "재개 요청이 서버에서 처리됐는지 확인할 수 없습니다. 서버 저장은 차단됩니다. 로컬 .smj 파일을 저장하고 작업 ID와 함께 운영자에게 문의해 주세요.";
     internal Func<Window, string[]?>? FilePicker { get; set; }
     private bool uploadFlowBusy;
+    private readonly SemaphoreSlim accountScreenGate = new(1, 1);
     internal Func<string?>? PendingBackupPicker { get; set; }
     private bool HasOtherTabForJob(OpenDocument context) => context.Model.JobId is { } id
         && (openDocuments.Any(other => !ReferenceEquals(other, context) && other.Model.JobId == id) || HasClosedJobRecovery(context));
@@ -46,27 +47,33 @@ public partial class MainWindow
         catch (Exception ex) { model.ErrorNotice = model.Status = "TXT 점역 실패 · 원문은 유지됩니다: " + ex.Message; }
     }
     private void RefreshAccount() => AccountLabel.Text = api.Account is { } account ? account.LoginId : "로그인 안 됨";
-    private bool EnsureAccount(bool allowInstitution = false)
+    internal async Task<bool> EnsureAccountAsync(bool allowInstitution = false)
     {
-        while (true)
+        await accountScreenGate.WaitAsync();
+        try
         {
-            if (api.Account is null)
+            while (true)
             {
-                var signedIn = new AccountDialog(api, smoke ? null : accountCredentials, automaticLoginMessage, allowInstitution) { Owner = this }.ShowDialog() == true;
-                automaticLoginMessage = null;
-                if (!signedIn) { RefreshAccount(); return false; }
+                if (resourcesReleased || !IsVisible) return false;
+                if (api.Account is null)
+                {
+                    var signedIn = await new AccountDialog(api, smoke ? null : accountCredentials, automaticLoginMessage, allowInstitution).ShowEmbeddedAsync(this, allowCancel: !allowInstitution);
+                    automaticLoginMessage = null;
+                    if (!signedIn) { RefreshAccount(); return false; }
+                }
+                if (api.Account is { Role: "ROLE_ORG_ADMIN" })
+                {
+                    if (!allowInstitution) return false;
+                    var institution = new InstitutionWindow(api, LogoutInstitutionAsync);
+                    await institution.ShowEmbeddedAsync(this);
+                    if (institution.LogoutRequested) continue;
+                    return false;
+                }
+                RefreshAccount();
+                return api.Account is { } account && AutomaticLogin.IsEditorAllowed(account);
             }
-            if (api.Account is { Role: "ROLE_ORG_ADMIN" })
-            {
-                if (!allowInstitution) return false;
-                var institution = new InstitutionWindow(api, LogoutInstitutionAsync) { Owner = this };
-                institution.ShowDialog();
-                if (institution.LogoutRequested) continue;
-                return false;
-            }
-            RefreshAccount();
-            return api.Account is { } account && AutomaticLogin.IsEditorAllowed(account);
         }
+        finally { accountScreenGate.Release(); }
     }
 
     private async Task<bool> LogoutInstitutionAsync()
@@ -87,7 +94,7 @@ public partial class MainWindow
 
     private async Task OpenServerAsync()
     {
-        if (fileBusy || !EnsureAccount()) return;
+        if (fileBusy || !await EnsureAccountAsync()) return;
         var dialog = new TextValueDialog("서버 작업 열기", "작업 ID") { Owner = this };
         if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.Value)) return;
         await LoadJobAsync(dialog.Value.Trim(), "서버 작업.smj");
@@ -104,7 +111,7 @@ public partial class MainWindow
             if (selectedPaths is not { Length: > 0 }) return;
             if (selectedPaths.Length == 1 && Path.GetExtension(selectedPaths[0]).Equals(".smj", StringComparison.OrdinalIgnoreCase))
             { await OpenAsync(selectedPaths[0]); return; }
-            if (!EnsureAccount()) return;
+            if (!await EnsureAccountAsync()) return;
             var client = new SettingsClient(api);
             BrailleForm[] forms = []; var defaults = new AccountDefaults(session.Options, null, "odd"); var available = true;
             using var settingsTimeout = CancellationTokenSource.CreateLinkedTokenSource(documentLifetime.Token);
@@ -348,7 +355,7 @@ public partial class MainWindow
         else if (status.OverallStatus == "FAILED")
         {
             if (notice.Choice == 0) await UploadAsync(openDocument?.UploadPaths);
-            else if (notice.Choice == 1 && EnsureAccount()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();
+            else if (notice.Choice == 1 && await EnsureAccountAsync()) new DefaultsDialog(new(api)) { Owner = this }.ShowDialog();
             else if (notice.Choice == 2) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
         }
     }
@@ -356,7 +363,7 @@ public partial class MainWindow
     // BE 2026-10-27: retry re-queues AI-failed pages, resume re-queues credit-exhausted pages (기획 10-1). Only those pages are replaced.
     private async Task RestartJobAsync(DocumentSession model, bool retry)
     {
-        if (resourcesReleased || session != model || openDocument is null || model.JobId is null || !EnsureAccount()) return;
+        if (resourcesReleased || session != model || openDocument is null || model.JobId is null || !await EnsureAccountAsync()) return;
         var context = openDocument;
         if (HasOtherTabForJob(context))
         { model.ErrorNotice = "같은 서버 작업의 다른 탭을 닫거나, 닫힌 재개 작업의 원본 파일을 다시 열어 확인한 뒤 재개해 주세요."; return; }
@@ -444,7 +451,7 @@ public partial class MainWindow
         if (PendingBackupPicker is not null) backupPath = PendingBackupPicker();
         else
         {
-            var picker = new SaveFileDialog { Title = "현재 교정본을 별도 작업 파일로 보관", Filter = "세모점 작업 파일|*.smj", DefaultExt = ".smj", AddExtension = true,
+            var picker = new SaveFileDialog { Title = "현재 교정본을 별도 작업 파일로 보관", Filter = "누리닷 작업 파일|*.smj", DefaultExt = ".smj", AddExtension = true,
                 FileName = Path.GetFileNameWithoutExtension(owner.Title) + "_재개전_교정본.smj", OverwritePrompt = true };
             backupPath = picker.ShowDialog(this) == true ? picker.FileName : null;
         }

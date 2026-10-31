@@ -109,7 +109,15 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<string, byte[]> OriginalFiles { get; } = [];
     public long ChangeVersion { get; private set; }
     [ObservableProperty] private EditorBlock? activeBlock;
-    [ObservableProperty] private string title = "제목 없음.smj";
+    private string title = "제목 없음.smj";
+    public string Title
+    {
+        get => title;
+        set
+        {
+            if (SetProperty(ref title, DisplayFileName.Normalize(value))) OnPropertyChanged(nameof(WindowTitle));
+        }
+    }
     [ObservableProperty] private bool isDirty;
     [ObservableProperty] private bool isReadOnly;
     [ObservableProperty] private string status = "준비";
@@ -204,9 +212,8 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<int, double?> OcrConfidence { get; } = [];
     /// <summary>Last "kept locally only" notice shown for this document, so repeated saves do not repeat the same dialog. Not persisted.</summary>
     public string? LastSyncNotice { get; set; }
-    public string WindowTitle => $"{(IsDirty ? "*" : "")}{Title} — 세모점";
+    public string WindowTitle => $"{(IsDirty ? "*" : "")}{Title} — 누리닷";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(WindowTitle));
-    partial void OnTitleChanged(string value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnLayoutChanged(PageLayout value) { ChangeVersion++; IsDirty = true; }
     partial void OnOptionsChanged(BrailleOptions value) { ChangeVersion++; IsDirty = true; }
     partial void OnFooterTextChanged(string value) { ChangeVersion++; IsDirty = true; }

@@ -7,7 +7,7 @@ namespace Semojum.Desktop.Services;
 internal static class WindowsFocusedChecks
 {
     private static readonly HashSet<string> Areas = new(StringComparer.OrdinalIgnoreCase)
-        { "board", "institution", "editor", "appearance", "usage", "rules", "dialogs" };
+        { "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
 
     internal static bool IsKnownArea(string area) => Areas.Contains(area);
 
@@ -55,7 +55,21 @@ internal static class WindowsFocusedChecks
                     await WindowsNoticeDesignChecks.RunAsync(directory, Check);
                     WindowsFileDialogDesignChecks.Run(Check);
                     break;
+                case "windows":
+                    await WindowsOwnedModalChecks.RunAsync(Check);
+                    await WindowsCaptionChecks.RunAsync(Check);
+                    await WindowsEmbeddedScreenChecks.RunAsync(Check);
+                    break;
+                case "account":
+                    await WindowsAccountChecks.RunAsync(Check);
+                    WindowsLoginDesignChecks.Run(Check);
+                    await WindowsAccountChecks.CheckLogoutCancellationAsync(Check);
+                    await WindowsAccountChecks.CheckRoleChangeAsync(Check);
+                    await WindowsToolbarAccountChecks.RunAsync(Check);
+                    await WindowsRequiredUpdateChecks.RunAsync(Check);
+                    break;
                 case "editor":
+                    await WindowsMenuDesignChecks.RunAsync(directory, Check);
                     await WindowsReviewMarginChecks.RunAsync(Check);
                     await WindowsGridMarkerNavigationChecks.RunAsync(Check);
                     await WindowsEditorHighlightChecks.RunAsync(Check);

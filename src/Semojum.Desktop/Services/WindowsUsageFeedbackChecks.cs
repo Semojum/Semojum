@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Semojum.Core.Integration;
 using Semojum.Desktop.Dialogs;
+using Semojum.Feature.Usage.Wpf;
 
 namespace Semojum.Desktop.Services;
 
@@ -28,10 +29,16 @@ internal static class WindowsUsageFeedbackChecks
         check(zero is { Personal: 0, Organization: 0, OrganizationUsed: 0 }, "Verified zero usage is shown as zero rather than missing data");
 
         var fixture = new Fixture { LoginAlias = "긴 계정 이름을 끝까지 확인할 수 있는 별칭" }; using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
-        await api.LoginAsync("fixture", "fixture"); var dialog = new UsageDialog(api); dialog.Show();
+        Window? purchaseOwner = null, inquiryOwner = null, postOwner = null, boardOwner = null;
+        long? openedPost = null;
+        var actions = new UsageActions(owner => purchaseOwner = owner, owner => { inquiryOwner = owner; return false; },
+            (owner, post) => { postOwner = owner; openedPost = post.PostId; }, owner => boardOwner = owner);
+        await api.LoginAsync("fixture", "fixture"); var dialog = new UsageDialog(api, actions: actions); dialog.Show();
         try
         {
             await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "600"));
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "쪽 구매")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(ReferenceEquals(purchaseOwner, dialog), "Usage purchase action is routed to the supplied owner");
             var accountName = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName");
             check(accountName.Text == fixture.LoginAlias && Equals(accountName.ToolTip, fixture.LoginAlias)
                 && System.Windows.Automation.AutomationProperties.GetName(accountName) == "사용량 계정 " + fixture.LoginAlias,
@@ -135,12 +142,19 @@ internal static class WindowsUsageFeedbackChecks
             check(status.Text == "다른 화면의 상태 메시지", "Successful inquiry loading does not erase unrelated status messages");
             check(next.IsEnabled && Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "상세 열기")).IsEnabled,
                 "Returning to a populated page restores valid next-page and selected-detail actions");
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "새 문의")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(ReferenceEquals(inquiryOwner, dialog), "New inquiry action is routed to the supplied owner");
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "상세 열기")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Wait(() => openedPost is not null);
+            check(ReferenceEquals(postOwner, dialog) && openedPost == 1, "Opening inquiry detail passes the selected server post to the supplied action");
+            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "게시판 열기")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(ReferenceEquals(boardOwner, dialog), "Opening the board is routed to the supplied owner");
         }
         finally { dialog.Close(); }
 
         var fallbackFixture = new Fixture(); using var fallbackHttp = new HttpClient(fallbackFixture); var fallbackApi = new SemojumApiClient(fallbackHttp);
         await fallbackApi.LoginAsync("fallback-id", "fixture");
-        var fallbackDialog = new UsageDialog(fallbackApi); fallbackDialog.Show();
+        var fallbackDialog = new UsageDialog(fallbackApi, actions: DesktopUsageActions.Create(fallbackApi, "")); fallbackDialog.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); fallbackDialog.UpdateLayout();
@@ -150,7 +164,7 @@ internal static class WindowsUsageFeedbackChecks
         finally { fallbackDialog.Close(); }
 
         using var anonymousHttp = new HttpClient(new Fixture()); var anonymousApi = new SemojumApiClient(anonymousHttp);
-        var anonymousDialog = new UsageDialog(anonymousApi); anonymousDialog.Show();
+        var anonymousDialog = new UsageDialog(anonymousApi, actions: DesktopUsageActions.Create(anonymousApi, "")); anonymousDialog.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); anonymousDialog.UpdateLayout();

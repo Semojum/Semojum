@@ -56,7 +56,8 @@ internal static class WindowsBoardDesignChecks
             check(HasIcon(board, "board-caption-close.svg") && HasIcon(board, "board-chevron-down.svg"), "Board title bar and search use the final Figma SVGs");
             check(HasIcon(board, "board-chevron-left.svg") && HasIcon(board, "board-chevron-right.svg"), "Board pagination renders both Figma arrow icons");
             check(Descendants(board).OfType<Button>().Any(b => Equals(b.Content, "알림")), "Board retains access to notifications");
-            check(Descendants(board).OfType<TextBlock>().Any(t => t.Text == "fixture"), "Board status bar displays the actual signed-in account");
+            var statusBar = Descendants(board).OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "BoardStatusBar");
+            check(statusBar.Child is null, "Board status bar no longer displays the signed-in account");
             var pageInput = Descendants(board).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "게시판 쪽 번호");
             check(pageInput.Text == "1" && Descendants(board).OfType<TextBlock>().Any(t => t.Text == "/ 3"), "Board shows the current and total pages from the actual response");
             var second = Descendants(board).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "게시판 2쪽");

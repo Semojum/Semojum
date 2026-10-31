@@ -122,7 +122,7 @@ public static class SmjFile
             if (entry.Length > MaximumExpandedBytes - expanded) throw new InvalidDataException("작업 파일의 압축 해제 크기 한도를 초과했습니다.");
             expanded += entry.Length;
         }
-        var metadata = zip.GetEntry("manifest.json") ?? throw new InvalidDataException("세모점 작업 정보가 없습니다.");
+        var metadata = zip.GetEntry("manifest.json") ?? throw new InvalidDataException("누리닷 작업 정보가 없습니다.");
         if (metadata.Length > MaximumManifestBytes) throw new InvalidDataException("작업 정보가 너무 큽니다.");
         SmjManifest manifest;
         await using (var stream = metadata.Open())
