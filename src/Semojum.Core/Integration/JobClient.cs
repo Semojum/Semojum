@@ -81,7 +81,7 @@ public sealed partial class JobClient(SemojumApiClient api)
     {
         var result = await api.SendAuthenticatedAsync(HttpMethod.Post, "/api/jobs/text", new
         {
-            fileName, formId, insertPageNumber = settings.Layout.ShowSourcePageNumber, footerText = settings.FooterText,
+            fileName = DisplayFileName.Normalize(fileName), formId, insertPageNumber = settings.Layout.ShowSourcePageNumber, footerText = settings.FooterText,
             layoutOptions = LayoutBody(settings.Layout), brailleOptions = OptionsBody(settings.Options)
         }, ct);
         return Created(result);
@@ -104,7 +104,7 @@ public sealed partial class JobClient(SemojumApiClient api)
                 var content = new ByteArrayContent(file.Bytes);
                 content.Headers.ContentType = new MediaTypeHeaderValue(Path.GetExtension(file.FileName).ToLowerInvariant() switch
                 { ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".pdf" => "application/pdf", ".txt" => "text/plain", _ => "application/octet-stream" });
-                form.Add(content, "file", Path.GetFileName(file.FileName));
+                form.Add(content, "file", DisplayFileName.Normalize(Path.GetFileName(file.FileName)));
             }
             foreach (var pair in LayoutBody(settings.Layout).Concat(OptionsBody(settings.Options)).Where(p => p.Key != "visualDescriptions"))
                 form.Add(new StringContent(pair.Value is string s ? s : JsonSerializer.Serialize(pair.Value)), pair.Key);

@@ -56,7 +56,6 @@ public sealed class PublicNoticesDialog : CompactDialog
             catch (OperationCanceledException) { }
             catch (Exception ex) { Status.Text = ex.Message; }
         }
-        var refresh = Button("새로고침", LoadSafelyAsync); PublicDialogDesign.StyleAction(refresh); actions.Children.Add(refresh);
         var close = Button("닫기", () => { Close(); return Task.CompletedTask; }, true); PublicDialogDesign.StyleAction(close, true); actions.Children.Add(close);
         Loaded += async (_, _) => await LoadSafelyAsync();
     }
@@ -74,7 +73,7 @@ public sealed class PublicNoticesDialog : CompactDialog
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        header.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
         var dateText = new TextBlock { Text = date, FontSize = 12, Foreground = Brush("#5F5F5F"), VerticalAlignment = VerticalAlignment.Center, Margin = new(8, 0, 8, 0) };
         Grid.SetColumn(dateText, 1); header.Children.Add(dateText);
         var icon = new SvgViewbox { Width = 16, Height = 16, Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Center };
@@ -111,14 +110,14 @@ public sealed class PublicInquiryDialog : CompactDialog
         var scroll = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(scroll, 1); layout.Children.Add(scroll);
         panel.Children.Add(new TextBlock { Text = "로그인 없이도 보낼 수 있습니다. 적어 주신 메일 주소로 회신해드립니다.", Foreground = Brush("#5F5F5F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
-        var type = Choices(["도입 문의", "오류 신고", "기타"], "기타"); var name = new TextBox { MaxLength = 50 }; var email = new TextBox { MaxLength = 100 };
+        var type = Choices(["도입 문의", "오류 신고", "기타"], "기타"); var email = new TextBox { MaxLength = 100 };
         var initialType = type.SelectedItem;
         var organization = new TextBox { MaxLength = 2000 }; var title = new TextBox { MaxLength = 2000, Text = initialTitle ?? "" };
         var message = new TextBox { MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 92, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         void AddLabel(string label) => panel.Children.Add(new TextBlock { Text = label, Foreground = Brush("#5F5F5F"), FontSize = 12 });
         void AddField(string label, TextBox field, string hint)
         {
-            AddLabel(label); var element = PublicDialogDesign.TextField(field, label == "기관명 (선택)" ? "기관명" : label == "제목 (선택)" ? "제목" : label, hint);
+            AddLabel(label); var element = PublicDialogDesign.TextField(field, label, hint);
             element.Height = 32; panel.Children.Add(element);
         }
         AddLabel("분류"); type.Height = type.MinHeight = 32; type.Padding = new(11, 0, 25, 0); AutomationProperties.SetName(type, "분류");
@@ -126,21 +125,8 @@ public sealed class PublicInquiryDialog : CompactDialog
         typeField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = Brush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
         var chevron = DesignIcon("public-inquiry-chevron.svg", 16, 16, "Semojum.Feature.Public.Wpf"); chevron.HorizontalAlignment = HorizontalAlignment.Right; chevron.Margin = new(0, 0, 5, 0); chevron.IsHitTestVisible = false; typeField.Children.Add(chevron); panel.Children.Add(typeField);
         AddField("답 받을 주소", email, "name@example.com");
-        // The legacy anonymous API still accepts an optional sender name. Keep it
-        // alongside the organization field without displacing the remaining form.
-        var identity = new Grid();
-        identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new(2, GridUnitType.Star) });
-        identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new(1, GridUnitType.Star) });
-        void IdentityField(int column, string label, string accessibleName, TextBox field, string hint)
-        {
-            var group = new StackPanel { Margin = column == 0 ? new(0, 0, 4, 0) : new(4, 0, 0, 0) };
-            group.Children.Add(new TextBlock { Text = label, Foreground = Brush("#5F5F5F"), FontSize = 12 });
-            var entry = PublicDialogDesign.TextField(field, accessibleName, hint); entry.Height = 32; group.Children.Add(entry);
-            Grid.SetColumn(group, column); identity.Children.Add(group);
-        }
-        IdentityField(0, "기관명 (선택)", "기관명", organization, "(선택) 기관명");
-        IdentityField(1, "이름 (선택)", "이름 (선택)", name, "(선택) 이름");
-        panel.Children.Add(identity); AddField("제목 (선택)", title, "문의 제목을 입력해 주세요");
+        AddField("기관명", organization, "(선택) 기관명");
+        AddField("제목", title, "문의 제목을 입력해 주세요");
         AddLabel("내용"); AutomationProperties.SetName(message, "내용"); message.Background = Brushes.White; message.BorderBrush = Brush("#EAEAEA"); message.Padding = new(11, 7, 11, 7); panel.Children.Add(message);
         var attachmentRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 12, 0, 0) };
         var attachmentContent = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
@@ -153,12 +139,11 @@ public sealed class PublicInquiryDialog : CompactDialog
         attachmentRow.Children.Add(attachment); attachmentRow.Children.Add(new TextBlock { Text = "첨부 기능은 아직 지원되지 않습니다.", Foreground = Brush("#5F5F5F"), Margin = new(12, 0, 0, 0), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(attachmentRow);
         var consent = new CheckBox { Content = "문의 답변을 위한 개인정보 수집·이용에 동의합니다", Style = PublicDialogDesign.ConsentStyle("Semojum.Feature.Public.Wpf"), Margin = new(0, 4, 0, 0) };
         AutomationProperties.SetAutomationId(consent, "PublicInquiryConsent"); AutomationProperties.SetName(consent, "문의 답변을 위한 개인정보 수집·이용에 동의합니다"); panel.Children.Add(consent);
-        panel.Children.Add(new TextBlock { Text = "기관명과 제목은 문의 내용에 함께 전달됩니다. 이름·이메일·문의 내용은 운영자에게 전달됩니다.", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) });
-        panel.Children.Add(new TextBlock { Text = "문의 이메일: contact@semo-jum.com", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 0, 0, 8) });
+        panel.Children.Add(new TextBlock { Text = "기관명과 제목은 문의 내용에 함께 전달됩니다. 이메일·문의 내용은 운영자에게 전달됩니다.", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) });
         var submitted = false; var discardConfirmed = false;
         Closing += (_, e) =>
         {
-            if (e.Cancel || submitted || discardConfirmed || Equals(type.SelectedItem, initialType) && string.IsNullOrWhiteSpace(name.Text) && string.IsNullOrWhiteSpace(email.Text)
+            if (e.Cancel || submitted || discardConfirmed || Equals(type.SelectedItem, initialType) && string.IsNullOrWhiteSpace(email.Text)
                 && string.IsNullOrWhiteSpace(organization.Text) && string.Equals(title.Text.Trim(), (initialTitle ?? "").Trim(), StringComparison.Ordinal) && string.IsNullOrWhiteSpace(message.Text)) return;
             var choice = NoticeDialog.Choose(this, "작성 중인 문의를 닫으시겠습니까?", "계속 작성하면 입력한 내용을 유지합니다.", ["계속 작성", "닫기"], width: 440);
             if (choice != 1) e.Cancel = true; else discardConfirmed = true;
@@ -172,7 +157,7 @@ public sealed class PublicInquiryDialog : CompactDialog
             if (!string.IsNullOrWhiteSpace(title.Text)) lines.Add("제목: " + title.Text.Trim());
             var body = lines.Count == 0 ? message.Text.Trim() : string.Join("\n", lines) + "\n\n" + message.Text.Trim();
             if (body.Length > 2000) throw new ArgumentException("기관명·제목을 포함한 문의 내용은 2,000자까지 입력할 수 있습니다.");
-            await api.SubmitInquiryAsync(new { type = type.SelectedIndex switch { 0 => "ONBOARDING", 1 => "ERROR_REPORT", _ => "ETC" }, name = name.Text.Trim(), email = address.Address, message = body, website = "" }, Lifetime.Token);
+            await api.SubmitInquiryAsync(new { type = type.SelectedIndex switch { 0 => "ONBOARDING", 1 => "ERROR_REPORT", _ => "ETC" }, name = "", email = address.Address, message = body, website = "" }, Lifetime.Token);
             submitted = true;
             MessageBox.Show(this, "문의를 접수했습니다.", "문의하기"); DialogResult = true;
         }

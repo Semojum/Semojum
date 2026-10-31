@@ -38,7 +38,8 @@ internal static class WindowsStatusZoomChecks
             check(window.SourceEditor.FontSize == 32, "Slider retains the existing maximum font size");
             check(window.ZoomSlider.Focusable && minus.Focusable && plus.Focusable && AutomationProperties.GetName(window.ZoomSlider) == "편집기 확대 비율",
                 "Zoom slider and both actions are keyboard focusable and named for assistive technology");
-            foreach (var width in new[] { 960.0, 480.0 })
+            window.MinWidth = 480; // as WindowBounds.Fit allows on a monitor narrower than the 1280-pixel minimum
+            foreach (var width in new[] { 1280.0, 480.0 })
             {
                 window.Width = width;
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();

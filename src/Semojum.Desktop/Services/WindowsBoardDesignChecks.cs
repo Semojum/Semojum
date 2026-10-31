@@ -57,7 +57,9 @@ internal static class WindowsBoardDesignChecks
             check(HasIcon(board, "board-chevron-left.svg") && HasIcon(board, "board-chevron-right.svg"), "Board pagination renders both Figma arrow icons");
             check(Descendants(board).OfType<Button>().Any(b => Equals(b.Content, "알림")), "Board retains access to notifications");
             var statusBar = Descendants(board).OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "BoardStatusBar");
-            check(statusBar.Child is null, "Board status bar no longer displays the signed-in account");
+            check(statusBar.Child is TextBlock { Text: "fixture", HorizontalAlignment: HorizontalAlignment.Right }, "Board status bar shows the signed-in account on the right");
+            check(!Descendants(board).OfType<Button>().Any(b => Equals(b.Content, "내 글 보기")) && Descendants(board).OfType<TextBlock>().Any(t => t.Text == "전체 글" && t.FontSize == 20 && t.FontWeight == FontWeights.Bold),
+                "Board heading uses the final 20px bold title without a separate my-posts button");
             var pageInput = Descendants(board).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "게시판 쪽 번호");
             check(pageInput.Text == "1" && Descendants(board).OfType<TextBlock>().Any(t => t.Text == "/ 3"), "Board shows the current and total pages from the actual response");
             var second = Descendants(board).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "게시판 2쪽");
@@ -195,6 +197,8 @@ internal static class WindowsBoardDesignChecks
                 && !Descendants(detail).OfType<TextBlock>().Any(t => t.Text.Contains("글쓴이와 운영자만 열람", StringComparison.Ordinal)),
                 "Public post details do not claim that the post is restricted");
             check(Descendants(detail).OfType<TextBlock>().Any(t => t.Text == "운영자 답변 내용"), "Post detail retains the actual operator answer");
+            check(Descendants(detail).OfType<TextBlock>().Any(t => t.Text == "운영자 답변" && t.FontSize == 14 && t.FontWeight == FontWeights.Bold)
+                && Descendants(detail).OfType<TextBlock>().Any(t => t.Text == "첨부.pdf  1KB"), "Post detail uses the final answer heading and attachment size label");
             check(HasIcon(detail, "board-export.svg"), "Post attachments render the Figma download icon");
             var attachment = Descendants(detail).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "첨부.pdf 다운로드");
             check(attachment.ActualHeight == 32 && Math.Abs(attachment.ActualWidth - 268) < 2 && Equals(attachment.ToolTip, "첨부.pdf"),

@@ -109,9 +109,9 @@ internal static class WindowsPanelPositionChecks
             var lineItems = lines.Items.OfType<MenuItem>().ToArray();
             check(lineItems.Select(item => item.Tag as string).SequenceEqual(new[] {
                 "tag:상단줄", "tag:중단줄", "tag:하단줄", "tag:상단굵은줄", "tag:하단굵은줄",
-                "tag:표시작", "tag:표중앙", "tag:표끝", "tag:표구분선", "tag:표지시작", "tag:표지세로", "tag:표지끝" }),
-                "The real braille-line menu preserves the Figma table-line order and supported extra tags");
-            foreach (var name in new[] { "표시작", "표중앙", "표끝", "표구분선", "표지시작" })
+                "tag:표시작", "tag:표중앙", "tag:표끝", "tag:표구분선" }),
+                "The real braille-line menu matches the nine final Figma items");
+            foreach (var name in new[] { "표시작", "표중앙", "표끝", "표구분선" })
             {
                 var editor = window.PageEditor.Editor;
                 editor.Select(editor.Document.TextLength, 0);

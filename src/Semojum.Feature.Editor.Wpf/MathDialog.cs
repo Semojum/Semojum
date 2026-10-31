@@ -26,7 +26,7 @@ public sealed class MathDialog : CompactDialog
         this.translate = translate; this.inlinePreview = inlinePreview;
         Input.FontFamily = (FontFamily)FindResource("MonoFont");
         var body = new DockPanel { Margin = new(8, 8, 8, 0) }; Body(body);
-        var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(250, 250, 250)), BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
+        var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(249, 249, 249)), BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
         DockPanel.SetDock(toolbox, Dock.Top); body.Children.Add(toolbox);
         SymbolButtons.Width = 432; SymbolButtons.HorizontalAlignment = HorizontalAlignment.Left; SymbolButtons.Margin = new(3);
         toolbox.Child = SymbolButtons;
@@ -76,7 +76,7 @@ public sealed class MathDialog : CompactDialog
             }
         }
         formula.Children.Add(new TextBlock { Text = "묵자 수식", Foreground = (Brush)FindResource("Muted"), Margin = new(7, 3, 0, 0), VerticalAlignment = VerticalAlignment.Top });
-        left.Children.Add(new Border { Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Height = 160, Child = formula });
+        left.Children.Add(new Border { Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), BorderThickness = new(1), Height = 160, Child = formula });
         Input.Height = 92; Input.Padding = new(7, 20, 7, 7); Input.FontSize = 12; Input.VerticalContentAlignment = VerticalAlignment.Top; EditorModalDesign.Input(Input);
         var latexHost = new Grid { Margin = new(0, 8, 0, 0) }; latexHost.Children.Add(Input);
         latexHost.Children.Add(new TextBlock { Text = "LaTeX", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new(7, 4, 0, 0), IsHitTestVisible = false });

@@ -29,16 +29,15 @@ internal static class WindowsUsageFeedbackChecks
         check(zero is { Personal: 0, Organization: 0, OrganizationUsed: 0 }, "Verified zero usage is shown as zero rather than missing data");
 
         var fixture = new Fixture { LoginAlias = "긴 계정 이름을 끝까지 확인할 수 있는 별칭" }; using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
-        Window? purchaseOwner = null, inquiryOwner = null, postOwner = null, boardOwner = null;
+        Window? inquiryOwner = null, postOwner = null, boardOwner = null;
         long? openedPost = null;
-        var actions = new UsageActions(owner => purchaseOwner = owner, owner => { inquiryOwner = owner; return false; },
+        var actions = new UsageActions(_ => { }, owner => { inquiryOwner = owner; return false; },
             (owner, post) => { postOwner = owner; openedPost = post.PostId; }, owner => boardOwner = owner);
         await api.LoginAsync("fixture", "fixture"); var dialog = new UsageDialog(api, actions: actions); dialog.Show();
         try
         {
             await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "600"));
-            Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "쪽 구매")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(ReferenceEquals(purchaseOwner, dialog), "Usage purchase action is routed to the supplied owner");
+            check(!Descendants(dialog).OfType<Button>().Any(b => Equals(b.Content, "쪽 구매")), "The institution credit card has no purchase button, as in the final design");
             var accountName = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName");
             check(accountName.Text == fixture.LoginAlias && Equals(accountName.ToolTip, fixture.LoginAlias)
                 && System.Windows.Automation.AutomationProperties.GetName(accountName) == "사용량 계정 " + fixture.LoginAlias,
@@ -55,8 +54,9 @@ internal static class WindowsUsageFeedbackChecks
             var organization = bars.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "기관 크레딧 사용률");
             check(personal.Value == 10 && organization.Value == 40 && personal.IsVisible && organization.IsVisible,
                 "The visible personal and institution bars display 10% and 40% from distinct real data");
-            check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("100 / 1,000 크레딧")) && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("400 / 1,000 크레딧")),
-                "Both usage cards label their actual credit numerators and common allocation");
+            check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "100 / 1,000 크레딧") && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "400 / 1,000 크레딧")
+                && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "10%") && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "40%"),
+                "Both usage cards label their actual credit numerators and common allocation, with the percentage kept separate");
             var jobs = Descendants(dialog).OfType<DataGrid>().Single(g => g.Columns.Any(c => Equals(c.Header, "모드")));
             await Wait(() => jobs.Items.Count > 0);
             var job = jobs.Items[0];
@@ -76,14 +76,13 @@ internal static class WindowsUsageFeedbackChecks
                     $"At 1440x1000 work history matches the Figma 696px card (height={historyCard.ActualHeight:F1})");
             }
             dialog.Width = 960; dialog.Height = 400; dialog.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(!Descendants(dialog).OfType<Expander>().Any() && !Descendants(dialog).OfType<TextBlock>().Any(t => t.Text is "일별 사용량" or "사용 내역" or "최근 결제"),
+                "The usage page has only the heading, two credit cards and the work-history card, as in the final design");
             overviewScroll.ScrollToBottom(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
-            var breakdown = Descendants(dialog).OfType<Expander>().Single(e => Equals(e.Header, "일별 사용량과 사용 내역"));
-            var breakdownRect = breakdown.TransformToAncestor(overviewScroll).TransformBounds(new Rect(0, 0, breakdown.ActualWidth, breakdown.ActualHeight));
-            check(historyCard.ActualHeight >= 420 && overviewScroll.ScrollableHeight > 0 && breakdownRect.Bottom <= overviewScroll.ViewportHeight + 2 && breakdownRect.Top >= -1,
-                "A short usage window scrolls to its existing expandable usage breakdown");
-            breakdown.IsExpanded = true; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(breakdown.IsExpanded && jobs.Items.Count > 0, "Expanding the breakdown retains loaded work history");
-            breakdown.IsExpanded = false; dialog.Width = oldWidth; dialog.Height = oldHeight; overviewScroll.ScrollToTop();
+            var historyRect = historyCard.TransformToAncestor(overviewScroll).TransformBounds(new Rect(0, 0, historyCard.ActualWidth, historyCard.ActualHeight));
+            check(historyCard.ActualHeight >= 420 && overviewScroll.ScrollableHeight > 0 && historyRect.Bottom <= overviewScroll.ViewportHeight + 2 && jobs.Items.Count > 0,
+                "A short usage window scrolls to the end of the loaded work history");
+            dialog.Width = oldWidth; dialog.Height = oldHeight; overviewScroll.ScrollToTop();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             dialog.Navigation.SelectedIndex = 3;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
@@ -158,8 +157,9 @@ internal static class WindowsUsageFeedbackChecks
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); fallbackDialog.UpdateLayout();
-            check(Descendants(fallbackDialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName" && t.Text == "fallback-id"),
-                "Usage heading falls back to the actual login ID when no alias exists");
+            check(!Descendants(fallbackDialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName")
+                && Descendants(fallbackDialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageStatusLogin" && t.Text == "fallback-id"),
+                "Without an alias the heading leaves the nickname empty and the login ID stays only in the status bar");
         }
         finally { fallbackDialog.Close(); }
 

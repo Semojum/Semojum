@@ -23,11 +23,9 @@ internal static class WindowsTableDockChecks
         block.Metadata = block.Metadata with { Type = "table", TableSource = source, TableDisplayText = source, RenderMode = "table_grid", Rules = [serverRule] };
         block.Translation = BrailleTranslation.Plain("⠃") with { SourceText = source, Drafts = choices, RenderMode = "table_grid", RuleTrail = [localRule], Spacing = spacing };
         block.Braille = "⠿"; block.HasManualBraille = true; block.State = "직접 수정";
-        var confirmation = 0; var oldDialogs = 0; var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        var confirmation = 0; var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
         timer.Tick += (_, _) =>
         {
-            var old = Application.Current.Windows.OfType<DraftDialog>().FirstOrDefault(d => d.IsVisible && d.Owner == window);
-            if (old is not null) { oldDialogs++; old.DialogResult = false; return; }
             var manual = Application.Current.Windows.OfType<ManualEditDialog>().FirstOrDefault(d => d.IsVisible && d.Owner == window);
             if (manual is not null) manual.ActionButtons[confirmation].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         };
@@ -36,11 +34,12 @@ internal static class WindowsTableDockChecks
         {
             var complete = block.Translation!;
             block.Translation = complete with { Drafts = [choices[0], choices[1] with { SourceText = null }] };
-            await window.ExecuteAsync("drafts");
-            check(oldDialogs == 1 && !window.DraftDock.IsVisible, "Incomplete or legacy draft text falls back to the original table dialog");
+            await window.ExecuteAsync("drafts"); ((RadioButton)window.DraftChoiceGrid.Children[1]).IsChecked = true;
+            check(window.DraftDock.IsVisible && window.DraftChoiceGrid.Children.Count == 2 && window.DraftTextPreview.Text == "" && window.DraftBraillePreview.Text == "⠉"
+                && block.Braille == "⠿" && block.HasManualBraille, "Legacy table drafts without source text also open in the shared dock with an empty text preview");
             block.Translation = complete;
             await window.ExecuteAsync("drafts");
-            check(window.DraftDock.IsVisible && oldDialogs == 1 && window.DraftChoiceGrid.Children.Count == 2,
+            check(window.DraftDock.IsVisible && window.DraftChoiceGrid.Children.Count == 2,
                 "Table drafts with verified source text open in the shared dock");
             ((RadioButton)window.DraftChoiceGrid.Children[1]).IsChecked = true;
             check(window.DraftTextPreview.Text == transposed && window.DraftBraillePreview.Text == "⠉" && block.Source == source && block.Braille == "⠿",

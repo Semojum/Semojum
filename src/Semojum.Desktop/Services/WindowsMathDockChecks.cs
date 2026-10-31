@@ -66,7 +66,8 @@ internal static class WindowsMathDockChecks
             await window.ExecuteAsync("math");
             check(invalid.Source == "<!수식>\\frac{<!/수식>" && window.Session.Status.Contains("잠긴 블록"), "A locked formula cannot be changed through the menu command");
             window.Session.ActiveBlock = formula;
-            window.Width = 480; window.Height = 360; window.UpdateLayout();
+            // WindowBounds.Fit lowers the 1280 by 800 minimum on a smaller monitor; emulate that for the short-window path.
+            window.MinWidth = 480; window.MinHeight = 360; window.Width = 480; window.Height = 360; window.UpdateLayout();
             await Dispatcher.Yield(DispatcherPriority.Background); window.UpdateLayout();
             check(!dock.IsVisible && window.PageEditor.ActualHeight >= 28,
                 $"A very short window hides the formula preview to keep editing reachable (editor={window.PageEditor.ActualHeight:F0}, panel={window.SourcePanel.ActualHeight:F0})");

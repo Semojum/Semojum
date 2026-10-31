@@ -38,12 +38,12 @@ internal static class WindowsOwnedModalChecks
                     Trace("range-loaded");
                     var ownerContent = (UIElement)owner.Content; var layer = AdornerLayer.GetAdornerLayer(ownerContent);
                     seen = layer?.GetAdorners(ownerContent)?.Any(a => AutomationProperties.GetAutomationId(a) == "FigmaModalBackdrop") == true;
-                    check(NativeCentersMatch(owner, range), "An owned modal is centered on its owner in screen pixels");
+                    check(NativePlacementMatches(owner, range), "An owned modal is centered horizontally and placed 45% / 55% vertically on its owner");
                     if (Environment.GetEnvironmentVariable("MODAL_COMPOSITE_CAPTURE") is { Length: > 0 } capture) CaptureComposite(owner, range, capture); Trace("composite-done");
                     var beforeX = range.Left; var beforeY = range.Top; owner.Left += 20; owner.Top += 10;
                     followed = Math.Abs(range.Left - beforeX - 20) < 3 && Math.Abs(range.Top - beforeY - 10) < 3;
                     Trace("owner-move-done"); owner.Width = 900; owner.Height = 550; owner.UpdateLayout(); Trace("owner-resize-done");
-                    resized = NativeCentersMatch(owner, range);
+                    resized = NativePlacementMatches(owner, range);
                     range.Left += 15; range.Top += 10; var movedX = range.Left; var movedY = range.Top; owner.Left += 10; Trace("manual-move-done");
                     manualMove = Math.Abs(range.Left - movedX) < 3 && Math.Abs(range.Top - movedY) < 3;
                     nested = new NoticeDialog("검증", "중첩 대화상자", ["확인"]) { Owner = range }; Trace("nested-created");
@@ -93,11 +93,12 @@ internal static class WindowsOwnedModalChecks
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowEnabled(IntPtr hwnd);
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { internal int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
-    private static bool NativeCentersMatch(Window owner, Window dialog)
+    private static bool NativePlacementMatches(Window owner, Window dialog)
     {
         if (!GetWindowRect(new WindowInteropHelper(owner).Handle, out var parent) || !GetWindowRect(new WindowInteropHelper(dialog).Handle, out var child)) return false;
+        // Horizontal centre as before; vertical gaps above:below = 45:55 (one pixel of either gap moves the sum by 100).
         return Math.Abs(parent.Left + parent.Right - child.Left - child.Right) <= 4
-            && Math.Abs(parent.Top + parent.Bottom - child.Top - child.Bottom) <= 4;
+            && Math.Abs((child.Top - parent.Top) * 55 - (parent.Bottom - child.Bottom) * 45) <= 4 * 100;
     }
     private static void CaptureComposite(Window owner, Window child, string path)
     {

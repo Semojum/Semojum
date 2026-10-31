@@ -30,7 +30,7 @@ internal static class WindowsMenuDesignChecks
             var tagMenus = window.AllTagsMenu.Items.OfType<MenuItem>().ToArray();
             var tags = tagMenus.SelectMany(m => new[] { m }.Concat(m.Items.OfType<MenuItem>()))
                 .Where(m => m.Tag is string tag && tag.StartsWith("tag:")).Select(m => (string)m.Tag).ToArray();
-            check(tags.Length == 22 && tagMenus.Count(m => m.Items.Count > 0) == 3
+            check(tags.Length == 19 && tagMenus.Count(m => m.Items.Count > 0) == 3
                 && !tags.Any(t => t is "tag:밑줄빈칸" or "tag:네모빈칸"), "Insert tag structure excludes both blank commands and retains the remaining tags");
             check(!Descendants(window.FormatToolbarScroll).OfType<ComboBox>().Any(c => c.Items.OfType<ComboBoxItem>().Any(i => Equals(i.Content, "3칸"))), "The format toolbar no longer includes the indentation dropdown");
             check(window.AccountLabel.Visibility == Visibility.Collapsed, "The lower status bar does not show the account name");
@@ -45,7 +45,7 @@ internal static class WindowsMenuDesignChecks
             menus[0].IsSubmenuOpen = false;
 
             var originalLeft = window.Left; var originalTop = window.Top;
-            window.Width = 480; window.UpdateLayout();
+            window.MinWidth = 480; window.Width = 480; window.UpdateLayout(); // as WindowBounds.Fit allows on a smaller monitor
             MoveToWorkEdge(window, false);
 
             menus[2].IsSubmenuOpen = true;
@@ -97,20 +97,21 @@ internal static class WindowsMenuDesignChecks
             var textMenu = window.PageEditor.Editor.ContextMenu; textMenu.PlacementTarget = window.PageEditor.Editor; textMenu.IsOpen = true;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); textMenu.UpdateLayout();
             var textItems = textMenu.Items.OfType<MenuItem>().ToArray();
-            check(textItems.Select(m => m.Header?.ToString()).SequenceEqual(["메모 추가", "잘라내기", "복사", "붙여넣기", "대체 초안 보기", "적용 규정 보기", "정렬", "수식 입력창"]), "Text context menu has Figma actions without emphasis or page break");
+            check(textItems.Select(m => m.Header?.ToString()).SequenceEqual(["메모 추가", "잘라내기", "복사", "붙여넣기", "대체 초안 보기", "적용 규정 보기", "강조 넣기", "정렬", "쪽바꿈 넣기", "수식 입력창"]), "Text context menu has the final Figma actions including emphasis and page break");
             check(textMenu.ActualWidth == 248 && textItems.All(m => m.ActualHeight == 32), "Text context menu uses Figma's 248-pixel width and 32-pixel action rows");
-            check(textItems.Count(m => m.Icon is SvgViewbox { Drawings.Bounds.IsEmpty: false }) == 8, "Text context menu renders its eight original Figma icons");
-            check(textItems.First().InputGestureText == "Ctrl+M" && textItems.First(m => Equals(m.Header, "정렬")).Items.Count == 3, "Text context menu exposes the memo shortcut and actual alignment commands");
+            check(textItems.Count(m => m.Icon is SvgViewbox { Drawings.Bounds.IsEmpty: false }) == 10, "Text context menu renders its ten Figma icons");
+            check(textItems.First().InputGestureText == "Ctrl+M" && textItems.First(m => Equals(m.Header, "정렬")).Items.Count == 3
+                && textItems.First(m => Equals(m.Header, "강조 넣기")).Items.OfType<MenuItem>().Select(m => m.Tag as string).SequenceEqual(["tag:강조", "tag:굵은", "tag:색강조", "tag:취소선"])
+                && textItems.First(m => Equals(m.Header, "쪽바꿈 넣기")) is { InputGestureText: "Ctrl+Enter", Tag: "tag:쪽바꿈" }, "Text context menu exposes memo, emphasis, alignment and page break commands");
             if (Environment.GetEnvironmentVariable("MENU_TEXT_CAPTURE") is { Length: > 0 } textCapture) await WindowsSmoke.RenderElementAsync(textMenu, textCapture);
             textMenu.IsOpen = false;
 
             var brailleMenu = window.Braille.GridView.ContextMenu; brailleMenu.PlacementTarget = window.Braille.GridView; brailleMenu.IsOpen = true;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); brailleMenu.UpdateLayout();
             var brailleItems = brailleMenu.Items.OfType<MenuItem>().ToArray();
-            check(brailleItems.Any(m => Equals(m.Header, "대체 초안 보기")) && brailleItems.Any(m => Equals(m.Header, "적용 규정 보기")) &&
-                brailleItems.Any(m => Equals(m.Header, "이 블록 다시 점역")) && brailleItems.Any(m => Equals(m.Header, "현재 줄 지우기")) &&
-                !brailleItems.Any(m => m.Header?.ToString()?.Contains("쪽바꿈") == true || m.Header?.ToString()?.Contains("강조") == true),
-                "Braille context menu preserves existing actions and omits emphasis and page break");
+            check(brailleItems.Select(m => m.Header?.ToString()).SequenceEqual(["메모 추가", "복사", "점자로 붙여넣기", "대체 초안 보기", "적용 규정 보기",
+                "이 블록 다시 점역", "직접 고친 점자 되돌리기", "점자 줄 넣기", "표 테두리"]),
+                "Braille context menu has the final Figma actions without cut, clear line, emphasis or page break");
             var restore = brailleItems.First(m => Equals(m.Header, "직접 고친 점자 되돌리기"));
             check(!restore.IsEnabled && restore.ToolTip?.ToString()?.Contains("없습니다") == true, "Manual braille restore is unavailable without an authoritative prior result");
             var draftItem = brailleItems.First(m => Equals(m.Header, "대체 초안 보기"));

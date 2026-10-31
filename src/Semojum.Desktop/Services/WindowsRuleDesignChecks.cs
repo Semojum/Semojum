@@ -33,12 +33,10 @@ internal static class WindowsRuleDesignChecks
             var braille = Descendants(applied).OfType<TextBlock>().FirstOrDefault(t => AutomationProperties.GetAutomationId(t) == "RulesBraillePreview");
             check(source is not null && braille is not null && source.Text == "원문" && braille.Text == "⠁" && Math.Abs(source.TransformToAncestor(applied).Transform(new Point()).Y - braille.TransformToAncestor(applied).Transform(new Point()).Y) < 2,
                 "Selected original text and braille are preserved side by side");
-            check(Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("위치는 확인되지 않았습니다", StringComparison.Ordinal)),
-                "Unverified server evidence retains its position warning");
-            var warning = Descendants(applied).OfType<TextBlock>().First(t => t.IsVisible && t.Text.Contains("위치는 확인되지 않았습니다", StringComparison.Ordinal));
-            var open = Descendants(applied).OfType<Button>().First(b => Equals(b.Content, "규정 전문 열기"));
-            check(warning.TransformToAncestor(applied).Transform(new Point()).Y < open.TransformToAncestor(applied).Transform(new Point()).Y,
-                "The unverified-position warning remains in the content above the footer actions");
+            check(!Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("위치는 확인되지 않았습니다", StringComparison.Ordinal)),
+                "Applied rules shows no unverified-position warning, matching the final Figma");
+            check(Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "원문" && AutomationProperties.GetAutomationId(t) != "RulesSourcePreview") && !Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.StartsWith("원문 · ", StringComparison.Ordinal)),
+                "The selection group heading reads 「원문」 without the position suffix");
             CheckIcon(applied, "applied-rules-close.svg", check);
             if (Environment.GetEnvironmentVariable("RULES_APPLIED_CAPTURE") is { Length: > 0 } appliedCapture)
                 await WindowsSmoke.RenderElementAsync(applied, appliedCapture);

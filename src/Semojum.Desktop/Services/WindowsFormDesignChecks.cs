@@ -30,14 +30,16 @@ internal static class WindowsFormDesignChecks
             check(Descendants(form).OfType<ComboBox>().Any(c => c.SelectedItem is BrailleForm { FormId: "user:1" }), "An existing selected personal form is retained");
             var formPicker = Descendants(form).OfType<ComboBox>().Single(c => c.SelectedItem is BrailleForm { FormId: "user:1" });
             var summary = Descendants(form).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "FormPageRowSummary");
-            check(summary.Text == "번호: 홀수 페이지 · 꼬리말 면: 홀수 페이지" && Equals(summary.ToolTip, summary.Text)
+            check(summary.Text == "홀수 쪽 · 꼬리말" && Equals(summary.ToolTip, summary.Text)
                 && AutomationProperties.GetName(summary) == "페이지행 " + summary.Text,
-                "Selected form reports page numbering and footer-page policies without implying footer content");
+                "Selected form summarizes its page-number side and footer like the final Figma");
+            check(formPicker.ContextMenu is null && Descendants(form).OfType<Button>().Any(b => Equals(b.Content, "사용자 양식 설정...")),
+                "Form editing uses the picker row icons and the final Figma settings button without a context menu");
             var noPageNumber = forms[0] with { FormId = "fixture:none", Layout = forms[0].Layout with { PageNumbers = "출력 안 함", Footer = "" } };
             var longPolicy = forms[0] with { FormId = "fixture:long", Layout = forms[0].Layout with { PageNumbers = new string('가', 40), Footer = "모든 페이지" } };
             formPicker.ItemsSource = new[] { forms[0], noPageNumber, longPolicy, forms[^1] };
             formPicker.SelectedItem = noPageNumber;
-            check(summary.Text == "번호: 출력 안 함 · 꼬리말 면: —", "Empty footer policy and explicit no-page-number policy are reported truthfully");
+            check(summary.Text == "번호 없음", "Empty footer policy and explicit no-page-number policy are reported truthfully");
             formPicker.SelectedItem = null;
             check(summary.Text == "—" && Equals(summary.ToolTip, "—"), "No selected form does not invent page policies");
             formPicker.SelectedItem = longPolicy; form.Width = 420;
@@ -87,7 +89,9 @@ internal static class WindowsFormDesignChecks
             check(editor.Width == 560 && editor.Height == 568, "Personal form editor matches the final Figma 560x568 modal");
             check(HasIcon(editor, "form-edit-close.svg") && HasIcon(editor, "form-edit-chevron.svg"), "Personal form editor uses final Figma close and selector icons");
             check(Descendants(editor).OfType<Button>().Any(b => Equals(b.Content, "지우기") && b.IsEnabled), "A personal form can be deleted from its editor");
-            check(Descendants(editor).OfType<Button>().Any(b => Equals(b.Content, "다른 이름으로 저장")) && Descendants(editor).OfType<Button>().Any(b => Equals(b.Content, "바탕 양식 값으로")), "Copying and applying base form values remain available");
+            var editorLabels = Descendants(editor).OfType<Button>().Select(b => b.Content).OfType<string>().ToArray();
+            check(new[] { "취소", "지우기", "저장" }.All(editorLabels.Contains) && !editorLabels.Any(l => l is "다른 이름으로 저장" or "바탕 양식 값으로"),
+                "Personal form editor offers only cancel, delete and save like the final Figma");
             if (Environment.GetEnvironmentVariable("FORM_EDIT_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(editor, capture);
         }
         finally { editor.Close(); }

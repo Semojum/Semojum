@@ -44,41 +44,15 @@
       </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="{StaticResource Accent}"/><Setter Property="BorderBrush" Value="{StaticResource Accent}"/><Setter Property="Foreground" Value="White"/></Style>
-    <Style x:Key="FormChoice" TargetType="ListBoxItem">
-      <Setter Property="Height" Value="24"/><Setter Property="Padding" Value="16,0"/>
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
-        <Border x:Name="ChoiceSurface" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Top" Margin="0,2,0,0"/></Border>
-        <ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="ChoiceSurface" Property="Background" Value="#CCE4F7"/></Trigger></ControlTemplate.Triggers>
-      </ControlTemplate></Setter.Value></Setter>
-    </Style>
     <Style x:Key="DraftChoice" TargetType="RadioButton">
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
         <Border Background="Transparent"><ContentPresenter VerticalAlignment="Center"/></Border>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
-    <Style x:Key="EditorContextMenu" TargetType="ContextMenu">
-      <Setter Property="Width" Value="220"/><Setter Property="Height" Value="154"/><Setter Property="FontSize" Value="12"/><Setter Property="UseLayoutRounding" Value="False"/><Setter Property="SnapsToDevicePixels" Value="True"/>
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
-        <!-- Figma 1:1073: 24px items from y=6, rules 6px below an item and 10px above the next -->
-        <Border Background="White" BorderBrush="#B5B5B5" BorderThickness="1" Padding="0,5,0,9"><StackPanel IsItemsHost="True"/></Border>
-      </ControlTemplate></Setter.Value></Setter>
-      <Style.Resources>
-        <Style TargetType="MenuItem"><Setter Property="Height" Value="24"/>
-          <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
-            <Border x:Name="ItemSurface" Background="Transparent" Padding="19,0,4,0"><ContentPresenter ContentSource="Header" VerticalAlignment="Center"/></Border>
-            <ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemSurface" Property="Background" Value="#CCE4F7"/></Trigger>
-              <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
-          </ControlTemplate></Setter.Value></Setter>
-        </Style>
-        <Style TargetType="Separator"><Setter Property="Height" Value="9"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator">
-          <Border Background="#D6D6D6" Height="1" VerticalAlignment="Top" Margin="7,6,7,0"/>
-        </ControlTemplate></Setter.Value></Setter></Style>
-      </Style.Resources>
-    </Style>
     <common:ProgressWidthConverter x:Key="ProgressWidth"/>
     <Style x:Key="FlatUsageBar" TargetType="ProgressBar">
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ProgressBar">
-        <Border BorderBrush="#B5B5B5" BorderThickness="1" Background="White">
+        <Border BorderBrush="#D1D1D1" BorderThickness="1" Background="White">
           <Grid x:Name="PART_Track"><Border x:Name="RangeFill" HorizontalAlignment="Left" Background="#005FB8">
             <Border.Width><MultiBinding Converter="{StaticResource ProgressWidth}">
               <Binding Path="ActualWidth" ElementName="PART_Track"/><Binding Path="Value" RelativeSource="{RelativeSource TemplatedParent}"/>
@@ -126,7 +100,7 @@
             <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"/></ControlTemplate></ToggleButton.Template>
           </ToggleButton>
           <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
-            <Border Background="White" BorderBrush="#B5B5B5" BorderThickness="1" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+            <Border Background="White" BorderBrush="#D1D1D1" BorderThickness="1" MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
               <ScrollViewer MaxHeight="300"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
             </Border>
           </Popup>
@@ -138,75 +112,7 @@
     <Style TargetType="MenuItem"><Setter Property="Padding" Value="10,5"/></Style>
     <Style x:Key="DesktopMenuSeparator" TargetType="Separator">
       <Setter Property="Height" Value="9"/><Setter Property="Margin" Value="0"/>
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Background="#D6D6D6" Height="1" Margin="7,0" VerticalAlignment="Center"/></ControlTemplate></Setter.Value></Setter>
-    </Style>
-    <Style x:Key="DesktopMenuItem" TargetType="MenuItem">
-      <Setter Property="Height" Value="24"/><Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="10,0"/>
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
-        <Grid>
-          <Border x:Name="MenuSurface" Background="Transparent" Padding="{TemplateBinding Padding}">
-            <Grid>
-              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-              <TextBlock x:Name="Check" Text="✓" Visibility="Collapsed" Width="16" VerticalAlignment="Center"/>
-              <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><ContentPresenter ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/><TextBlock x:Name="Arrow" Text="▸" Visibility="Collapsed" Foreground="#5F646D" Margin="2,0,0,0" VerticalAlignment="Center"/></StackPanel>
-              <TextBlock x:Name="Gesture" Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="#5F646D" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12"/>
-            </Grid>
-          </Border>
-          <Popup x:Name="PART_Popup" Placement="Right" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" AllowsTransparency="True" Focusable="False">
-            <Border Background="White" BorderBrush="#B5B5B5" BorderThickness="1" Width="222">
-              <DockPanel>
-                <Border x:Name="MenuCaption" DockPanel.Dock="Top" Background="#CCE4F7" BorderBrush="#005FB8" BorderThickness="0,2,0,0" Height="32" Visibility="Collapsed">
-                  <ContentPresenter ContentSource="Header" RecognizesAccessKey="True" TextElement.FontWeight="SemiBold" Margin="11,0,0,0" VerticalAlignment="Center"/>
-                </Border>
-                <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="720" Padding="0,3"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></ScrollViewer>
-              </DockPanel>
-            </Border>
-          </Popup>
-        </Grid>
-        <ControlTemplate.Triggers>
-          <Trigger Property="HasItems" Value="True"><Setter TargetName="Arrow" Property="Visibility" Value="Visible"/></Trigger>
-          <Trigger Property="IsChecked" Value="True"><Setter TargetName="Check" Property="Visibility" Value="Visible"/></Trigger>
-          <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="MenuSurface" Property="Background" Value="#CCE4F7"/></Trigger>
-          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="MenuSurface" Property="Opacity" Value="0.45"/></Trigger>
-          <Trigger Property="Role" Value="TopLevelHeader">
-            <Setter Property="Height" Value="32"/><Setter Property="Padding" Value="12,0,4,0"/>
-            <Setter TargetName="PART_Popup" Property="Placement" Value="Bottom"/><Setter TargetName="MenuCaption" Property="Visibility" Value="Visible"/>
-            <Setter TargetName="Arrow" Property="Visibility" Value="Collapsed"/><Setter TargetName="Gesture" Property="Visibility" Value="Collapsed"/>
-          </Trigger>
-        </ControlTemplate.Triggers>
-      </ControlTemplate></Setter.Value></Setter>
-    </Style>
-    <Style x:Key="HelpTabs" TargetType="TabControl">
-      <Setter Property="Background" Value="#FAFAFA"/>
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">
-        <Grid Background="{TemplateBinding Background}">
-          <Border Width="1" HorizontalAlignment="Right" Background="#D6D6D6"/>
-          <DockPanel>
-            <TabPanel DockPanel.Dock="Top" Height="32" Margin="12,0,0,0" IsItemsHost="True"/>
-            <ContentPresenter ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
-          </DockPanel>
-        </Grid>
-      </ControlTemplate></Setter.Value></Setter>
-      <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="TabItem">
-        <Setter Property="FontSize" Value="12"/><Setter Property="Padding" Value="0,11,0,0"/><Setter Property="Height" Value="32"/><Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
-          <!-- Figma 1:2140 draws the three modes as one semibold line: 내용 | 색인 | 검색 -->
-          <StackPanel Orientation="Horizontal" Background="Transparent"><Border Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Top"/></Border><TextBlock x:Name="TabSeparator" Text=" | " Margin="0,11,0,0" VerticalAlignment="Top" Visibility="Collapsed"/></StackPanel>
-          <ControlTemplate.Triggers><Trigger Property="Tag" Value="separator"><Setter TargetName="TabSeparator" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers>
-        </ControlTemplate></Setter.Value></Setter>
-        <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="FontWeight" Value="SemiBold"/></Trigger></Style.Triggers>
-      </Style></Setter.Value></Setter>
-    </Style>
-    <Style x:Key="HelpTreeItem" TargetType="TreeViewItem">
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TreeViewItem">
-        <StackPanel><Border x:Name="TopicSurface" Height="24" Padding="12,0,0,0" Background="Transparent"><ContentPresenter x:Name="PART_Header" ContentSource="Header" VerticalAlignment="Top" Margin="0,1,0,0"/></Border>
-          <ItemsPresenter x:Name="TopicChildren" Margin="10,0,0,0" Visibility="Collapsed"/>
-        </StackPanel>
-        <ControlTemplate.Triggers>
-          <Trigger Property="IsExpanded" Value="True"><Setter TargetName="TopicChildren" Property="Visibility" Value="Visible"/></Trigger>
-          <Trigger Property="IsSelected" Value="True"><Setter TargetName="TopicSurface" Property="Background" Value="#CCE4F7"/></Trigger>
-        </ControlTemplate.Triggers>
-      </ControlTemplate></Setter.Value></Setter>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Background="#EAEAEA" Height="1" Margin="7,0" VerticalAlignment="Center"/></ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style TargetType="CheckBox">
       <Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Margin" Value="6,4"/>
@@ -246,16 +152,7 @@
         </ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
-    <Style x:Key="CompactChoiceCheck" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
-        <DockPanel Background="Transparent"><Border x:Name="Square" DockPanel.Dock="Left" Width="11" Height="11" Margin="0,0,6,0" Background="White" BorderBrush="#5F646D" BorderThickness="1"/><ContentPresenter VerticalAlignment="Center"/></DockPanel>
-        <ControlTemplate.Triggers>
-          <Trigger Property="IsChecked" Value="True"><Setter TargetName="Square" Property="Background" Value="#005FB8"/><Setter TargetName="Square" Property="BorderBrush" Value="#005FB8"/></Trigger>
-          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Square" Property="BorderBrush" Value="#1F1F1F"/><Setter TargetName="Square" Property="BorderThickness" Value="2"/></Trigger>
-        </ControlTemplate.Triggers>
-      </ControlTemplate></Setter.Value></Setter>
-    </Style>
-    <Style TargetType="GridSplitter"><Setter Property="Background" Value="#D6D6D6"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
+    <Style TargetType="GridSplitter"><Setter Property="Background" Value="#EAEAEA"/><Setter Property="HorizontalAlignment" Value="Stretch"/></Style>
     <Style x:Key="PanelHeader" TargetType="Border"><Setter Property="Background" Value="{StaticResource PanelBlue}"/><Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="Padding" Value="8,0"/></Style>
     <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource ToolButton}"><Setter Property="Width" Value="32"/><Setter Property="Height" Value="32"/><Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0,0,2,0"/></Style>
     <Style x:Key="FormatButton" TargetType="Button" BasedOn="{StaticResource IconButton}"><Setter Property="Width" Value="24"/><Setter Property="MinWidth" Value="24"/><Setter Property="Height" Value="24"/><Setter Property="MinHeight" Value="24"/></Style>

@@ -74,10 +74,11 @@ internal static class WindowsPanelDesignChecks
             check(Descendants(window.SourcePageBar).OfType<TextBlock>().Count(t => t.Text == "⋯") == 2,
                 "Long page lists display the Figma ellipses at both ends");
             typeof(MainWindow).GetMethod("RefreshEditorStatus", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(window, null);
-            window.Width = 960; window.Height = 600; window.UpdateLayout();
+            window.Width = 1280; window.Height = 800; window.UpdateLayout();
             check(window.OriginalPanel.ActualWidth >= 260 && window.SourcePanel.ActualWidth >= 300 && window.Braille.ActualWidth >= 300,
-                "Three panels remain usable at 960 pixels");
-            window.Width = 480; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                "Three panels remain usable at the 1280-pixel minimum");
+            // WindowBounds.Fit lowers the minimum on a smaller monitor; emulate that to exercise panel scrolling.
+            window.MinWidth = 480; window.Width = 480; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
             check(window.PanelScroll.ScrollableWidth > 0 && window.OriginalPanel.ActualWidth >= 260 && window.SourcePanel.ActualWidth >= 300 && window.Braille.ActualWidth >= 300,
                 "A 480px editor scrolls horizontally while keeping all three panels usable");
             foreach (var (header, name) in new[] { (window.OriginalHeader, "원본 패널 숨기기"), (window.SourceHeader, "텍스트 패널 숨기기"), (window.Braille.Header, "점자 패널 숨기기") })

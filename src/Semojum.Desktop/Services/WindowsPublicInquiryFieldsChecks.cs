@@ -44,11 +44,12 @@ internal static class WindowsPublicInquiryFieldsChecks
                 check(organization is not null && title is not null, "Public inquiry accepts distinct organization and title fields");
                 if (organization is null || title is null) { dialog.Close(); done.TrySetResult(); return; }
                 var email = boxes.Single(b => b.MaxLength == 100);
-                var name = boxes.Single(b => b.MaxLength == 50);
+                check(!boxes.Any(b => b.MaxLength == 50) && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "기관명") && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "제목")
+                    && !Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.StartsWith("이름", StringComparison.Ordinal)), "Public inquiry shows the final address, organization, title and content fields without a sender name");
                 var message = boxes.Single(b => b.AcceptsReturn);
                 var send = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
                 var consent = Descendants(dialog).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent");
-                email.Text = "fixture@example.test"; name.Text = "홍길동"; organization.Text = "기관 A"; title.Text = "문의 제목"; message.Text = "본문";
+                email.Text = "fixture@example.test"; organization.Text = "기관 A"; title.Text = "문의 제목"; message.Text = "본문";
                 send.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
                 check(fixture.Bodies.Count == 0 && dialog.IsVisible && organization.Text == "기관 A" && title.Text == "문의 제목" && message.Text == "본문"
                     && Descendants(dialog).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("동의해 주세요", StringComparison.Ordinal)),
@@ -74,8 +75,8 @@ internal static class WindowsPublicInquiryFieldsChecks
                 if (fixture.Bodies.Count > 0)
                 {
                     using var json = JsonDocument.Parse(fixture.Bodies[0]); var data = json.RootElement;
-                    check(data.GetProperty("name").GetString() == "홍길동" && data.GetProperty("message").GetString() == "기관명: 기관 A\n제목: 문의 제목\n\n본문",
-                        "Legacy sender name stays intact and organization and title reach the server in the message");
+                    check(data.GetProperty("name").GetString() == "" && data.GetProperty("message").GetString() == "기관명: 기관 A\n제목: 문의 제목\n\n본문",
+                        "The optional legacy sender name is sent empty and organization and title reach the server in the message");
                 }
                 else check(false, "Inquiry request reaches the mock server");
                 check(organization.Text == "기관 A" && title.Text == "문의 제목" && message.Text == "본문" && dialog.IsVisible,

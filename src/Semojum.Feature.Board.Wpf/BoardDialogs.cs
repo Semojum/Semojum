@@ -17,7 +17,7 @@ internal static class BoardDesign
 {
     internal static Brush Brush(string color) => (Brush)new BrushConverter().ConvertFromString(color)!;
     internal static SvgViewbox Icon(string name) => new() { Source = new Uri($"pack://application:,,,/Semojum.Feature.Board.Wpf;component/Assets/Figma/board-{name}.svg"), Width = 16, Height = 16, Stretch = Stretch.None };
-    internal static DockPanel Shell(Window window, DockPanel root, out StackPanel sidebar)
+    internal static DockPanel Shell(Window window, DockPanel root, out StackPanel sidebar, string? account = null)
     {
         if (window.Content is Grid frame && frame.Children[0] is Border { Child: DockPanel heading })
         {
@@ -35,7 +35,8 @@ internal static class BoardDesign
         var view = new MenuItem { Header = "보기(_V)", Width = 64 }; menu.Items.Add(view);
         var information = new MenuItem { Header = "정보(_A)", Width = 64 }; var help = new MenuItem { Header = "도움말" }; help.Click += (_, _) => Semojum.Desktop.Services.CommonWindowServices.ShowHelp(window, "게시판"); information.Items.Add(help); menu.Items.Add(information);
         DockPanel.SetDock(menu, Dock.Top); shell.Children.Add(menu);
-        var status = new Border { Height = 28, Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0) };
+        var status = new Border { Height = 28, Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0),
+            Child = new TextBlock { Text = account ?? "", FontSize = 12, Foreground = Brush("#5F5F5F"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 32, 0) } };
         AutomationProperties.SetAutomationId(status, "BoardStatusBar");
         DockPanel.SetDock(status, Dock.Bottom); shell.Children.Add(status);
         sidebar = new StackPanel { Margin = new(0, 14, 0, 0) };
@@ -96,11 +97,11 @@ public sealed class BoardDialog : CompactDialog
         Background = Brushes.White;
         var grid = new BoardListView((Style)FindResource("BoardListGrid"));
         var previousFooter = (Border)Actions.Parent; previousFooter.Child = null; previousFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar);
+        var root = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId);
         var heading = new DockPanel { Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var headerButtons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(headerButtons, Dock.Right); heading.Children.Add(headerButtons);
         var count = new TextBlock { Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Muted") };
-        var title = new StackPanel { Orientation = Orientation.Horizontal }; title.Children.Add(new TextBlock { Text = initiallyMine ? "내 글" : "전체 글", FontSize = 20, FontWeight = FontWeights.SemiBold }); title.Children.Add(count); heading.Children.Add(title);
+        var title = new StackPanel { Orientation = Orientation.Horizontal }; title.Children.Add(new TextBlock { Text = initiallyMine ? "내 글" : "전체 글", FontSize = 20, FontWeight = FontWeights.Bold }); title.Children.Add(count); heading.Children.Add(title);
         Actions.HorizontalAlignment = HorizontalAlignment.Left; Actions.Margin = new(0, 12, 0, 0); DockPanel.SetDock(Actions, Dock.Bottom); root.Children.Add(Actions);
         root.Children.Add(BoardDesign.Card(grid, new(19, 15, 19, 15)));
         var fields = Choices(["제목+내용", "제목", "내용", "글쓴이"], "제목+내용"); fields.Width = 120; fields.Height = fields.MinHeight = 32; fields.Padding = new(8, 0, 25, 0);
@@ -169,11 +170,10 @@ public sealed class BoardDialog : CompactDialog
         }
         grid.MouseDoubleClick += async (_, _) => await RunAsync(OpenAsync);
         Action("검색", async () => await GoPageAsync(1));
-        var mineButton = Action("내 글 보기", async () => await SwitchListAsync(!list.Mine)); mineButton.Width = 94; mineButton.Margin = new(0);
         var notifications = Action("알림", () => new NotificationsDialog(client, workInfo) { Owner = this }.ShowDialog());
-        notifications.Margin = new(8, 0, 0, 0);
+        notifications.Margin = new(0);
         var write = Action("글쓰기", async () => { var d = new PostEditorDialog(client, null, workInfo) { Owner = this }; if (d.ShowDialog() == true) await GoPageAsync(1); }, true); write.Margin = new(16, 0, 0, 0);
-        foreach (var button in new[] { mineButton, notifications, write }) { Actions.Children.Remove(button); PublicDialogDesign.StyleAction(button, button == write); button.IsDefault = false; headerButtons.Children.Add(button); }
+        foreach (var button in new[] { notifications, write }) { Actions.Children.Remove(button); PublicDialogDesign.StyleAction(button, button == write); button.IsDefault = false; headerButtons.Children.Add(button); }
         sidebar.Children.Add(BoardDesign.Navigation("전체 글", !initiallyMine, async () => await RunAsync(() => SwitchListAsync(false))));
         sidebar.Children.Add(BoardDesign.Navigation("공지", false));
         sidebar.Children.Add(BoardDesign.Navigation("내 글", initiallyMine, async () => await RunAsync(() => SwitchListAsync(true))));
@@ -225,8 +225,8 @@ public sealed class PostEditorDialog : CompactDialog
     public PostEditorDialog(BoardClient client, BoardPost? post, string workInfo) : base(post is null ? "게시판 — 글쓰기 - 누리닷" : "게시판 — 글 수정 - 누리닷", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White; var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
-        var heading = new TextBlock { Text = post is null ? "글쓰기" : "글 수정", FontSize = 20, FontWeight = FontWeights.SemiBold, Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
+        var root = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
+        var heading = new TextBlock { Text = post is null ? "글쓰기" : "글 수정", FontSize = 20, FontWeight = FontWeights.Bold, Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var card = new DockPanel(); Actions.HorizontalAlignment = HorizontalAlignment.Right; Actions.Margin = new(0, 16, 0, 0); DockPanel.SetDock(Actions, Dock.Bottom); card.Children.Add(Actions);
         var panel = new StackPanel(); card.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); root.Children.Add(BoardDesign.Card(card, new(19, 15, 19, 19)));
         panel.Children.Add(new TextBlock { Text = "분류", Height = 16, Foreground = (Brush)FindResource("Muted") });
@@ -287,7 +287,7 @@ public sealed class PostDialog : CompactDialog
     {
         Background = Brushes.White; var panel = new StackPanel();
         var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
+        var root = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
         Actions.Margin = new(0, 0, 0, 8); Actions.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(Actions, Dock.Top); root.Children.Add(Actions);
         root.Children.Add(BoardDesign.Card(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, new(19, 15, 19, 15)));
         void Render()
@@ -295,7 +295,7 @@ public sealed class PostDialog : CompactDialog
             panel.Children.Clear();
             var heading = new DockPanel { MinHeight = 28 };
             if (post.Secret) heading.Children.Add(new Border { BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(1), Width = 34, Height = 18, Margin = new(0, 0, 8, 0), Child = new TextBlock { Text = "비밀", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Center } });
-            heading.Children.Add(new TextBlock { Text = post.Title, FontSize = 20, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap }); panel.Children.Add(heading);
+            heading.Children.Add(new TextBlock { Text = post.Title, FontSize = 20, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap }); panel.Children.Add(heading);
             panel.Children.Add(new TextBlock { Text = $"{post.Author} · {post.CreatedAt} · 조회 {post.ViewCount}" + (post.Secret ? " · 글쓴이와 운영자만 열람" : ""), Margin = new(0, 10, 0, 6), Foreground = (Brush)FindResource("Muted"), FontSize = 12, TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Line"), Margin = new(0, 0, 0, 13) });
             panel.Children.Add(new TextBlock { Text = post.Content, TextWrapping = TextWrapping.Wrap, FontSize = 14, LineHeight = 22 });
@@ -307,7 +307,7 @@ public sealed class PostDialog : CompactDialog
                 download.HorizontalContentAlignment = HorizontalAlignment.Stretch;
                 var attachment = new Grid(); attachment.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); attachment.ColumnDefinitions.Add(new ColumnDefinition());
                 var export = BoardDesign.Icon("export"); export.Margin = new(0, 0, 6, 0); attachment.Children.Add(export);
-                var fileName = new TextBlock { Text = $"{a.FileName} ({a.Size / 1024d:0.#} KB)", FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                var fileName = new TextBlock { Text = $"{a.FileName}  {a.Size / 1024d:0.#}KB", FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(fileName, 1); attachment.Children.Add(fileName);
                 download.Content = attachment; download.ToolTip = a.FileName; System.Windows.Automation.AutomationProperties.SetName(download, a.FileName + " 다운로드");
                 var attachmentRow = new Grid(); attachmentRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MaxWidth = 268 });
@@ -316,7 +316,7 @@ public sealed class PostDialog : CompactDialog
             foreach (var answer in post.Answers)
             {
                 var reply = new StackPanel(); var byline = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 0, 4, 4) };
-                byline.Children.Add(new TextBlock { Text = "운영자 답변", FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 10, 0) });
+                byline.Children.Add(new TextBlock { Text = "운영자 답변", FontSize = 14, FontWeight = FontWeights.Bold, Margin = new(0, 0, 10, 0) });
                 byline.Children.Add(new TextBlock { Text = answer.AnsweredAt, FontSize = 12, Foreground = (Brush)FindResource("Muted") }); reply.Children.Add(byline);
                 reply.Children.Add(new TextBlock { Text = answer.Content, FontSize = 12, LineHeight = 18, TextWrapping = TextWrapping.Wrap });
                 panel.Children.Add(new Border { BorderThickness = new(3, 0, 0, 0), BorderBrush = (Brush)FindResource("Accent"), Background = new SolidColorBrush(Color.FromRgb(249, 249, 249)), CornerRadius = new(6), Margin = new(0, 16, 0, 0), Padding = new(9, 8, 9, 10), Child = reply });
@@ -381,7 +381,6 @@ public sealed class NotificationsDialog : CompactDialog
             }
             finally { loadingList = false; }
         }
-        var refresh = Button("새로고침", () => RunAsync(LoadAsync)); PublicDialogDesign.StyleAction(refresh); actions.Children.Add(refresh);
         var readAll = Button("모두 읽음", () => RunAsync(async () => { await client.ReadAllAsync(Lifetime.Token); await LoadAsync(); })); PublicDialogDesign.StyleAction(readAll); readAll.Width = 96; actions.Children.Add(readAll);
         var open = Button("열기", () => RunAsync(async () => { if (list.SelectedItem is BoardNotification n) { new PostDialog(client, await client.ReadAsync(n.PostId, Lifetime.Token), workInfo) { Owner = this }.ShowDialog(); await LoadAsync(); } }), true); PublicDialogDesign.StyleAction(open, true); actions.Children.Add(open);
         OnLoad(LoadAsync);

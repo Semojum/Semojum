@@ -18,13 +18,11 @@ internal static class WindowsTabPanelChecks
     {
         using var http = new HttpClient(new Fixture());
         var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
-        var window = new MainWindow(api) { Width = 1440, Height = 1000 }; window.Show();
+        var window = new MainWindow(api, startEmpty: true) { Width = 1440, Height = 1000 }; window.Show();
         try
         {
-            await window.ExecuteAsync("new");
-            check(window.OriginalToggle.IsChecked && window.SourceToggle.IsChecked && window.BrailleToggle.IsChecked,
-                "A new blank document starts with original, text and braille panels");
-            check(window.OriginalUpload.IsVisible, "The new document original panel offers a file upload area");
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(window.OriginalToggle.IsChecked && window.OriginalUpload.IsVisible, "The empty start screen offers the original file upload area");
             var pickerOpened = false;
             window.FilePicker = _ => { pickerOpened = true; return null; };
             window.OriginalUpload.UploadArea.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
@@ -60,6 +58,10 @@ internal static class WindowsTabPanelChecks
             }
             finally { timer.Stop(); }
             check(dropSelected, "Dropping a supported file opens settings for that file");
+            await window.ExecuteAsync("new");
+            check(!window.OriginalToggle.IsChecked && window.SourceToggle.IsChecked && window.BrailleToggle.IsChecked,
+                "A new blank document starts with only the text and braille panels");
+            check(!window.OriginalUpload.IsVisible, "A new blank document does not display the original upload area");
             var typed = window.Session;
             typed.ActiveBlock!.Source = "새 문서에서 저장하지 않은 원문";
             await Dispatcher.Yield(DispatcherPriority.DataBind);
@@ -77,8 +79,8 @@ internal static class WindowsTabPanelChecks
             check(!window.OriginalUpload.IsVisible, "A TXT document does not display the original upload area");
             var txtIndex = window.DocumentTabs.SelectedIndex;
             window.DocumentTabs.SelectedIndex = txtIndex - 1;
-            check(ReferenceEquals(window.Session, typed) && typed.IsDirty && typed.ActiveBlock!.Source == "새 문서에서 저장하지 않은 원문" && window.OriginalToggle.IsChecked,
-                "Switching back to an unsaved new document restores its three panels and edits");
+            check(ReferenceEquals(window.Session, typed) && typed.IsDirty && typed.ActiveBlock!.Source == "새 문서에서 저장하지 않은 원문" && !window.OriginalToggle.IsChecked,
+                "Switching back to an unsaved new document restores its two panels and edits");
             window.DocumentTabs.SelectedIndex = txtIndex;
             check(!window.OriginalToggle.IsChecked, "Switching back to a TXT document restores its two panels");
             check(typed.IsDirty && typedLabel.Text == typed.Title && (typedTab.ToolTip as string)?.Contains("저장되지 않음", StringComparison.Ordinal) == true,

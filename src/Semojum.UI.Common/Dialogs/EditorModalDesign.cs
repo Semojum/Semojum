@@ -68,5 +68,5 @@ public static class EditorModalDesign
         }
     }
     public static Border Card(UIElement child, Thickness margin) => new()
-    { Background = Color("#F9F9F9"), CornerRadius = new CornerRadius(4), Padding = new Thickness(16), Margin = margin, Child = child };
+    { Background = Color("#F9F9F9"), CornerRadius = new CornerRadius(6), Padding = new Thickness(16), Margin = margin, Child = child };
 }

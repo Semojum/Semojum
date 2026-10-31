@@ -138,8 +138,9 @@ internal static class WindowsQa4Checks
             FontResources = Fonts.GetFontFamilies(Controls.BundledFonts.DirectoryUri).Select(f => f.Source)
         }, new JsonSerializerOptions { WriteIndented = true }));
         var renderedFonts = GlyphFonts(owner.PageEditor.Editor.TextArea.TextView).ToArray();
-        check(renderedFonts.Any(f => f.EndsWith("Inter-Regular.ttf", StringComparison.OrdinalIgnoreCase)) && renderedFonts.Any(f => f.EndsWith("NotoSansKR-Regular.ttf", StringComparison.OrdinalIgnoreCase)) && !renderedFonts.Any(f => f.Contains("/WINDOWS/FONTS/", StringComparison.OrdinalIgnoreCase)),
-            "Source editor renders with bundled Inter and Noto Sans KR instead of silently substituting Windows fonts");
+        var malgun = Fonts.SystemFontFamilies.Any(f => string.Equals(f.Source, "Malgun Gothic", StringComparison.OrdinalIgnoreCase));
+        check(malgun ? renderedFonts.Any(f => Path.GetFileName(f).StartsWith("malgun", StringComparison.OrdinalIgnoreCase)) : renderedFonts.Any(f => f.EndsWith("NotoSansKR-Regular.ttf", StringComparison.OrdinalIgnoreCase)),
+            "Source editor renders in Malgun Gothic when installed and otherwise in the bundled Noto Sans KR");
         owner.Session.ErrorNotice = "작업 수신 오류 · 원문은 유지됩니다.";
         await render(owner, Path.Combine(directory, "43-operation-error.png"));
         check(owner.OperationErrorBanner.Visibility == Visibility.Visible, "QA4 asynchronous failures remain visible outside the options-only status bar");
@@ -193,23 +194,19 @@ internal static class WindowsQa4Checks
         check(options.Value.EnglishGrade1 && !Children(options).OfType<TextBlock>().Any(t => t.Text == "영문"), "QA4 hidden English grade remains preserved when other defaults are edited");
         await Capture(new DefaultsDialog(settings), "31-defaults.png", () =>
             check(handler.Paths.Contains("/api/users/braille-options") && handler.Paths.Contains("/api/users/braille-forms"), "QA4 defaults loads stored settings and real form values through the API contract"));
-        await Capture(new FormNameDialog(), "32-form-name.png");
         await Capture(new FormEditDialog(settings, forms, forms[1], forms[1].Layout, forms[1].Options, forms[0].FormId), "33-form-edit.png");
         await Capture(new FormDialog(settings, new(), new(), "builtin:TEXTBOOK"), "34-forms.png");
-        var formChoices = new[] { "초등 교과서", "중·고 교과서", "자습서", "시험지", "일반 도서", "사용자 양식" }
+        var formChoices = new[] { "초등 교과서", "중·고 교과서", "자습서", "시험지", "일반 도서" }
             .Select((name, index) => forms[0] with { FormId = "fixture:" + index, Name = name }).ToArray();
         var picker = new FormPickerDialog(formChoices, formChoices[1]);
-        await Capture(picker, "57-form-picker.png", () => check(picker.ChoicesList.Items.Count == 6 && Children(picker).OfType<ScrollViewer>().All(s => s.ComputedVerticalScrollBarVisibility == Visibility.Collapsed),
-            "Figma 3966 form picker lists six forms in 24px rows without a scrollbar"));
+        await Capture(picker, "57-form-picker.png", () => check(picker.ChoicesList.Items.Count == 5 && picker.Height == 208 && Children(picker).OfType<ScrollViewer>().All(s => s.ComputedVerticalScrollBarVisibility == Visibility.Collapsed),
+            "Final Figma form picker lists only the five forms in 32px rows without a scrollbar"));
         var chosenForm = new FormPickerDialog(formChoices, formChoices[1]);
         check(Modal(chosenForm, () => { chosenForm.ChoicesList.SelectedIndex = 3; Key(chosenForm.ChoicesList, chosenForm, System.Windows.Input.Key.Enter); }) == true && chosenForm.Selected == formChoices[3],
             "Form picker accepts the keyboard-selected actual form on Enter");
         var cancelledForm = new FormPickerDialog(formChoices, formChoices[1]);
         check(Modal(cancelledForm, () => { cancelledForm.ChoicesList.SelectedIndex = 3; Key(cancelledForm, cancelledForm, System.Windows.Input.Key.Escape); }) != true,
             "Form picker Escape cancels a changed choice without applying it to the caller");
-        owner.Welcome.Visibility = Visibility.Visible;
-        await WindowsSmoke.CaptureComponentAsync(owner.WelcomeCard, owner, 420, 260, Path.Combine(directory, "58-empty-state.png"));
-        owner.Welcome.Visibility = Visibility.Collapsed;
         var goTo = new GoToDialog(SearchPanel.Text, (_, _) => Task.FromResult(""));
         await Capture(goTo, "60-go-to-no-previous.png", () =>
         {
@@ -222,8 +219,8 @@ internal static class WindowsQa4Checks
         {
             await WindowsSmoke.RenderElementAsync(contextMenu, Path.Combine(directory, "59-editor-context.png"));
             var labels = contextMenu.Items.OfType<MenuItem>().Select(item => item.Header?.ToString()).ToArray();
-            check(labels.SequenceEqual(new[] { "메모 추가", "잘라내기", "복사", "붙여넣기", "대체 초안 보기", "적용 규정 보기", "정렬", "수식 입력창" }),
-                "Text context menu retains memo, draft and rule actions without emphasis or page break");
+            check(labels.SequenceEqual(new[] { "메모 추가", "잘라내기", "복사", "붙여넣기", "대체 초안 보기", "적용 규정 보기", "강조 넣기", "정렬", "쪽바꿈 넣기", "수식 입력창" }),
+                "Text context menu retains memo, draft and rule actions with the final emphasis and page break commands");
             check(!owner.Braille.GridView.ContextMenu.Items.OfType<MenuItem>().Any(item => item.Header?.ToString() == "쪽바꿈"),
                 "Braille context menu does not offer page break");
         }
@@ -276,7 +273,7 @@ internal static class WindowsQa4Checks
         await Capture(usage, "37-usage.png", () =>
         {
             check(usage.Navigation.Items.Count == 5 && usage.Navigation.TabStripPlacement == Dock.Left, "QA4 my page has five vertical sections");
-            check(Children(usage).OfType<TextBlock>().Any(t => t.Text == "8,251") && Children(usage).OfType<TextBlock>().Any(t => t.Text.Contains("할당") && t.Text.Contains("10,000") && t.Text.Contains("크레딧")), "QA4 usage uses the returned credit balance and allocation");
+            check(Children(usage).OfType<TextBlock>().Any(t => t.Text == "8,251") && Children(usage).OfType<TextBlock>().Any(t => t.Text == "1,749 / 10,000 크레딧"), "QA4 usage uses the returned credit balance and allocation");
             check(Children(usage).OfType<ProgressBar>().Any(b => b.Value == 17.49), "QA4 usage percentage populates the progress bar");
             var displayedUsage = Children(usage).OfType<ProgressBar>().First(b => b.Value == 17.49);
             var fill = displayedUsage.Template.FindName("RangeFill", displayedUsage) as FrameworkElement;
@@ -352,39 +349,20 @@ internal static class WindowsQa4Checks
         var rejected = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다.", System.Text.Json.JsonSerializer.SerializeToElement(new { remainingAttempts = 2 })));
         await Capture(rejected, "71-login-rejected.png", () => check(rejected.DetailText == "남은 횟수 2회입니다. 5회 실패하면 10분 동안 잠깁니다." && Math.Abs(rejected.ActionButtons[0].ActualWidth - rejected.ActionButtons[1].ActualWidth) <= 2,
             "Login rejection states the lock policy with equal Figma button widths"));
-        var alternativeBlock = new EditorBlock { Metadata = new(Type: "caption", SelectedIndex: 2, Alternatives: [
-            new("생략", "", null, "", "설명 생략"), new("짧은 제목", "네 지역의 기후 특성", null, "⠁", "간략한 제목"),
-            new("개조식", "그림: 네 지역의 기후 특성\n1. (가) 최한월 −6℃, 연강수량 1,300㎜\n2. (나) 최한월 −2℃, 연강수량 1,100㎜", null, "⠁⠃⠉", "항목별 설명"),
-            new("줄글", "네 지역의 기후 특성을 비교한 그림입니다.", null, "⠙", "연결된 문장")]) };
-        var alternatives = new AlternativeDialog(alternativeBlock, (_, _, _) => throw new InvalidOperationException("Legacy fixture drafts require no translation request."));
-        await Capture(alternatives, "56-alternative-drafts.png", () =>
-        {
-            check(alternatives.SelectedIndex == 2 && alternatives.Translation?.Cells == "⠁⠃⠉", "Draft popover restores the selected draft and its braille preview");
-            alternatives.DraftChoices[3].IsChecked = true;
-            check(alternatives.SelectedIndex == 3 && alternatives.Translation?.Cells == "⠙" && alternativeBlock.Metadata.Alternatives!.Length == 4 && alternativeBlock.Metadata.SelectedIndex == 2,
-                "Draft selection previews a different draft without deleting alternatives or committing to the document before confirmation");
-        });
-        var acceptDraft = new AlternativeDialog(alternativeBlock, (_, _, _) => throw new InvalidOperationException());
-        check(Modal(acceptDraft, () => { acceptDraft.DraftChoices[3].IsChecked = true; Key(acceptDraft, acceptDraft, System.Windows.Input.Key.Enter); }) == true &&
-            acceptDraft.SelectedIndex == 3 && acceptDraft.Translation?.Cells == "⠙" && alternativeBlock.Metadata.SelectedIndex == 2,
-            "Draft Enter returns the selected draft for caller confirmation without changing the document early");
-        var cancelDraft = new AlternativeDialog(alternativeBlock, (_, _, _) => throw new InvalidOperationException());
-        check(Modal(cancelDraft, () => { cancelDraft.DraftChoices[3].IsChecked = true; Key(cancelDraft, cancelDraft, System.Windows.Input.Key.Escape); }) != true &&
-            alternativeBlock.Metadata.SelectedIndex == 2 && alternativeBlock.Metadata.Alternatives!.Length == 4,
-            "Draft Escape preserves the previous selection and every alternative");
         await Capture(new NoticeDialog("변경 내용을 저장하시겠습니까?", "저장하지 않으면 지금까지 고친 것이 사라집니다. 중간 저장은 하지 않습니다.", ["저장", "저장 안 함", "취소"], width: 591), "55-unsaved-confirmation.png");
         await Capture(new AppliedRulesDialog(api, [new("( 여는 괄호", "⠦", "제23항", "문장부호", "소괄호표는 여는 때 ⠦, 닫는 때 ⠴로 적는다.", "한국 점자 규정", "symbol"), new("~ 물결표", "⠤", "제38항", "문장부호", "물결표는 ⠤로 적고 앞말과 뒷말에 붙여 쓴다.", "한국 점자 규정", "symbol")], false, "(가)~(라)", "⠦⠫⠴⠭⠦⠐⠣⠴", "7줄 3~12칸"), "51-applied-rules.png");
         var blockEvidence = new AppliedRulesDialog(api,
             [new("원본 자료 (원문)", "", "제1항", "원본 근거", "원본 변환의 근거", "규정", "fixture", true)],
             false, "원본", "⠁", "1줄 1칸");
         await Capture(blockEvidence, "51-applied-rules-block-evidence.png", () =>
-            check(Children(blockEvidence).OfType<TextBlock>().Any(t => t.IsVisible
-                && t.Text.Contains("점자 칸에 적용되는 위치는 확인되지 않았습니다", StringComparison.Ordinal)),
-                "Server evidence without verified coordinates is explicitly identified in the rules dialog"));
+            check(!Children(blockEvidence).OfType<TextBlock>().Any(t => t.IsVisible
+                && t.Text.Contains("점자 칸에 적용되는 위치는 확인되지 않았습니다", StringComparison.Ordinal)) && blockEvidence.Rules.Items.Count == 1,
+                "Server evidence is listed without the old red unverified-position notice, matching the final Figma"));
         var expandedRules = new RuleDialog(api, [], "", "", "음악") { Owner = owner }; expandedRules.Show();
         try { await render(expandedRules, Path.Combine(directory, "52-rules-expanded.png")); ((Expander)expandedRules.RuleResults.Children[0]).IsExpanded = true; await render(expandedRules, Path.Combine(directory, "52-rules-expanded.png")); } finally { expandedRules.Close(); }
         var keys = new SixDotDialog("F D S J K L", true, true);
-        await Capture(keys, "39-six-keys.png", () => check(keys.KeyFields.Length == 6 && keys.KeyFields.All(k => k.IsVisible && k.MaxLength == 1), "QA4 six-dot mapping exposes six individual editable keys"));
+        keys.Loaded += (_, _) => Children(keys).OfType<Semojum.Desktop.Controls.SegmentedChoice>().Single().SelectedIndex = 3;
+        await Capture(keys, "39-six-keys.png", () => check(keys.KeyFields.Length == 6 && keys.KeyFields.All(k => k.IsVisible && k.MaxLength == 1 && !k.IsReadOnly), "QA4 six-dot custom mode exposes six individual editable keys like the final Figma"));
         var help = new HelpWindow("점자 직접 고치기");
         await Capture(help, "40-help-tree.png", () => check(Children(help).OfType<TabItem>().Select(t => t.Tag as string).SequenceEqual(["separator", "separator", null])
             && Children(help).OfType<FlowDocumentScrollViewer>().Single().Document.TextAlignment == TextAlignment.Left,
@@ -398,7 +376,7 @@ internal static class WindowsQa4Checks
             editor.Session.ActiveBlock = first; editor.PageEditor.Refresh();
             await render(editor, Path.Combine(directory, "41-source-indents.png"));
             var lines = editor.PageEditor.Editor.TextArea.TextView.VisualLines;
-            check(lines.Take(2).All(l => l.Elements.Any(e => e.DocumentLength == 0)) && first.Source.StartsWith("<!2칸>"), "QA4 indentation tags create display-only space without changing source bytes");
+            check(lines.Take(2).All(l => l.Elements.Any(e => e is ICSharpCode.AvalonEdit.Rendering.FormattedTextElement { RelativeTextOffset: 0, DocumentLength: 5 })) && first.Source.StartsWith("<!2칸>"), "QA4 indentation tags display as spaces covering the whole tag without changing source bytes");
             await editor.FindNextAsync("검색할", SearchPanel.Text);
             check(editor.Session.ActiveBlock == second && editor.PageEditor.Editor.SelectedText == "검색할", "QA4 source search selects the visible continuous editor at the correct block offset");
             var globalLine = first.Source.Count(c => c == '\n') + 2;
@@ -496,8 +474,8 @@ internal static class WindowsQa4Checks
             var tree = Children(help).OfType<TreeView>().Single();
             var branch = tree.Items.OfType<TreeViewItem>().First(b => b.Header.ToString() == "메뉴별 기능");
             branch.IsExpanded = true;
-            var topic = branch.Items.OfType<TreeViewItem>().First(t => t.Header.ToString() == "대체 초안과 규정"); topic.IsSelected = true;
-            check(reader.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().First().Inlines.OfType<System.Windows.Documents.Run>().First().Text.EndsWith("대체 초안과 규정", StringComparison.Ordinal),
+            var topic = branch.Items.OfType<TreeViewItem>().First(t => t.Header.ToString() == "삽입 · 설정"); topic.IsSelected = true;
+            check(reader.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().First().Inlines.OfType<System.Windows.Documents.Run>().First().Text.EndsWith("삽입 · 설정", StringComparison.Ordinal),
                 "Help tree opens retained draft and rule guidance after navigation restyling");
         }
         finally { help.Close(); }

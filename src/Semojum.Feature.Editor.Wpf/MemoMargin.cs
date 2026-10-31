@@ -98,21 +98,36 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
         .Select(m => $"{m.Author ?? "작성자 미상"}\n{m.Body}" + string.Concat((m.Replies ?? []).Select(r => $"\n\n{r.Author ?? "작성자 미상"}\n{r.Body}"))));
         return text.Length == 0 ? "" : "메모\n" + text;
     }
+    /// <summary>Called with the hovered memo line, or -1 when the pointer leaves the memo marker; the owner shows a non-modal memo bubble.</summary>
+    public Action<int>? HoverRequested { get; init; }
+    private int hoveredMemo = -1;
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
         if (TextView?.VisualLinesValid != true) return;
         var y = e.GetPosition(this).Y + TextView.VerticalOffset;
         var line = TextView.VisualLines.FirstOrDefault(l => y >= l.VisualTop && y < l.VisualTop + l.Height);
-        var text = line is null ? "" : string.Join("\n\n", new[] { Preview(line.FirstDocumentLine.LineNumber - 1), ReviewPreview(line.FirstDocumentLine.LineNumber - 1),
-            string.Join("\n", ManualKinds(line.FirstDocumentLine.LineNumber - 1).Select(ReviewVisuals.Label)) }.Where(t => t.Length > 0));
+        var index = line is null ? -1 : line.FirstDocumentLine.LineNumber - 1; var x = e.GetPosition(this).X;
+        if (HoverRequested is not null)
+        {
+            // Over the memo marker: show the memo bubble instead of a tooltip.
+            if (index >= 0 && x >= SlotPadding && (int)((x - SlotPadding) / 16) == 0 && Preview(index).Length > 0)
+            { if (ToolTip is ToolTip shown) shown.IsOpen = false; ToolTip = null; hoveredMemo = index; HoverRequested(index); return; }
+            if (hoveredMemo >= 0) { hoveredMemo = -1; HoverRequested(-1); }
+        }
+        var text = line is null ? "" : string.Join("\n\n", new[] { Preview(index), ReviewPreview(index),
+            string.Join("\n", ManualKinds(index).Select(ReviewVisuals.Label)) }.Where(t => t.Length > 0));
         if (ToolTip is ToolTip current && current.Tag as string == text) return;
         if (ToolTip is ToolTip old) old.IsOpen = false;
         ToolTip = text.Length == 0 ? null : new ToolTip { Tag = text, Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 300 } };
         ToolTipService.SetInitialShowDelay(this, 150);
     }
     protected override void OnMouseLeave(MouseEventArgs e)
-    { if (ToolTip is ToolTip tip) tip.IsOpen = false; base.OnMouseLeave(e); }
+    {
+        if (ToolTip is ToolTip tip) tip.IsOpen = false;
+        if (hoveredMemo >= 0) { hoveredMemo = -1; HoverRequested?.Invoke(-1); }
+        base.OnMouseLeave(e);
+    }
     protected override Size MeasureOverride(Size availableSize) => new(Math.Max(GutterWidth, markerSlots * 16 + SlotPadding), 0);
     protected override void OnTextViewChanged(TextView oldTextView, TextView newTextView)
     {

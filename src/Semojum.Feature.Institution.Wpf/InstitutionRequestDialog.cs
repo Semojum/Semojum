@@ -41,7 +41,7 @@ internal sealed class InstitutionRequestDialog : CompactDialog
         {
             Field(0, "별칭", First); Field(1, "받을 사람 메일", Second);
             Option.ItemsSource = new[] { "기관 할당 공유", "계정별 한도 지정", "크레딧 없음 (읽기만)" }; Option.SelectedIndex = 0; Field(2, "쓸 수 있는 크레딧", Option);
-            body.Children.Add(new TextBlock { Text = "입력한 내용은 운영자에게 요청으로 전달됩니다.", Foreground = FigmaDialogElements.Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 12, 0, 0) });
+            body.Children.Add(new TextBlock { Text = "요청하면 운영자 확인 뒤 메일로 첫 비밀번호가 갑니다.", Foreground = FigmaDialogElements.Brush("#8A8A8A"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 24, 0, 0) });
         }
         else
         {

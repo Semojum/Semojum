@@ -17,10 +17,8 @@ public partial class MainWindow
     private async Task ExportAsync(string? path = null, int format = 1, bool chooseRange = true)
     {
         if (fileBusy || session.Blocks.Count == 0) return;
-        var dialog = new SaveFileDialog { Title = "문서 내보내기", FileName = Path.GetFileNameWithoutExtension(session.Title),
-            Filter = "BRF 점자문서|*.brf|원문 텍스트|*.txt|점자 텍스트 (판면 포함)|*.txt", DefaultExt = ".brf" };
-        if (path is null) { if (dialog.ShowDialog(this) != true) return; }
-        else { dialog.FileName = path; dialog.FilterIndex = format; }
+        var dialog = new SaveFileDialog { Title = "문서 내보내기", FileName = path ?? Path.GetFileNameWithoutExtension(session.Title),
+            Filter = "BRF 점자문서|*.brf|원문 텍스트|*.txt|점자 텍스트 (판면 포함)|*.txt", DefaultExt = ".brf", FilterIndex = format };
         fileBusy = true;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(documentLifetime.Token);
         var ct = cancellation.Token;
@@ -62,6 +60,12 @@ public partial class MainWindow
             var selectedFormat = ranges.SelectedFormat;
             var plainText = selectedFormat == ".txt — 원문";
             var brailleBrf = selectedFormat == ".brf";
+            // 범위 창에서 「저장」을 누른 뒤에 저장 위치를 고릅니다.
+            if (path is null)
+            {
+                dialog.FilterIndex = brailleBrf ? 1 : plainText ? 2 : 3; dialog.DefaultExt = brailleBrf ? ".brf" : ".txt";
+                if (dialog.ShowDialog(this) != true) return;
+            }
             var targetPath = Path.ChangeExtension(dialog.FileName, brailleBrf ? ".brf" : ".txt");
             if (!string.Equals(targetPath, dialog.FileName, StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath)
                 && ConfirmExport($"형식 변경으로 선택한 파일이 이미 있습니다.\n{targetPath}\n덮어쓰시겠습니까?", "파일 확인") != MessageBoxResult.Yes) return;

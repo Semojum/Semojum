@@ -26,14 +26,14 @@ public class CompactDialog : Window
             Style = (Style)FindResource(typeof(Window)); WindowStyle = WindowStyle.None;
             Background = Brushes.White;
             System.Windows.Shell.WindowChrome.SetWindowChrome(this, new() { CaptionHeight = 0, ResizeBorderThickness = new(0), GlassFrameThickness = new(0) });
-            Content = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(95, 100, 109)), BorderThickness = new(1), Child = Root };
+            Content = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(95, 95, 95)), BorderThickness = new(1), Child = Root };
             PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape) { Close(); e.Handled = true; } };
         }
         else Services.WindowFrame.Apply(this, editor);
         Status.Visibility = Visibility.Collapsed;
         System.ComponentModel.DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock))
             .AddValueChanged(Status, (_, _) => Status.Visibility = string.IsNullOrEmpty(Status.Text) ? Visibility.Collapsed : Visibility.Visible);
-        var footer = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(214, 214, 214)), BorderThickness = new(0, 1, 0, 0), Child = Actions };
+        var footer = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(234, 234, 234)), BorderThickness = new(0, 1, 0, 0), Child = Actions };
         if (popover || editor && !editorActions) footer.Visibility = Visibility.Collapsed;
         DockPanel.SetDock(footer, Dock.Bottom); Root.Children.Add(footer);
         DockPanel.SetDock(Status, Dock.Bottom); Root.Children.Add(Status);
@@ -52,7 +52,7 @@ public class CompactDialog : Window
     }
     public static Button Button(string label, Func<Task> action, bool primary = false)
     {
-        var b = new Button { Content = label, MinWidth = 76, Height = 24, MinHeight = 24, Padding = new(8, 0, 8, 0), Margin = new(8, 0, 0, 0), FontSize = 12 };
+        var b = new Button { Content = label, MinWidth = 76, Height = 32, MinHeight = 32, Padding = new(8, 0, 8, 0), Margin = new(8, 0, 0, 0), FontSize = 12 };
         b.IsDefault = primary;
         b.IsCancel = label == "취소";
         if (primary) { b.Background = b.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 95, 184)); b.Foreground = Brushes.White; }
@@ -87,7 +87,7 @@ public class CompactDialog : Window
         var dock = new DockPanel { Margin = new(0, 8, 0, 8) };
         dock.Children.Add(new TextBlock { Text = label, Width = labelWidth, VerticalAlignment = VerticalAlignment.Center, FontSize = 14 });
         dock.Children.Add(value);
-        panel.Children.Add(new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(214, 214, 214)), BorderThickness = new(0, 0, 0, 1), Child = dock });
+        panel.Children.Add(new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(234, 234, 234)), BorderThickness = new(0, 0, 0, 1), Child = dock });
     }
     public static void SettingRow(Panel panel, string label, FrameworkElement value, double labelWidth = 164, double fieldWidth = 280)
     {
@@ -98,6 +98,6 @@ public class CompactDialog : Window
         if (value is Control control) { control.MinHeight = 24; control.FontSize = 12; }
         System.Windows.Automation.AutomationProperties.SetName(value, label);
         Grid.SetColumn(value, 1); row.Children.Add(value);
-        panel.Children.Add(new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(214, 214, 214)), BorderThickness = new(0, 0, 0, 1), Child = row });
+        panel.Children.Add(new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(234, 234, 234)), BorderThickness = new(0, 0, 0, 1), Child = row });
     }
 }

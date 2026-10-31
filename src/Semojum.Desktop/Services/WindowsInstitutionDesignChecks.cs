@@ -6,8 +6,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using System.Windows.Automation.Peers;
-using System.Windows.Automation.Provider;
 using System.Windows.Input;
 using System.Windows.Controls.Primitives;
 using Semojum.Core.Integration;
@@ -27,7 +25,7 @@ internal static class WindowsInstitutionDesignChecks
         window.Show();
         try
         {
-            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); await WaitFor(() => window.Refresh.IsEnabled && window.Accounts.Items.Count > 0);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); await WaitFor(() => !window.Refreshing && window.Accounts.Items.Count > 0);
             var table = window.Accounts;
             var header = new DataGridColumnHeader { Style = table.ColumnHeaderStyle };
             var cell = new DataGridCell { Style = table.CellStyle };
@@ -39,8 +37,13 @@ internal static class WindowsInstitutionDesignChecks
                 "Institution tables use the Figma header, 8px content inset and row separator colors");
             check(window.Identity.Text == "테스트 기관 · O1" && window.Allocated.Text == "1,000" && window.Balance.Text == "700" && window.UsageBar.Value == 30,
                 "Institution dashboard displays actual server organization and credit values");
-            check(window.UsagePercent.Text == "30%" && window.StatusSummary.Text.Contains("테스트 기관") && window.StatusSummary.Text.Contains("700") && window.ContractRemaining.Text != "정보 없음",
-                "Institution percentage, contract days and status line use the actual dashboard response");
+            // TextBlock.Text does not follow Inlines edits, so the status line is read from its runs; " | " marks each vertical rule.
+            string StatusLine() => string.Concat(window.StatusSummary.Inlines.Select(i => (i as System.Windows.Documents.Run)?.Text ?? " | "));
+            check(window.UsagePercent.Text == "30%" && window.ContractRemaining.Text != "정보 없음"
+                && StatusLine() is var statusLine && statusLine.StartsWith("기관 테스트 기관 | 남은 크레딧 700 | 계약 만료 ", StringComparison.Ordinal)
+                && statusLine.EndsWith(" | ", StringComparison.Ordinal) && !statusLine.Contains("남음", StringComparison.Ordinal)
+                && window.SessionIdentity.IsVisible && window.SessionIdentity.Text == (api.Account?.LoginId ?? "로그인 정보 없음"),
+                "Institution percentage, contract days and the status bar (기관 | 남은 크레딧 | 계약 만료 N일 전 | ID) use the actual dashboard response");
             check(window.Chart.Children.Count == 1 && window.ChartMaximum.Text == "300" && window.ChartAverage.Text == "6개월 평균 정보 없음",
                 "An incomplete monthly response shows its real axis and does not invent a six-month average");
             var sixMonths = new[] { new InstitutionMonthlyUsage("2026-03", 2100), new("2026-04", 2600), new("2026-05", 3100), new("2026-06", 2800), new("2026-07", 3900), new("2026-08", 4600) };
@@ -88,8 +91,15 @@ internal static class WindowsInstitutionDesignChecks
                 && InstitutionUsage.RemainingDays("2026-10-29", date) == "1일 경과" && InstitutionUsage.RemainingDays("2026-02-30", date) == "정보 없음"
                 && InstitutionUsage.RemainingDays("2026-10-30T00:00:00", date) == "정보 없음" && InstitutionUsage.RemainingDays(null, date) == "정보 없음",
                 "Contract date uses strict ISO dates and handles future, expiry, past and invalid dates");
-            check(window.Accounts.Items.Count == 2 && window.Requests.Items.Count == 2 && window.Orders.Items.Count == 1 && window.Notices.Items.Count == 1,
-                "Institution lists display only the API-provided accounts, requests, orders and notices");
+            var seenAt = new DateTimeOffset(2026, 10, 30, 12, 0, 0, TimeSpan.FromHours(9));
+            check(InstitutionUsage.LastSeen("2026-10-30T00:12:00Z", seenAt) == "오늘 09:12" && InstitutionUsage.LastSeen("2026-10-29T15:30:00Z", seenAt) == "오늘 00:30"
+                && InstitutionUsage.LastSeen("2026-10-29T08:02:00Z", seenAt) == "어제" && InstitutionUsage.LastSeen("2026-10-29T08:02:00Z", seenAt, withTime: true) == "어제 17:02"
+                && InstitutionUsage.LastSeen("2026-07-22", seenAt) == "07-22" && InstitutionUsage.LastSeen("2025-12-31T10:00:00Z", seenAt) == "2025-12-31"
+                && InstitutionUsage.LastSeen(null, seenAt) == "—" && InstitutionUsage.LastSeen("unknown", seenAt) == "—"
+                && ((DataGridTextColumn)window.Accounts.Columns[3]).Binding is System.Windows.Data.Binding { Converter: InstitutionLastSeenConverter },
+                "Last login turns the server's UTC time into Korean 오늘 09:12, 어제, 07-22 or —");
+            check(window.Accounts.Items.Count == 3 && window.Orders.Items.Count == 1 && window.Notices.Items.Count == 1,
+                "Institution lists display only the API-provided accounts, the open account request, orders and notices");
             check(InstitutionStatusTextConverter.Label("ACTIVE", "account") == "활성" && InstitutionStatusTextConverter.Label("INACTIVE", "account") == "잠김"
                 && InstitutionStatusTextConverter.Label("ORG", "notice") == "우리 기관" && InstitutionStatusTextConverter.Label("FUTURE_STATUS", "account") == "FUTURE_STATUS"
                 && InstitutionStatusTextConverter.Label("FUTURE_SCOPE", "notice") == "FUTURE_SCOPE", "Known institution status labels are translated while unknown server codes remain intact");
@@ -99,29 +109,30 @@ internal static class WindowsInstitutionDesignChecks
             check(window.Orders.Columns.LastOrDefault() is DataGridTemplateColumn { Header: "증빙" }
                 && window.Orders.Columns.OfType<DataGridTextColumn>().Single(c => Equals(c.Header, "계산서")).Binding is System.Windows.Data.Binding { Converter: InstitutionStatusTextConverter, ConverterParameter: "invoice" },
                 "The order table has translated invoice status and a dedicated receipt column");
-            check(!window.RequestsExpander.IsExpanded && window.Orders.Items.Count == 1, "Request history starts collapsed while the order list retains actual data");
-            var peer = UIElementAutomationPeer.CreatePeerForElement(window.RequestsExpander);
-            var expand = peer?.GetPattern(PatternInterface.ExpandCollapse) as IExpandCollapseProvider;
-            expand?.Expand(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
-            check(expand is not null && window.RequestsExpander.IsExpanded && window.Requests.IsVisible && window.Requests.Items.Count == 2 && window.Requests.ActualHeight > 0,
-                "The accessible expand action reveals the complete real request list");
-            expand?.Collapse(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(!window.RequestsExpander.IsExpanded && window.Requests.Items.Count == 2, "The accessible collapse action preserves the request data");
-            var toggle = Descendants(window.RequestsExpander).OfType<ToggleButton>().FirstOrDefault();
-            if (toggle is not null && PresentationSource.FromVisual(toggle) is { } source)
-            {
-                toggle.Focus();
-                if (toggle.IsKeyboardFocused)
-                {
-                    toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
-                    toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
-                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                    check(window.RequestsExpander.IsExpanded && window.Requests.Items.Count == 2, "The request expander opens through its keyboard Space handler");
-                    expand?.Collapse();
-                }
-                else Console.WriteLine("SKIP: institution request Space key requires keyboard focus on its header.");
-            }
-            else check(false, "The request expander has a keyboard-focusable header");
+            var statusBrush = new InstitutionStatusBrushConverter();
+            Color? Tone(string? value, string kind) => (statusBrush.Convert(value!, typeof(Brush), kind, System.Globalization.CultureInfo.InvariantCulture) as SolidColorBrush)?.Color;
+            check(InstitutionStatusTextConverter.Label("2026-02-24", "payment") == "완납" && InstitutionStatusTextConverter.Label(null, "payment") == "미납"
+                && Tone("2026-02-24", "payment") == Color.FromRgb(0x0F, 0x7B, 0x0F) && Tone(null, "payment") == Color.FromRgb(0xC4, 0x2B, 0x1C) && Tone("08-12 요청", "account") == Color.FromRgb(0x9D, 0x5D, 0x00)
+                && window.Orders.Columns.OfType<DataGridTemplateColumn>().Any(c => Equals(c.Header, "결제")) && !window.Orders.Columns.Any(c => Equals(c.Header, "결제일")),
+                "The order table shows a green 완납 or red 미납 chip in the 결제 column and a pending account request is amber");
+            var issueRow = window.Accounts.Items.OfType<InstitutionAccountRow>().SingleOrDefault(r => r.Request is not null);
+            check(issueRow is { LoginId: "발급 요청 중", Alias: "국어 담당", Status: "08-12 요청", LastLoginAt: null, UsedCredits: null, Control: "요청 취소", Account: null }
+                && window.PendingRequests.Text == "발급 요청 1건 처리 중" && window.PendingRequests.IsVisible,
+                "An open account-issue request is a row of the account table and is counted beside the request button");
+            check(!Descendants(window).OfType<Expander>().Any() && !Descendants(window).OfType<Button>().Any(b => Equals(b.Content, "새로 고침")),
+                "The institution page has no separate request-history expander or refresh button");
+            window.UpdateLayout();
+            var controlColumn = (DataGridTemplateColumn)window.Accounts.Columns[^1];
+            Button? RowControl(InstitutionAccountRow? row) => row is not null && controlColumn.GetCellContent(row) is { } cell ? Descendants(cell).OfType<Button>().FirstOrDefault() : null;
+            TextBlock? RowId(InstitutionAccountRow? row) => row is null ? null : window.Accounts.Columns[0].GetCellContent(row) as TextBlock;
+            var selfRow = window.Accounts.Items.OfType<InstitutionAccountRow>().FirstOrDefault(r => r.LoginId == "org");
+            var memberRow = window.Accounts.Items.OfType<InstitutionAccountRow>().FirstOrDefault(r => r.LoginId == "worker");
+            check(RowControl(selfRow) is { IsVisible: false } && RowControl(memberRow) is { IsVisible: true, Content: "잠금" } && RowControl(issueRow) is { IsVisible: true, Content: "요청 취소" }
+                && !Descendants(window.Accounts).OfType<Button>().Any(b => Equals(b.Content, "상세")),
+                "Each account row shows its own 잠금 or 요청 취소 control, none on the administrator's row, and no 상세 button");
+            check(RowId(memberRow) is { FontSize: 14, Foreground: SolidColorBrush { Color: var idColor } } memberId && memberId.FontWeight == FontWeights.Bold && idColor == Color.FromRgb(0x00, 0x5F, 0xB8)
+                && RowId(issueRow) is { Foreground: SolidColorBrush { Color: var pendingColor } } && pendingColor == Color.FromRgb(0x5F, 0x5F, 0x5F),
+                "Account IDs are 14px bold blue and the pending request line is gray");
             foreach (var scroll in Descendants(window).OfType<ScrollViewer>().Where(s => s.Content is StackPanel)) scroll.ScrollToTop();
             check(window.AccountRequest.IsEnabled && window.CreditRequest.IsEnabled && window.ReceiptAddress.Text.Contains("billing@example.test"),
                 "Available request actions and receipt recipient reflect the current institution response");
@@ -131,8 +142,12 @@ internal static class WindowsInstitutionDesignChecks
                 "Institution controls use the Figma orange request button, light table rows and rounded credit track");
             var icons = Descendants(window).OfType<SvgViewbox>().Where(i => i.Source?.ToString().Contains("institution-caption-") == true).ToArray();
             check(icons.Length == 3 && icons.All(i => i.Width == 16 && i.Height == 16 && i.Drawings is { Bounds.IsEmpty: false }), "Institution caption renders all three original Figma SVGs");
-            window.Requests.SelectedIndex = 1; check(!window.CancelRequest.IsEnabled, "Unknown open request types cannot be cancelled");
-            window.Requests.SelectedIndex = 0; check(window.CancelRequest.IsEnabled, "A supported open institution request can be cancelled");
+            check(InstitutionAccountRow.Of(new InstitutionAccount("me", null, "ACTIVE", "ROLE_ORG_ADMIN", null, 0, true)).Control is null
+                && InstitutionAccountRow.Of(new InstitutionAccount("a", null, "ACTIVE", "ROLE_USER", null, 0, false)).Control == "잠금"
+                && InstitutionAccountRow.Of(new InstitutionAccount("b", null, "INACTIVE", "ROLE_USER", null, 0, false)).Control == "잠금 해제"
+                && InstitutionAccountRow.Of(new InstitutionAccount("c", null, "FUTURE_STATUS", "ROLE_USER", null, 0, false)).Control is null
+                && InstitutionAccountRow.Of(new InstitutionRequest(Guid.NewGuid(), "ACCOUNT_ISSUE", "OPEN", "별칭: 국어 담당", "2026-08-12")) is { Control: "요청 취소", Alias: "국어 담당", Status: "08-12 요청" },
+                "The control column offers lock, unlock or request cancel by row state and nothing on the administrator's own row");
             if (Environment.GetEnvironmentVariable("INSTITUTION_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(window, capture);
             if (Environment.GetEnvironmentVariable("INSTITUTION_FULL_CAPTURE") is { Length: > 0 } fullCapture)
             {
@@ -140,17 +155,24 @@ internal static class WindowsInstitutionDesignChecks
                 var orderTop = window.Orders.TransformToAncestor(window).Transform(new Point()).Y;
                 check(window.Orders.IsVisible && window.Orders.Items.Count == 1 && orderTop >= 0 && orderTop + window.Orders.ActualHeight <= window.ActualHeight - 28,
                     "At the 1440px Figma window size the real order list is visible without scrolling");
-                var actionTop = window.Receipt.TransformToAncestor(window).Transform(new Point()).Y;
-                check(actionTop + window.Receipt.ActualHeight <= window.ActualHeight - 28 && window.Receipt.IsVisible,
-                    "The order action buttons fit above the status bar at the 1440px window size");
                 await WindowsSmoke.RenderElementAsync(window, fullCapture); window.Width = 960; window.Height = 650; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             }
-            window.Orders.SelectedIndex = 0; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(window.OrderDetail.IsEnabled && !window.Receipt.IsEnabled, "Selecting an order enables its detail while withholding an unavailable receipt");
-            window.OrderDetail.BringIntoView(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
-            var narrowTop = window.OrderDetail.TransformToAncestor(window).Transform(new Point()).Y;
-            check(window.ActualWidth <= 960 && narrowTop >= 32 && narrowTop + window.OrderDetail.ActualHeight <= window.ActualHeight - 28,
-                "At 960px the selected order action can be brought into view without being covered by the status bar");
+            check(!Descendants(window).OfType<Button>().Any(b => b.Content is string text && text.StartsWith("선택한 ", StringComparison.Ordinal)),
+                "Institution tables open rows directly and show no separate selected-row buttons");
+            bool OpensOrder(Action act)
+            {
+                InstitutionOrderDialog? opened = null;
+                window.Dispatcher.BeginInvoke(() => { opened = Application.Current.Windows.OfType<InstitutionOrderDialog>().FirstOrDefault(w => w.IsVisible); opened?.Close(); }, DispatcherPriority.ApplicationIdle);
+                act(); return opened is not null;
+            }
+            // PreviewMouseLeftButtonUp is re-raised from the tunnelling PreviewMouseUp on every element of the route, so the table sees the cell as its source.
+            static MouseButtonEventArgs Release() => new(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseUpEvent };
+            window.UpdateLayout();
+            check(window.Orders.Columns[0].GetCellContent(window.Orders.Items[0]) is { } orderCell && OpensOrder(() => orderCell.RaiseEvent(Release())),
+                "One click on an order row opens its detail");
+            window.Orders.SelectedIndex = 0; window.Orders.Focus();
+            check(OpensOrder(() => window.Orders.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window.Orders)!, Environment.TickCount, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent })),
+                "Enter on a selected order row opens its detail, like a single click");
             var originalOrders = window.Orders.ItemsSource;
             var hasReceipt = new InstitutionOrder(Guid.Parse("3f56ae22-d121-48b1-a804-a3b48e3d3b82"), "2026-01-02", "실제 주문", 2000, null, null, "ISSUED", "증빙.pdf");
             var noReceipt = new InstitutionOrder(Guid.NewGuid(), "2026-01-03", "증빙 없음", 3000, null, null, "PENDING", null);
@@ -161,6 +183,7 @@ internal static class WindowsInstitutionDesignChecks
             var rowButton = receiptCell is null ? null : Descendants(receiptCell).OfType<Button>().FirstOrDefault(b => Equals(b.Content, "내려받기"));
             check(rowButton is { IsVisible: true, IsEnabled: true, Focusable: true } && System.Windows.Automation.AutomationProperties.GetName(rowButton).Contains("실제 주문"),
                 "The row's actual receipt action remains keyboard accessible in a 480px window");
+            check(rowButton is not null && !OpensOrder(() => rowButton.RaiseEvent(Release())), "Pressing a row's 내려받기 link does not also open the order detail");
             rowButton?.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitFor(() => handler.LastReceiptPath is not null && window.ErrorText.Text.Contains("증빙을 열지 못했습니다"));
             check(handler.LastReceiptPath == "/api/org/orders/3f56ae22-d121-48b1-a804-a3b48e3d3b82/receipt",
@@ -173,19 +196,21 @@ internal static class WindowsInstitutionDesignChecks
             window.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(30);
             check(logoutCalls == 1 && window.IsVisible && !window.LogoutRequested, "Cancelled or failed logout keeps the institution window open");
 
-            handler.FailDashboard = true; window.Refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await WaitFor(() => window.Refresh.IsEnabled && window.ErrorText.Text.Contains("기관 정보"));
+            // The final page has no refresh button; F5 is the remaining manual reload.
+            void PressF5() => window.Accounts.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window.Accounts)!, Environment.TickCount, Key.F5) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            handler.FailDashboard = true; PressF5();
+            await WaitFor(() => !window.Refreshing && window.ErrorText.Text.Contains("기관 정보"));
             check(window.Identity.Text == "정보 없음" && window.Balance.Text == "—" && window.UsagePercent.Text == "정보 없음" && window.ContractRemaining.Text == "정보 없음"
-                && window.StatusSummary.Text == "기관 정보 없음" && window.UsageBar.Visibility == Visibility.Collapsed,
+                && StatusLine() == "기관 정보 없음" && window.UsageBar.Visibility == Visibility.Collapsed,
                 "A dashboard refresh error clears old credit, date, graph and status values");
-            handler.FailDashboard = false; window.Refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await WaitFor(() => window.Refresh.IsEnabled && window.Identity.Text.Contains("테스트 기관"));
+            handler.FailDashboard = false; PressF5();
+            await WaitFor(() => !window.Refreshing && window.Identity.Text.Contains("테스트 기관"));
 
             handler.FailAccountsOnRefresh = true;
-            window.Refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await WaitFor(() => window.Refresh.IsEnabled && api.Account is null);
+            PressF5(); await WaitFor(() => !window.Refreshing && api.Account is null);
             check(api.Account is null && window.Identity.Text == "정보 없음" && window.Balance.Text == "—" && window.Accounts.Items.Count == 0 && window.Orders.Items.Count == 0
-                && !window.AccountRequest.IsEnabled && !window.CreditRequest.IsEnabled && !window.CancelRequest.IsEnabled && !window.Receipt.IsEnabled
-                && window.SessionIdentity.Text == "로그인 정보 없음" && window.StatusSummary.Text == "기관 정보 없음" && window.ErrorText.Text.Contains("다시 로그인"),
+                && !window.AccountRequest.IsEnabled && !window.CreditRequest.IsEnabled && window.PendingRequests.Text == ""
+                && window.SessionIdentity.Text == "로그인 정보 없음" && StatusLine() == "기관 정보 없음" && window.ErrorText.Text.Contains("다시 로그인"),
                 "A role-unverified refresh clears previously loaded institution data and disables changes");
             allowLogout = true; window.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(30);
             check(logoutCalls == 2 && window.LogoutRequested && !window.IsVisible, "The logout callback can return an expired institution session to login");
@@ -224,7 +249,7 @@ internal static class WindowsInstitutionDesignChecks
             window.ReceiptLauncher = _ => launched++; window.Show();
             try
             {
-                await WaitFor(() => window.Refresh.IsEnabled);
+                await WaitFor(() => !window.Refreshing);
                 var order = new InstitutionOrder(Guid.Parse("3f56ae22-d121-48b1-a804-a3b48e3d3b82"), "2026-01-01", "증빙", 1, null, null, "ISSUED", "receipt.pdf");
                 var open = typeof(InstitutionWindow).GetMethod("OpenReceiptForAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 if (mode == "relogin before click")
@@ -276,7 +301,9 @@ internal static class WindowsInstitutionDesignChecks
             {
                 "/api/org/dashboard" => "{\"orgName\":\"테스트 기관\",\"orgCode\":\"O1\",\"contractType\":\"ANNUAL\",\"contractStartedAt\":\"2026-01-01\",\"contractExpiresAt\":\"2026-12-31\",\"creditAllocated\":1000,\"creditUsed\":300,\"creditRemaining\":700,\"monthlyUsage\":[{\"month\":\"2026-10\",\"credits\":300}]}",
                 "/api/org/accounts" => "{\"usageSince\":\"2026-10-01\",\"items\":[{\"loginId\":\"org\",\"alias\":\"관리자\",\"status\":\"ACTIVE\",\"role\":\"ROLE_ORG_ADMIN\",\"lastLoginAt\":null,\"usedCredits\":100,\"self\":true},{\"loginId\":\"worker\",\"alias\":null,\"status\":\"ACTIVE\",\"role\":\"ROLE_USER\",\"lastLoginAt\":null,\"usedCredits\":200,\"self\":false}]}",
-                "/api/org/requests" => "[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198072\",\"type\":\"CREDIT_ADD\",\"status\":\"OPEN\",\"message\":\"요청\",\"createdAt\":\"2026-10-01\"},{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198073\",\"type\":\"OTHER\",\"status\":\"OPEN\",\"message\":null,\"createdAt\":\"2026-10-02\"}]",
+                "/api/org/requests" => "[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198072\",\"type\":\"CREDIT_ADD\",\"status\":\"OPEN\",\"message\":\"요청\",\"createdAt\":\"2026-10-01\"},"
+                    + "{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198073\",\"type\":\"ACCOUNT_ISSUE\",\"status\":\"OPEN\",\"message\":\"별칭: 국어 담당\\n받을 사람 메일: reader@example.test\",\"createdAt\":\"2026-08-12T01:00:00Z\"},"
+                    + "{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198076\",\"type\":\"ACCOUNT_ISSUE\",\"status\":\"CANCELED\",\"message\":null,\"createdAt\":\"2026-10-02\"}]",
                 "/api/org/notices" => "[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198074\",\"scope\":\"ORG\",\"title\":\"공지\",\"body\":\"내용\",\"createdAt\":\"2026-10-03\"}]",
                 "/api/org/orders" => "{\"receiptEmail\":\"billing@example.test\",\"items\":[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198075\",\"orderDate\":\"2026-01-01\",\"description\":\"계약\",\"amountKrw\":1000,\"creditAmount\":1000,\"paidAt\":null,\"invoiceStatus\":\"PENDING\",\"receiptFileName\":null}]}",
                 _ => "{}"

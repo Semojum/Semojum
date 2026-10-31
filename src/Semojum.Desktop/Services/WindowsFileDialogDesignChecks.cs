@@ -47,6 +47,8 @@ internal static class WindowsFileDialogDesignChecks
                 "File options retain the selected filename and editable format settings");
             check(open.FileNames.ActualWidth > 490,
                 "Selected file names fill the file field and align from its left edge");
+            check(open.FileNames is { IsReadOnly: true, IsHitTestVisible: false } && open.FileNames.Parent is Border { Height: 32 } && !Descendants(open).OfType<Button>().Any(b => b.Content == open.FileNames),
+                "The file field is a read-only name box without a browse button, matching the final Figma");
             check(open.FormId == saved.FormId && open.Forms.Items.Contains(general) && open.Forms.Items.Contains(saved),
                 "File options select the saved default and retain individual custom forms");
             var icons = Descendants(open).OfType<SvgViewbox>().Where(i => i.IsVisible && (i.Source?.ToString().EndsWith("open-options-close.svg", StringComparison.Ordinal) == true || i.Source?.ToString().EndsWith("open-options-chevron.svg", StringComparison.Ordinal) == true)).ToArray();
@@ -80,6 +82,9 @@ internal static class WindowsFileDialogDesignChecks
                 "Save as renders the final Figma close and dropdown icons");
             var name = Descendants(save).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "파일 이름");
             check(name.Text == "문서", "Save as retains the proposed document name");
+            var format = Descendants(save).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "파일 형식");
+            check(save.Format == 1 && Equals(format.SelectedItem, "점자 파일 (*.brf)") && format.Items.Count == 3,
+                "Save as defaults to the final Figma braille file format while keeping the work file choice");
             check(name.Template.FindName("PART_ContentHost", name) is ScrollViewer && name.Template.FindName("FocusLine", name) is Border,
                 "Save as keeps an editable text host and the Figma focus underline");
             name.SelectAll(); name.SelectedText = "새 이름";
@@ -138,8 +143,8 @@ internal static class WindowsFileDialogDesignChecks
                 dialog.UpdateLayout(); timer.Start();
                 Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "변환 시작"))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                check(message == "선택한 파일의 총 크기가 100 MB를 넘습니다." &&
-                      detail == "파일 크기를 줄이거나 나누어 다시 올려 주세요." && dialog.IsVisible,
+                check(message == "파일이 100 MB 를 넘습니다." &&
+                      detail == "파일을 나누어 올린 뒤 이어 붙일 수 있습니다." && dialog.IsVisible,
                     description);
             }
             finally { timer.Stop(); dialog.Close(); }

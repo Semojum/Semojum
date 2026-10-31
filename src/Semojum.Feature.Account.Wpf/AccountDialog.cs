@@ -107,6 +107,8 @@ public sealed class AccountDialog : Window
         submit.Click += async (_, _) =>
         {
             var keepSignedIn = remember.IsChecked == true;
+            if (login.Text.Trim().Length == 0 || password.Password.Length == 0)
+            { error.Text = "아이디와 비밀번호를 입력해 주세요."; (login.Text.Trim().Length == 0 ? (Control)login : password).Focus(); return; }
             submit.IsEnabled = false; remember.IsEnabled = false; error.Text = "";
             try
             {

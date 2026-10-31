@@ -8,7 +8,7 @@ public sealed record EditorAppearance(string TextColor = "#1F1F1F", string Backg
     string SelectionColor = "#CCE4F7", string FontFamily = "Noto Sans KR", double TextSize = 14, double BrailleSize = 22,
     double LineSpacing = 1.3, double CursorWidth = 2, bool HighContrast = false, bool SpeakDots = false, int SpeechRate = 0,
     string SelectionTextColor = "#1F1F1F", string BrailleColor = "#1F1F1F", string MarkerColor = "#808080",
-    string LineNumberColor = "#5F646D", string LineNumberBackground = "#FAFAFA", string TagColor = "#005FB8",
+    string LineNumberColor = "#5F646D", string LineNumberBackground = "#FAFAFA", string TagColor = "#5F5F5F",
     string OutlineColor = "#F25D5D", double OutlineWidth = 1, bool Bold = false, bool ShowLineNumbers = true,
     bool ShowFormattingMarks = false, int RecentCount = 10, bool ShowToolbar = true);
 public sealed record OutputPreferences(PageLayout? Layout = null, string LineBreakUnit = "syllable", bool Duplex = true);
@@ -26,7 +26,7 @@ public sealed class AccountPreferenceStore(string directory)
         if (!File.Exists(path)) return new();
         if (new FileInfo(path).Length > 1024 * 1024) throw new InvalidDataException("계정 설정 파일이 너무 큽니다.");
         var value = JsonSerializer.Deserialize<AccountPreferences>(File.ReadAllText(path), Json) ?? new();
-        Validate(value); return value;
+        Validate(value); return value with { SixDotKeys = SixDotInput.MigrateLegacyPreset(value.SixDotKeys) };
     }
     public async Task SaveAsync(string loginId, AccountPreferences value)
     {

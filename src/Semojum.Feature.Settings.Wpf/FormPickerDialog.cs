@@ -69,14 +69,14 @@ public sealed class FormPickerDialog : CompactDialog
     }
     internal void Edit(BrailleForm form)
     {
-        if (!canEdit || form.FormId == "user:new") return;
+        if (!canEdit) return;
         EditRequest = form; DialogResult = false;
     }
     internal bool CanEdit => canEdit;
     internal bool CanDelete => canDelete;
     internal void Delete(BrailleForm form)
     {
-        if (!canDelete || form.Builtin || form.FormId == "user:new") return;
+        if (!canDelete || form.Builtin) return;
         DeleteRequest = form; DialogResult = false;
     }
     public static void Attach(ComboBox picker, Window owner, Func<BrailleForm, Task>? edit = null, Func<BrailleForm, Task>? delete = null)
@@ -110,8 +110,8 @@ public sealed class FormPickerRow : Grid
         Grid.SetColumn(delete, 2); Children.Add(delete);
         void Refresh()
         {
-            edit.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanEdit: true } && DataContext is BrailleForm { FormId: not "user:new" };
-            delete.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanDelete: true } && DataContext is BrailleForm { Builtin: false, FormId: not "user:new" };
+            edit.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanEdit: true } && DataContext is BrailleForm;
+            delete.IsEnabled = Window.GetWindow(this) is FormPickerDialog { CanDelete: true } && DataContext is BrailleForm { Builtin: false };
             if (DataContext is BrailleForm f) { AutomationProperties.SetName(edit, $"{f.Name} 편집"); AutomationProperties.SetName(delete, $"{f.Name} 지우기"); }
         }
         Loaded += (_, _) => Refresh();

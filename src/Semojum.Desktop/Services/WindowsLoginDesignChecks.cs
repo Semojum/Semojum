@@ -24,6 +24,9 @@ internal static class WindowsLoginDesignChecks
         if (!hasChoice) { preview.Close(); return; }
         check(preview.WindowStyle == WindowStyle.None && System.Windows.Shell.WindowChrome.GetWindowChrome(preview)?.CaptionHeight == 32 && preview.Title == "누리닷 로그인",
             "Login preserves a draggable 32px Windows title bar and a meaningful title");
+        var blankSubmit = LogicalDescendants(preview).OfType<Button>().Single(b => Equals(b.Content, "로그인")); blankSubmit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(blankSubmit.IsEnabled && LogicalDescendants(preview).OfType<TextBlock>().Any(t => t.Text == "아이디와 비밀번호를 입력해 주세요."),
+            "Blank login is stopped before the server request with a Korean message");
         preview.Close();
         RunChoice(true, null, "editor", check);
         RunChoice(false, null, null, check);

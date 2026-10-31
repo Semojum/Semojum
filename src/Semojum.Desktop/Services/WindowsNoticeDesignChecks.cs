@@ -21,21 +21,22 @@ internal static class WindowsNoticeDesignChecks
         try
         {
             var model = window.Session; var block = model.ActiveBlock!; block.Source = "원문 보존";
-            model.JobId = "fixture-job"; model.Progress = new ConversionProgress(128, 46, 1, 1, "잔여 약 12분");
-            model.CreditNotice = "크레딧이 소진되었습니다. (46/128쪽 변환 완료)";
+            model.JobId = "fixture-job"; model.Progress = new ConversionProgress(128, 46, 1, 1, "잔여 1시간 12분");
+            model.CreditNotice = "크레딧이 소진되었습니다. (46/128쪽 완료)";
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
-            check(window.CreditBanner.IsVisible && window.CreditBanner.ActualHeight == 32 && !window.ConversionBanner.IsVisible,
-                "Credit notice keeps the 32-pixel Figma banner without a duplicate fixed conversion panel");
+            check(window.CreditBanner.IsVisible && window.CreditBanner.ActualHeight == 32,
+                "Credit notice keeps the 32-pixel Figma banner");
             var bannerIcons = Descendants(window.CreditBanner).OfType<SvgViewbox>().ToArray();
             check(bannerIcons.Length == 2 && bannerIcons.All(i => i.Drawings is { Bounds.IsEmpty: false }), "Credit banner renders the original warning and close SVGs");
             check(Descendants(window.CreditBanner).OfType<Button>().Any(b => Equals(b.Content, "이어서 처리") && b.Width == 110), "Credit recovery action remains available at the Figma width");
             if (Environment.GetEnvironmentVariable("NOTICE_CREDIT_CAPTURE") is { Length: > 0 } creditCapture) await WindowsSmoke.RenderElementAsync(window.CreditBanner, creditCapture);
             var tab = (TabItem)window.DocumentTabs.Items[0];
             var trigger = Descendants((DependencyObject)tab.Header).OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "TabConversionProgress");
-            check(Equals(trigger.Content, "변환 중") && AutomationProperties.GetName(trigger).Contains("47", StringComparison.Ordinal), "An accessible text control exposes real progress when the Figma loading icon is empty");
+            check(trigger.Content is Grid { Width: 16 } && trigger.Width == 16 && !Descendants(trigger).OfType<TextBlock>().Any() && AutomationProperties.GetName(trigger).Contains("47", StringComparison.Ordinal),
+                "The tab shows only a 16px progress indicator without text while its accessible name exposes real progress");
             var popup = ((Grid)VisualTreeHelper.GetParent(trigger)).Children.OfType<Popup>().Single();
             trigger.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(popup.IsOpen && Descendants(popup.Child).OfType<Border>().Any(b => AutomationProperties.GetAutomationId(b) == "TabProgressCard" && b.Width == 320 && b.Height == 108) && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 처리 (37%)")),
+            check(popup.IsOpen && Descendants(popup.Child).OfType<Border>().Any(b => AutomationProperties.GetAutomationId(b) == "TabProgressCard" && b.Width == 320 && b.Height == 108) && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 완료 (37%)")),
                 "Progress popup uses real finished and total counts with the Figma dimensions");
             var countLabel = Descendants(popup.Child).OfType<TextBlock>().First(t => t.Text.Contains("47쪽 / 128쪽"));
             check(countLabel.FontWeight == FontWeights.Normal && Descendants(popup.Child).OfType<Button>().First(b => Equals(b.Content, "취소")).FontWeight == FontWeights.Normal,

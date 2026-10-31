@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
+using Semojum.Core;
 using Semojum.Core.Integration;
 
 namespace Semojum.Feature.Institution;
@@ -78,7 +79,7 @@ public sealed class InstitutionClient(SemojumApiClient api)
         if (to is not null) query.Add("to=" + to.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         var r = await Send(HttpMethod.Get, "/api/org/accounts/" + LoginPath(loginId) + "/jobs" + (query.Count == 0 ? "" : "?" + string.Join("&", query)), null, ct);
         return new(Text(r,"loginId"), OptionalText(r,"alias"), Text(r,"from"), Text(r,"to"), Array(Field(r,"items")).Select(x => new InstitutionAccountJob(
-            Text(x,"jobId"), Text(x,"fileName"), Text(x,"mode"), Text(x,"status"), Int(x,"totalPages"), OptionalInt(x,"donePages"), OptionalInt(x,"failedPages"),
+            Text(x,"jobId"), DisplayFileName.Normalize(Text(x,"fileName")), Text(x,"mode"), Text(x,"status"), Int(x,"totalPages"), OptionalInt(x,"donePages"), OptionalInt(x,"failedPages"),
             OptionalLong(x,"credits"), OptionalText(x,"startedAt"), OptionalText(x,"finishedAt"))).ToArray(), Number(r,"totalPages"), Number(r,"totalCredits"));
     }
     private static InstitutionRequest Request(JsonElement r) => new(Id(r,"id"), Text(r,"type"), Text(r,"status"), OptionalText(r,"message"), Text(r,"createdAt"));
@@ -104,12 +105,12 @@ public sealed class InstitutionClient(SemojumApiClient api)
     {
         var r = await Send(HttpMethod.Get,"/api/org/orders",null,ct);
         return new(OptionalText(r,"receiptEmail"), Array(Field(r,"items")).Select(x => new InstitutionOrder(Id(x,"id"), Text(x,"orderDate"), Text(x,"description"),
-            Number(x,"amountKrw"), OptionalLong(x,"creditAmount"), OptionalText(x,"paidAt"), Text(x,"invoiceStatus"), OptionalText(x,"receiptFileName"))).ToArray());
+            Number(x,"amountKrw"), OptionalLong(x,"creditAmount"), OptionalText(x,"paidAt"), Text(x,"invoiceStatus"), OptionalText(x,"receiptFileName") is { } receipt ? DisplayFileName.Normalize(receipt) : null)).ToArray());
     }
     public async Task<InstitutionReceipt> ReceiptAsync(Guid id, CancellationToken ct = default)
     {
         var r = await Send(HttpMethod.Get,"/api/org/orders/" + IdPath(id) + "/receipt",null,ct);
-        var name = Text(r,"fileName"); var url = Text(r,"url");
+        var name = DisplayFileName.Normalize(Text(r,"fileName")); var url = Text(r,"url");
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length != 0) throw Invalid();
         return new(name,url);
     }

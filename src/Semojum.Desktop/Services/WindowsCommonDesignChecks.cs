@@ -61,12 +61,13 @@ internal static class WindowsCommonDesignChecks
             var installed = Fonts.SystemFontFamilies.Any(f => string.Equals(f.Source, "Malgun Gothic", StringComparison.OrdinalIgnoreCase));
             check(installed ? glyphs.Any(f => Path.GetFileName(f).StartsWith("malgun", StringComparison.OrdinalIgnoreCase)) : glyphs.Any(f => f.Contains("NotoSansKR", StringComparison.OrdinalIgnoreCase)),
                 "General UI renders in Malgun Gothic when installed and otherwise uses a bundled Korean font");
-            var missingSystemFont = new FontFamily("Semojum Missing Font Test, " + BundledFonts.Interface.Source);
+            var missingSystemFont = new FontFamily(BundledFonts.Interface.Source.Replace("Malgun Gothic", "Semojum Missing Font Test", StringComparison.Ordinal));
             var fallbackGlyphs = GlyphFiles(missingSystemFont, "한글").ToArray();
             check(fallbackGlyphs.Any(f => f.Contains("NotoSansKR", StringComparison.OrdinalIgnoreCase)),
                 "When the system UI font is unavailable, Korean glyphs fall back to the bundled font");
-            check(BundledFonts.Interface.Source.Contains("Noto Sans KR", StringComparison.Ordinal) && !BundledFonts.Interface.Source.Contains("Malgun", StringComparison.OrdinalIgnoreCase),
-                "Document InterfaceFont remains the existing bundled family");
+            check(BundledFonts.Interface.Source.StartsWith("Malgun Gothic,", StringComparison.Ordinal) && BundledFonts.Interface.Source.Contains("Noto Sans KR", StringComparison.Ordinal)
+                && BundledFonts.Mono.Source.StartsWith("Segoe UI Symbol,", StringComparison.Ordinal),
+                "Document InterfaceFont follows Figma's Malgun Gothic with the bundled Korean fallback, and Mono uses Segoe UI Symbol");
             var lineHeight = new InterfaceLineHeightConverter();
             check(Equals(lineHeight.Convert(18d, typeof(double), null!, CultureInfo.InvariantCulture), 24d) && Equals(lineHeight.Convert(22d, typeof(double), null!, CultureInfo.InvariantCulture), 28d),
                 "General text line heights follow the Figma 18/24 and 22/28 ramp");
@@ -74,19 +75,20 @@ internal static class WindowsCommonDesignChecks
         }
         finally { window.Close(); }
 
-        var editor = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { Width = 960, Height = 600 }; editor.Show();
+        var editor = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { Width = 1280, Height = 800 }; editor.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); editor.UpdateLayout();
             check(editor.SourcePanel.ActualWidth >= 300 && editor.Braille.ActualWidth >= 300 && editor.TextStylePicker.ActualHeight == 24,
-                "The 960-pixel editor retains usable panels and its explicitly compact toolbar");
+                "The minimum 1280-pixel editor retains usable panels and its explicitly compact toolbar");
             var menuLabels = editor.ApplicationMenu.Items.OfType<MenuItem>().ToArray();
             check(menuLabels.All(item => TextWidth(item.Header?.ToString()?.Replace("_", "", StringComparison.Ordinal) ?? "", item.FontFamily, item.FontSize, item.FontWeight) <= item.ActualWidth - 8),
-                "All six main-menu labels fit their actual 960-pixel controls with the UI font");
+                "All six main-menu labels fit their actual 1280-pixel controls with the UI font");
             var documentGlyphs = GlyphFiles(editor.PageEditor.Editor.FontFamily, "한글 ABC").ToArray();
-            check(documentGlyphs.Any(f => f.Contains("NotoSansKR", StringComparison.OrdinalIgnoreCase)) && documentGlyphs.Any(f => f.Contains("Inter-Regular", StringComparison.OrdinalIgnoreCase)) &&
+            var malgun = Fonts.SystemFontFamilies.Any(f => string.Equals(f.Source, "Malgun Gothic", StringComparison.OrdinalIgnoreCase));
+            check((malgun ? documentGlyphs.Any(f => Path.GetFileName(f).StartsWith("malgun", StringComparison.OrdinalIgnoreCase)) : documentGlyphs.Any(f => f.Contains("NotoSansKR", StringComparison.OrdinalIgnoreCase))) &&
                 editor.Braille.GridView.FontSize == 22,
-                "The source document renders with its bundled fonts and the braille grid retains its 22-pixel geometry");
+                "The source document renders in Malgun Gothic (bundled Korean fallback) and the braille grid retains its 22-pixel geometry");
             check(Descendants(editor).OfType<SvgViewbox>().Any(i => i.Source?.ToString().EndsWith("/common-rulebook.svg", StringComparison.Ordinal) == true && i.Drawings is { Bounds.IsEmpty: false }),
                 "Rule search renders its original Figma icon");
             var separators = Descendants(editor.EditorToolbar).OfType<Border>().Where(b => b.Width == 1 && b.Height == 18 && b.Background is SolidColorBrush brush && brush.Color == Color.FromRgb(234, 234, 234)).ToArray();
@@ -101,7 +103,8 @@ internal static class WindowsCommonDesignChecks
             check(hint.Visibility == Visibility.Collapsed && editor.RuleSearch.Text == "점자", "Typing in rule search hides only the hint");
             editor.RuleSearch.Text = "";
             if (Environment.GetEnvironmentVariable("COMMON_EDITOR_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(editor, capture);
-            editor.Width = 480; editor.Height = 360; editor.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            // WindowBounds.Fit lowers the 1280 by 800 minimum on a smaller monitor; emulate that to exercise toolbar scrolling.
+            editor.MinWidth = 480; editor.MinHeight = 360; editor.Width = 480; editor.Height = 360; editor.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             var toolbar = (ScrollViewer)editor.FindName("EditorToolbarScroll");
             var formatting = (ScrollViewer)editor.FindName("FormatToolbarScroll");
             var save = Descendants(editor.EditorToolbar).OfType<Button>().Single(b => Equals(b.Tag, "save"));

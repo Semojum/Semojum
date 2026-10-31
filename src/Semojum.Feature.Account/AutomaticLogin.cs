@@ -43,7 +43,8 @@ public static class AutomaticLogin
             if (credential is null) return new(null, null);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
             var account = await api.RestoreSessionAsync(credential, timeout.Token);
-            if (account is null) return new(null, "서버에서 현재 계정 권한을 확인할 수 없어 다시 로그인해 주세요.");
+            // Until refresh returns loginId and role, show the login screen without an error message.
+            if (account is null) return new(null, null);
             if (!IsDesktopAllowed(account))
             {
                 using var logoutTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));

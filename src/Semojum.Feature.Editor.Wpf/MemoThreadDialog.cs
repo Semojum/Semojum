@@ -24,7 +24,7 @@ public sealed class MemoThreadDialog : CompactDialog
         MemoTextInputAppearance.Attach(this, input);
         var replyHost = new Grid { Margin = new(4, 14, 4, 0), Height = 32 };
         replyHost.ColumnDefinitions.Add(new()); replyHost.ColumnDefinitions.Add(new() { Width = new(40) }); replyHost.Children.Add(input);
-        var placeholder = new TextBlock { Text = "회신...", Foreground = Brushes.Gray, Margin = new(12, 7, 0, 0), IsHitTestVisible = false };
+        var placeholder = new TextBlock { Text = "회신...", Foreground = new SolidColorBrush(Color.FromRgb(138, 138, 138)), Margin = new(12, 7, 0, 0), IsHitTestVisible = false };
         replyHost.Children.Add(placeholder); input.TextChanged += (_, _) => placeholder.Visibility = input.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         DockPanel.SetDock(replyHost, Dock.Bottom); body.Children.Add(replyHost);
         System.Windows.Automation.AutomationProperties.SetName(input, "메모 회신");
@@ -81,7 +81,8 @@ public sealed class MemoThreadDialog : CompactDialog
             var a = anchors[next]; var targetPanel = a.Panel == "TEXT" ? SearchPanel.Text : SearchPanel.Braille;
             var offsets = DocumentNavigation.LineOffsets(DocumentSearch.Content(a.Block, targetPanel));
             if (a.LineIndex >= offsets.Length) { Status.Text = "원래 줄이 삭제된 메모입니다. 메모 목록에서 확인해 주세요."; return; }
-            Destination = new(a.Block, targetPanel, offsets[a.LineIndex]); DialogResult = true;
+            Destination = new(a.Block, targetPanel, offsets[a.LineIndex]);
+            if (System.Windows.Interop.ComponentDispatcher.IsThreadModal) DialogResult = true; else Close(); // The hover bubble is non-modal.
         }
         // The Figma popover has per-row actions instead of a separate top toolbar.
         // Keep the command in the hidden action host for existing callers and expose it in the context menu.
@@ -200,7 +201,10 @@ public sealed class MemoConversationView : ContentControl
             var lines = new StackPanel { Margin = new(4, 4, 0, 4) }; row.Children.Add(lines);
             var heading = new StackPanel { Orientation = Orientation.Horizontal, Height = 20 };
             heading.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(author) ? "작성자 미상" : author, FontSize = 14, FontWeight = FontWeights.Bold });
-            heading.Children.Add(new TextBlock { Text = DateTimeOffset.Now - date < TimeSpan.FromMinutes(1) ? "방금" : date.ToLocalTime().ToString("MM-dd HH:mm"), Foreground = new SolidColorBrush(Color.FromRgb(95, 100, 109)), Margin = new(8, 0, 0, 0), ToolTip = date.ToLocalTime().ToString("yyyy-MM-dd HH:mm") });
+            var age = DateTimeOffset.Now - date;
+            var when = age < TimeSpan.FromMinutes(1) ? "방금" : age < TimeSpan.FromHours(1) ? $"{(int)age.TotalMinutes}분 전"
+                : age < TimeSpan.FromDays(1) ? $"{(int)age.TotalHours}시간 전" : age < TimeSpan.FromDays(7) ? $"{(int)age.TotalDays}일 전" : date.ToLocalTime().ToString("MM-dd");
+            heading.Children.Add(new TextBlock { Text = when, Foreground = new SolidColorBrush(Color.FromRgb(95, 95, 95)), Margin = new(8, 0, 0, 0), ToolTip = date.ToLocalTime().ToString("yyyy-MM-dd HH:mm") });
             lines.Children.Add(heading); lines.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, LineHeight = 16 }); messages.Children.Add(row);
         }
         Add(memo.Author, memo.Body, memo.CreatedAt, null);

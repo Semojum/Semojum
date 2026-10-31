@@ -163,7 +163,7 @@ public partial class MainWindow : Window
                 window.DataContext = session;
                 window.Title = $"{window.Tag} — {session.Title}";
             }
-            if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
+            if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title} - 누리닷";
             session.PropertyChanged += SessionChanged;
             PageEditor.Attach(session); PageEditor.Visibility = Visibility.Visible; SourceEditor.Visibility = Visibility.Collapsed;
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
@@ -178,18 +178,16 @@ public partial class MainWindow : Window
 
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DocumentSession.IsDirty) && session.IsDirty) Welcome.Visibility = Visibility.Collapsed;
         if (e.PropertyName == nameof(DocumentSession.ActiveBlock)) ShowActiveBlock();
         if (e.PropertyName == nameof(DocumentSession.Options))
             foreach (var block in session.Blocks) { translator.Invalidate(block); translatedRevisions[block] = -1; block.State = "옵션 변경 · 재점역 필요"; }
         RefreshEditorStatus();
-        if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
+        if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title} - 누리닷";
         foreach (var window in detachedPanels.Values) window.Title = $"{window.Tag} — {session.Title}";
     }
 
     private void ShowActiveBlock()
     {
-        Welcome.Visibility = Visibility.Collapsed;
         if (session.ActiveBlock is not { } block) return;
         var wasSwitching = switching; switching = true;
         try

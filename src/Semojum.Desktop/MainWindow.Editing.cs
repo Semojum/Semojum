@@ -34,7 +34,8 @@ public partial class MainWindow
             if (resolved.Block is null) return;
             session.ActiveBlock = resolved.Block;
             ShowLineMemos(SearchPanel.Text, resolved.Line);
-        }) { ResolveLine = PageEditor.ResolveLine, ManualReviewRequested = ShowReviewList, ReviewRequested = line =>
+        }) { ResolveLine = PageEditor.ResolveLine, ManualReviewRequested = ShowReviewList,
+            HoverRequested = line => { if (line < 0) HideMemoBubble(); else if (PageEditor.ResolveLine(line) is { Block: { } hovered } at) ShowMemoBubble(hovered, SearchPanel.Text, at.Line); }, ReviewRequested = line =>
         {
             if (PageEditor.ResolveLine(line).Block is not { } block) return;
             session.ActiveBlock = block; ShowLocalTranslationReview(block, this);

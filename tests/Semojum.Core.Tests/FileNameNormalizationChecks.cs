@@ -15,7 +15,7 @@ internal static class FileNameNormalizationChecks
             original.Add(new EditorBlock { Id = 1, Page = 1, Source = "원문", Braille = "⠁" });
             await SmjFile.SaveAsync(path, SmjFile.Snapshot(original));
             var loaded = await SmjFile.LoadAsync(path);
-            if (loaded.Title != "가나다.smj" || loaded.WindowTitle != "가나다.smj — 누리닷")
+            if (loaded.Title != "가나다.smj" || loaded.WindowTitle != "가나다.smj - 누리닷")
                 throw new Exception("Decomposed filename was not composed for the document display.");
             if (!Directory.EnumerateFiles(root).Select(Path.GetFileName).Contains(decomposedName, StringComparer.Ordinal))
                 throw new Exception("The actual decomposed path was changed instead of preserved.");

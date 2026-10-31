@@ -21,13 +21,6 @@ internal static class WindowsDraftDockChecks
             new("짧은 제목", "네 지역의 기후 특성", null, "⠁", null),
             new("개조식", "그림: 네 지역의 기후 특성\n1. (가) 최한월 −6℃, 연강수량 1,300㎜\n2. (나) 최한월 −2℃, 연강수량 1,100㎜", null, "⠲⠗⠡⠌⠤⠀⠙⠘⠤⠀⠠⠥⠧⠎⠅⠓⠀⠠⠍⠧⠑⠕\n⠼⠁⠲⠂⠅⠲⠀⠠⠺⠓⠱⠥⠀⠤⠼⠋⠲⠀⠘⠑⠲⠊⠊⠤", null),
             new("줄글", "네 지역의 기후 특성을 비교한 그림입니다.", null, "⠃", null)]);
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
-        timer.Tick += (_, _) =>
-        {
-            var oldDialog = Application.Current.Windows.OfType<AlternativeDialog>().FirstOrDefault(d => d.Owner == window && d.IsVisible);
-            if (oldDialog is not null) oldDialog.DialogResult = false;
-        };
-        timer.Start();
         try
         {
             await window.ExecuteAsync("drafts");
@@ -51,7 +44,7 @@ internal static class WindowsDraftDockChecks
         }
         finally
         {
-            timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close();
+            await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close();
         }
     }
 }

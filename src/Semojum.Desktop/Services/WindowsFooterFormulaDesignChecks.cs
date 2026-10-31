@@ -47,11 +47,17 @@ internal static class WindowsFooterFormulaDesignChecks
                 entries.Count == 3 && ((FooterDialog.Entry)entries[2]!).Start == "29" && ((FooterDialog.Entry)entries[2]!).Text == "기본",
                 "Footer manager preserves the automatic restoration row after the final finite range");
             var add = Children(manager).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "꼬리말 줄 더하기");
-            var selectedDelete = Children(manager).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "선택한 꼬리말 지우기");
+            var clear = Children(manager).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "꼬리말 모두 지우기");
             var outline = Children(add).OfType<Rectangle>().Single();
             check(add.ActualHeight == 32 && Math.Abs(add.ActualWidth - grid.ActualWidth) < 2 && add.Focusable && add.IsTabStop &&
-                outline.StrokeDashArray is { Count: > 0 } && outline.RadiusX == 4,
-                "Footer row addition is a full-width, keyboard-focusable dashed action");
+                outline.StrokeDashArray is { Count: > 0 } && outline.RadiusX == 4 && add.Content is SvgViewbox,
+                "Footer row addition is a full-width, keyboard-focusable dashed plus icon");
+            var clearBounds = clear.TransformToVisual(grid).TransformBounds(new Rect(0, 0, clear.ActualWidth, clear.ActualHeight));
+            var headerLine = Children(grid).OfType<System.Windows.Controls.Primitives.DataGridColumnHeader>().First(h => Equals(h.Content, "정렬"));
+            check(clear.ActualWidth == 32 && clear.ActualHeight == 24 && Math.Abs(clearBounds.Right - grid.ActualWidth) < 1 && clearBounds.Top < grid.ColumnHeaderHeight &&
+                Equals(clear.ToolTip, "모두 지우기") && grid.Columns.Select(c => c.Width.Value).SequenceEqual([170d, 280d, 166d, 32d]) &&
+                headerLine.BorderBrush is SolidColorBrush { Color: var line } && line == Color.FromRgb(209, 209, 209),
+                "Footer header carries the clear-all action at its right edge with the final Figma column widths and divider");
             var addBounds = add.TransformToAncestor(manager).TransformBounds(new Rect(0, 0, add.ActualWidth, add.ActualHeight));
             var confirmButton = Children(manager).OfType<Button>().Single(b => b.IsDefault);
             var confirmBounds = confirmButton.TransformToAncestor(manager).TransformBounds(new Rect(0, 0, confirmButton.ActualWidth, confirmButton.ActualHeight));
@@ -60,8 +66,9 @@ internal static class WindowsFooterFormulaDesignChecks
             add.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(entries.Count == 4 && grid.SelectedItem is FooterDialog.Entry { Start: "30" },
                 "Footer add action appends and selects a new row after the restoration row");
-            selectedDelete.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(entries.Count == 3 && ((FooterDialog.Entry)entries[2]!).Start == "29", "Deleting the selected new row keeps the restoration row");
+            manager.UpdateLayout(); var removeNew = Children(manager).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "이 꼬리말 삭제" && b.DataContext == entries[3]);
+            removeNew.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(entries.Count == 3 && ((FooterDialog.Entry)entries[2]!).Start == "29", "Deleting the new row with its own trash action keeps the restoration row");
             second.Start = "20"; check(first.End == "19", "Footer end follows the next start page");
             var remove = Children(manager).OfType<Button>().First(b => AutomationProperties.GetName(b) == "이 꼬리말 삭제");
             remove.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); check(entries.Count == 2, "Footer row delete acts on that row"); CheckIcons(manager, check);
@@ -70,6 +77,8 @@ internal static class WindowsFooterFormulaDesignChecks
             var scroll = Children(grid).OfType<ScrollViewer>().First();
             check(scroll.ScrollableHeight > 0 && scroll.ScrollableWidth > 0 && add.IsVisible && add.ActualWidth <= manager.ActualWidth,
                 "Long footer lists scroll vertically and the narrow window exposes horizontal scrolling and add action");
+            clear.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(entries.Count == 0 && add.IsVisible, "Footer clear-all empties every range while the add action remains");
         }
         finally { manager.Close(); }
         check(model.FooterRanges.SequenceEqual([new FooterRange(1, 12, "첫 머리", "center"), new FooterRange(13, 28, "다음 머리", "right")]),
@@ -107,6 +116,8 @@ internal static class WindowsFooterFormulaDesignChecks
             var fraction = math.SymbolButtons.Children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "분수");
             var root = math.SymbolButtons.Children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "제곱근");
             static bool ColorIs(Brush? brush, byte r, byte g, byte b) => brush is SolidColorBrush solid && solid.Color == Color.FromRgb(r, g, b);
+            check(math.SymbolButtons.Parent is Border toolbox && ColorIs(toolbox.Background, 249, 249, 249) && ColorIs(toolbox.BorderBrush, 209, 209, 209),
+                "The math toolbox uses the final Figma #F9F9F9 fill and #D1D1D1 border");
             check(ColorIs(fraction.Background, 255, 255, 255) && ColorIs(fraction.BorderBrush, 209, 209, 209), "An unselected math symbol uses the Figma white fill and gray border");
             fraction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(ColorIs(fraction.Background, 239, 246, 252) && ColorIs(fraction.BorderBrush, 0, 95, 184) && ColorIs(root.Background, 255, 255, 255), "Selecting a math symbol uses the Figma blue fill and border");

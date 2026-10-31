@@ -19,8 +19,8 @@ internal static class WindowsCaseDesignChecks
         {
             invalid.UpdateLayout(); Capture(invalid, "unsupported.png");
             check(Math.Abs(invalid.Width - 471) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice follows the final Figma dimensions");
-            check(invalid.DetailText.Contains("JPEG", StringComparison.Ordinal) && invalid.DetailText.Contains("SMJ", StringComparison.Ordinal),
-                "Unsupported file notice includes supported JPEG and local SMJ files");
+            check(invalid.DetailText == "PDF · HWP · HWPX · TXT · JPG · PNG 만 열 수 있습니다.",
+                "Unsupported file notice follows the final Case 1 wording");
             var detail = Descendants(invalid).OfType<TextBlock>().Single(t => t.Text == invalid.DetailText);
             check(detail.ActualHeight <= 21, "Supported formats fit on one line in the Figma-sized notice");
             var icon = Descendants(invalid).OfType<SvgViewbox>().Single();
@@ -35,25 +35,28 @@ internal static class WindowsCaseDesignChecks
         try
         {
             credit.UpdateLayout(); Capture(credit, "no-credits.png");
-            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["구매 문의", "문의하기", "닫기"]),
-                "Credit notice offers separate purchase inquiry, general inquiry and close actions");
-            check(credit.DetailText.Contains("구매 문의", StringComparison.Ordinal) && credit.DetailText.Contains("확인되지 않았습니다", StringComparison.Ordinal)
-                && credit.DetailText.Contains("마이페이지 사용량", StringComparison.Ordinal),
-                "Credit notice identifies the purchase inquiry and unverified resumed-charge policy");
+            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["크레딧 구매", "문의하기", "닫기"]),
+                "Credit notice offers the final purchase, inquiry and close actions");
+            check(credit.DetailText == "크레딧을 충전한 뒤 상단 알림 창의 「이어서 처리」를 눌러 재개할 수 있습니다.",
+                "Credit notice points to the resume action in the top notice");
         }
         finally { credit.Close(); }
         var partial = FileNotices.PartialConversion(10, 8, [2, 4]); partial.Show();
         try
         {
             partial.UpdateLayout(); Capture(partial, "partial-credit.png");
-            check(partial.DetailText.Contains("2 · 4쪽", StringComparison.Ordinal) && partial.DetailText.Contains("8쪽", StringComparison.Ordinal)
-                && partial.DetailText.Contains("중복 차감 방지 여부는 확인되지 않았습니다", StringComparison.Ordinal)
-                && partial.DetailText.Contains("마이페이지 사용량", StringComparison.Ordinal),
-                "Partial conversion reports actual pages and the unverified retry-charge policy before retry");
+            check(partial.DetailText == "2 · 4쪽입니다. 나머지 8쪽은 사용할 수 있습니다." && Math.Abs(partial.Height - 196) <= 1,
+                "Partial conversion reports actual pages in the final Case 4 size");
         }
         finally { partial.Close(); }
-        var login = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다."));
-        check(login.ActionButtons[1].Content as string == "비밀번호 문의", "Login notice describes its inquiry action accurately");
+        var login = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "Bad credentials"));
+        check(login.MessageText == "아이디 또는 비밀번호가 맞지 않습니다." && login.ActionButtons[1].Content as string == "비밀번호 찾기", "Login notice follows the final Case 14 wording");
+        var locked = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4006", "계정이 잠겼습니다."));
+        check(locked.MessageText == "계정이 잠겼습니다.", "A locked-account notice keeps the server message");
+        var disconnected = FileNotices.Disconnected(47); var oversized = FileNotices.OversizedFile();
+        check(disconnected.DetailText == "47쪽까지 변환한 내용은 보관했습니다." && oversized.MessageText == "파일이 100 MB 를 넘습니다.",
+            "Disconnected and oversized notices follow the final Case 7 and Case 2 wording");
+        foreach (var notice in new[] { login, locked, disconnected, oversized }) notice.Close();
         foreach (var index in new[] { 0, 1, 2 })
         {
             var dialog = FileNotices.NoCredits();

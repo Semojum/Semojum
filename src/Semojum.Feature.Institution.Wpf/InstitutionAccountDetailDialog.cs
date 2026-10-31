@@ -37,8 +37,8 @@ internal sealed class InstitutionAccountDetailDialog : CompactDialog
             body.Children.Add(new Border { Background = FigmaDialogElements.Brush("#F9F9F9"), CornerRadius = new(6), Child = rows, Margin = new(0, 0, 0, 16) });
         }
         Section("계정", ("별칭", account.Alias ?? "정보 없음"), ("메일", "제공되지 않음"), ("만든 날", "제공되지 않음"));
-        Section("이 달 쓴 양", ("크레딧", account.UsedCredits.ToString("N0")), ("마지막 로그인", account.LastLoginAt ?? "정보 없음"));
-        body.Children.Add(new TextBlock { Text = $"최근 작업 · {jobs.From} ~ {jobs.To}", Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
+        Section("이 달 쓴 양", ("크레딧", account.UsedCredits.ToString("N0")), ("마지막 로그인", InstitutionUsage.LastSeen(account.LastLoginAt, DateTimeOffset.Now, withTime: true)));
+        body.Children.Add(new TextBlock { Text = "최근 작업", Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
         var jobBackground = FigmaDialogElements.Brush("#F9F9F9");
         Jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, HeadersVisibility = DataGridHeadersVisibility.None, BorderThickness = new(0), Background = jobBackground,
             RowBackground = jobBackground, AlternatingRowBackground = jobBackground, GridLinesVisibility = DataGridGridLinesVisibility.None, RowHeight = 32,

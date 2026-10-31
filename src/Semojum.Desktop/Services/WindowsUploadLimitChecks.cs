@@ -27,7 +27,7 @@ internal static class WindowsUploadLimitChecks
             await File.WriteAllBytesAsync(extra, [1]);
             using var handler = new Fixture(); using var http = new HttpClient(handler);
             var api = new SemojumApiClient(http); await api.LoginAsync("fixture", "fixture");
-            var window = new MainWindow(api) { Width = 1440, Height = 1000 }; window.Show();
+            var window = new MainWindow(api, startEmpty: true) { Width = 1440, Height = 1000 }; window.Show();
             var settingsCount = 0; var modalCount = 0;
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(15) };
             timer.Tick += (_, _) =>
@@ -39,7 +39,7 @@ internal static class WindowsUploadLimitChecks
             };
             try
             {
-                await window.ExecuteAsync("new");
+                // A new document no longer shows the upload area, so type into the start screen that does.
                 var model = window.Session; model.ActiveBlock!.Source = "보존할 미저장 작업";
                 var tabs = window.DocumentTabs.Items.Count;
                 timer.Start();

@@ -98,6 +98,10 @@ internal static class WindowsSmoke
         await RenderAsync(window.DetachedWindow!, Path.Combine(directory, "02-detached.png"));
         window.DetachedPane.Editor.Document.Insert(0, "⠿");
         Check(block.Braille.StartsWith("⠿") && block.HasManualBraille, "Detached edits update model and manual-correction state");
+        Check(window.DetachedWindow!.Title.EndsWith(" - 누리닷", StringComparison.Ordinal)
+            && Descendants(window.DetachedWindow).OfType<Border>().Any(b => b.Child is TextBlock { Text: "S" } && b.Width == 16)
+            && Descendants(window.DetachedWindow).OfType<Button>().Count(b => b.Content is SharpVectors.Converters.SvgViewbox && b.Width == 46 && b.Height == 32) >= 3,
+            "Detached braille keeps its '- 누리닷' title after edits and uses the Figma S logo with 46×32 caption icons");
         window.ToggleDetached();
         Check(window.Braille.Editor.Text.StartsWith("⠿"), "Reattached panel retains detached edits");
         var versionBeforeDetach = window.Session.ChangeVersion;
@@ -174,9 +178,10 @@ internal static class WindowsSmoke
             locked.Braille = "⠿⠯"; locked.IsBrailleLocked = true; editable.Braille = "⠿⠯⠿⠯";
             searchWindow.Session.Blocks[2].Braille = "⠁";
             await searchWindow.FindNextAsync("⠿⠯", SearchPanel.Braille);
-            await searchWindow.FindNextAsync("⠿⠯", SearchPanel.Braille);
+            var findResult = await searchWindow.FindNextAsync("⠿⠯", SearchPanel.Braille);
             Check(searchWindow.Session.ActiveBlock == editable && searchWindow.Braille.Editor.SelectedText == "⠿⠯",
                 "Find next traverses blocks in the requested panel");
+            Check(System.Text.RegularExpressions.Regex.IsMatch(findResult, @"^\d+ / \d+$"), "Find result uses the final Figma 「3 / 12」 format without a page suffix");
             await searchWindow.ReplaceMatchesAsync("⠿⠯", "⠃", SearchPanel.Braille, true);
             Check(locked.Braille == "⠿⠯" && editable.Braille == "⠃⠃" && editable.HasManualBraille,
                 "Replace all protects locked braille and marks corrections in editable blocks");
@@ -248,10 +253,10 @@ internal static class WindowsSmoke
         await CaptureDialogAsync(new BraillePreviewDialog([["⠼⠁", "⠫⠉⠊"], ["⠼⠃", "⠱⠑⠘⠃"]], "#a\r\ngnd\r\n\f#b\r\n\f", new(), "조판 검증") { Owner = window }, directory, "19-braille-pages.png");
         await CaptureDialogAsync(new FooterDialog(window.Session) { Owner = window }, directory, "20-footer-ranges.png");
         await CaptureDialogAsync(new RangeSelectionDialog(() => window.Session.Blocks.Where(b => b.Page == window.Session.ActiveBlock!.Page).ToArray(), SearchPanel.Text, (_, _) => Task.CompletedTask) { Owner = window }, directory, "21-range-selection.png");
-        window.Session.Progress = new(128, 47, 1, 2, "잔여 약 2분 (처리 속도 기준)");
+        window.Session.Progress = new(128, 47, 1, 2, "잔여 2분");
         await RenderAsync(window, Path.Combine(directory, "22-conversion-progress.png"));
-        Check(!window.ConversionBanner.IsVisible && window.Session.Progress.Finished == 48 && window.Session.Progress.Remaining == 80,
-            "Conversion progress keeps disjoint page counts without a duplicate fixed panel");
+        Check(window.Session.Progress.Finished == 48 && window.Session.Progress.Remaining == 80,
+            "Conversion progress keeps disjoint page counts");
         window.Session.Progress = null;
         // Exercise the production constructor and input debounce against the bundled engine.
         // The earlier window deliberately isolates visual/buffer checks with fixed sample data.
@@ -396,8 +401,12 @@ internal static class WindowsSmoke
         // Figma 1:1093 example thread, rendered by the same component for a same-data comparison.
         var figmaMemoModel = new DocumentSession();
         var figmaMemoBlock = new EditorBlock { Id = 1, Page = 12, Source = "원문이 「작다」인데 그래프를 보면 「크다」가 맞습니다." }; figmaMemoModel.Add(figmaMemoBlock);
-        figmaMemoBlock.Memos.Add(new("figma-1", null, "TEXT", 0, figmaMemoBlock.Source, "원문이 「작다」인데 그래프를 보면 「크다」가 맞습니다.", DateTimeOffset.Now, Author: "김점역"));
-        figmaMemoBlock.Memos.Add(new("figma-2", null, "TEXT", 0, figmaMemoBlock.Source, "확인했습니다. 출판사에 알려 두겠습니다.", DateTimeOffset.Now, Author: "이교정"));
+        figmaMemoBlock.Memos.Add(new("figma-1", null, "TEXT", 0, figmaMemoBlock.Source, "원문이 「작다」인데 그래프를 보면 「크다」가 맞습니다.", DateTimeOffset.Now.AddMinutes(-10), Author: "김점역"));
+        figmaMemoBlock.Memos.Add(new("figma-2", null, "TEXT", 0, figmaMemoBlock.Source, "확인했습니다. 출판사에 알려 두겠습니다.", DateTimeOffset.Now.AddMinutes(-3), Author: "이교정"));
+        static IEnumerable<object> LogicalTree(object node) => new[] { node }.Concat(node is DependencyObject parent ? LogicalTreeHelper.GetChildren(parent).Cast<object>().SelectMany(LogicalTree) : Enumerable.Empty<object>());
+        Check(LogicalTree(new MemoConversationView { DataContext = figmaMemoBlock.Memos[0] }).OfType<TextBlock>()
+                .Any(t => t.Text == "10분 전" && t.Foreground is SolidColorBrush { Color: var age } && age == Color.FromRgb(95, 95, 95)),
+            "Memo bubble shows the final Figma relative time 「10분 전」 in #5F5F5F");
         await CaptureDialogAsync(new MemoThreadDialog(figmaMemoBlock, "TEXT", 0, figmaMemoBlock.Source, action => action(), figmaMemoModel, author: "김점역") { Owner = window }, directory, "85-memo-thread-figma.png");
         var memoList = new MemoListDialog(memoModel) { Owner = window };
         Check(memoList.MemoItems.Items.Count == 1, "Memo overview hides resolved items by default");
@@ -406,13 +415,13 @@ internal static class WindowsSmoke
         memoList.Close();
         IEnumerable<MenuItem> MenuItems(MenuItem root) => root.Items.OfType<MenuItem>().SelectMany(item => new[] { item }.Concat(MenuItems(item)));
         var tags = MenuItems(window.AllTagsMenu).Where(m => m.Tag is string tag && tag.StartsWith("tag:")).Select(m => ((string)m.Tag)[4..]).ToArray();
-        Check(window.RuleSearch.IsVisible && tags.Length == 22 && MenuItems(window.AllTagsMenu).Any(m => Equals(m.Tag, "headerInsert")) && !tags.Any(t => t is "상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임" or "밑줄빈칸" or "네모빈칸"), "Insertion menu retains the header command and excludes removed or automatic-only tags");
+        Check(window.RuleSearch.IsVisible && tags.Length == 19 && MenuItems(window.AllTagsMenu).Any(m => Equals(m.Tag, "headerInsert")) && !tags.Any(t => t is "상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임" or "밑줄빈칸" or "네모빈칸"), "Insertion menu retains the header command and excludes removed or automatic-only tags");
         Check(window.AllTagsMenu.Items.OfType<MenuItem>().Count(m => m.Items.Count > 0) == 3 && !window.AllTagsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Header, "빈칸")), "Insertion tags have three named submenus and no blank submenu");
         var brailleLines = window.AllTagsMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Header, "점자 줄"));
         var lineTags = brailleLines.Items.OfType<MenuItem>().Select(m => m.Tag as string).ToArray();
-        Check(lineTags.SequenceEqual(new[] { "tag:상단줄", "tag:중단줄", "tag:하단줄", "tag:상단굵은줄", "tag:하단굵은줄", "tag:표시작", "tag:표중앙", "tag:표끝", "tag:표구분선", "tag:표지시작", "tag:표지세로", "tag:표지끝" }) &&
+        Check(lineTags.SequenceEqual(new[] { "tag:상단줄", "tag:중단줄", "tag:하단줄", "tag:상단굵은줄", "tag:하단굵은줄", "tag:표시작", "tag:표중앙", "tag:표끝", "tag:표구분선" }) &&
               !window.AllTagsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Header, "표 테두리")),
-            "The braille-line submenu follows Figma order while retaining the additional supported table-indicator tags");
+            "The braille-line submenu matches the nine final Figma items");
         var margin = new Controls.MemoMargin(() => memoBlock, "TEXT", _ => { });
         Check(margin.Preview(0).Contains("미해결 회신") && margin.Preview(0).Contains("검수자") && !margin.Preview(0).Contains("해결된 메모"), "QA4 memo hover includes author, body and replies while hiding resolved items");
         Check(thread.Title == "메모", "QA4 memo title omits block and line coordinates");

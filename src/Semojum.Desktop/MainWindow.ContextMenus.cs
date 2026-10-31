@@ -30,7 +30,6 @@ public partial class MainWindow
         menu.Items.Add(Item("메모 추가", "memo", "memo", "Ctrl+M")); Line();
         if (!braille) menu.Items.Add(Item("잘라내기", "cut", "cut", "Ctrl+X"));
         menu.Items.Add(Item("복사", "copy", "copy", "Ctrl+C"));
-        if (braille) menu.Items.Add(Item("잘라내기", "cut", null, "Ctrl+X"));
         menu.Items.Add(Item(braille ? "점자로 붙여넣기" : "붙여넣기", "paste", "paste", "Ctrl+V")); Line();
         menu.Items.Add(Item("대체 초안 보기", "drafts", "draft"));
         menu.Items.Add(Item("적용 규정 보기", "rules", "rule"));
@@ -43,12 +42,13 @@ public partial class MainWindow
             menu.Items.Add(restore); Line();
             menu.Items.Add(Group("점자 줄 넣기", "blank", [("상단 줄", "상단줄"), ("중단 줄", "중단줄"), ("하단 줄", "하단줄"), ("상단 굵은 줄", "상단굵은줄"), ("하단 굵은 줄", "하단굵은줄")]));
             menu.Items.Add(Group("표 테두리", "table", [("표 시작 테두리 선", "표시작"), ("표 중앙 테두리 선", "표중앙"), ("표 끝 테두리 선", "표끝"), ("표 구분선", "표구분선")]));
-            menu.Items.Add(Item("현재 줄 지우기", "clearLine", null));
         }
         else
         {
             Line();
+            menu.Items.Add(Group("강조 넣기", "emph", [("밑줄", "강조"), ("굵게", "굵은"), ("색상 또는 모양", "색강조"), ("취소선", "취소선")]));
             menu.Items.Add(Group("정렬", "align", [("왼쪽", "왼쪽정렬"), ("가운데", "가운데정렬"), ("오른쪽", "오른쪽정렬")]));
+            menu.Items.Add(Item("쪽바꿈 넣기", "tag:쪽바꿈", "pagebreak", "Ctrl+Enter"));
             menu.Items.Add(Item("수식 입력창", "math", "math"));
         }
         return menu;

@@ -36,7 +36,7 @@ internal static class WindowsTabProgressChecks
             first.Title = "첫 문서.smj";
             first.JobId = "first-job"; first.JobStatus = "IN_PROGRESS";
             first.ActiveBlock!.Source = "첫 문서";
-            first.Progress = new ConversionProgress(128, 46, 1, 1, "잔여 약 12분");
+            first.Progress = new ConversionProgress(128, 46, 1, 1, "잔여 12분");
             await window.ExecuteAsync("new");
             var second = window.Session;
             second.JobId = "second-job"; second.JobStatus = "IN_PROGRESS";
@@ -74,7 +74,7 @@ internal static class WindowsTabProgressChecks
             var popup = ((Grid)VisualTreeHelper.GetParent(firstButton)).Children.OfType<Popup>().Single();
             firstButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(popup.IsOpen && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 처리 (37%)", StringComparison.Ordinal)),
+            check(popup.IsOpen && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 완료 (37%)", StringComparison.Ordinal)),
                 "The inactive tab opens its own progress details with the correct percentage");
             var cardLayer = Descendants(popup.Child).OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "TabProgressCard");
             check(popup.Child is Grid { ActualWidth: 320, ActualHeight: 108, Margin: var m } layers && m == new Thickness(20)

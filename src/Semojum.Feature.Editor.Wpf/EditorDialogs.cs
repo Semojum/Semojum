@@ -102,7 +102,7 @@ public sealed class SixDotDialog : CompactDialog
         var chars = string.Concat(current.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
         KeyFields = Enumerable.Range(0, 6).Select(i => new TextBox { Text = i < chars.Length ? chars[i].ToString() : "", CharacterCasing = CharacterCasing.Upper, MaxLength = 1, Width = 44, Height = 32, MinHeight = 0, Padding = new(0), FontSize = 14, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center }).ToArray();
         var body = new StackPanel { Margin = new(24, 0, 24, 0) }; Body(body);
-        string[] presets = ["WERUIO", "FDSJKL", "XCVNM,"];
+        string[] presets = ["REWUIO", "FDSJKL", "VCXNM,"];
         var presetIndex = Array.IndexOf(presets, chars);
         var mode = new Controls.SegmentedChoice("1단", "2단", "3단", "사용자") { Width = 432, Height = 32, FontSize = 12, SelectedIndex = presetIndex < 0 ? 3 : presetIndex };
         var modeStyle = new Style(typeof(ListBoxItem));
@@ -111,21 +111,22 @@ public sealed class SixDotDialog : CompactDialog
         border.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding(nameof(Control.Background)) { RelativeSource = System.Windows.Data.RelativeSource.TemplatedParent });
         var presenter = new FrameworkElementFactory(typeof(ContentPresenter)); presenter.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center); presenter.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); border.AppendChild(presenter);
         modeStyle.Setters.Add(new Setter(Control.TemplateProperty, new ControlTemplate(typeof(ListBoxItem)) { VisualTree = border }));
-        modeStyle.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.White)); modeStyle.Setters.Add(new Setter(Control.BorderBrushProperty, EditorModalDesign.Color("#EAEAEA"))); modeStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0, 0, 4, 0)));
-        var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true }; selected.Setters.Add(new Setter(Control.BackgroundProperty, EditorModalDesign.Color("#EFF6FC"))); selected.Setters.Add(new Setter(Control.BorderBrushProperty, EditorModalDesign.Color("#005FB8"))); selected.Setters.Add(new Setter(Control.ForegroundProperty, EditorModalDesign.Color("#005FB8"))); modeStyle.Triggers.Add(selected); mode.ItemContainerStyle = modeStyle;
+        modeStyle.Setters.Add(new Setter(Control.BackgroundProperty, EditorModalDesign.Color("#FBFBFB"))); modeStyle.Setters.Add(new Setter(Control.BorderBrushProperty, EditorModalDesign.Color("#EAEAEA"))); modeStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0, 0, 4, 0)));
+        modeStyle.Setters.Add(new Setter(Control.ForegroundProperty, EditorModalDesign.Color("#5F5F5F")));
+        var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true }; selected.Setters.Add(new Setter(Control.BackgroundProperty, EditorModalDesign.Color("#EFF6FC"))); selected.Setters.Add(new Setter(Control.BorderBrushProperty, EditorModalDesign.Color("#005FB8"))); selected.Setters.Add(new Setter(Control.ForegroundProperty, EditorModalDesign.Color("#003E92"))); modeStyle.Triggers.Add(selected); mode.ItemContainerStyle = modeStyle;
         body.Children.Add(new TextBlock { Text = "입력 방식", FontSize = 12, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 16, 0, 4) });
         var modeCard = EditorModalDesign.Card(mode, new Thickness(0)); modeCard.Padding = new Thickness(16, 12, 16, 8); body.Children.Add(modeCard);
         body.Children.Add(new TextBlock { Text = "키 지정", FontSize = 12, Foreground = (Brush)FindResource("Muted"), Margin = new Thickness(0, 16, 0, 4) });
         var keys = new Canvas { Width = 432, Height = 64, HorizontalAlignment = HorizontalAlignment.Left };
-        var leftLabel = new TextBlock { Text = "왼손  3 · 2 · 1", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F") }; keys.Children.Add(leftLabel); Canvas.SetLeft(leftLabel, 0); Canvas.SetTop(leftLabel, 0);
+        var leftLabel = new TextBlock { Text = "왼손  1 · 2 · 3", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F") }; keys.Children.Add(leftLabel); Canvas.SetLeft(leftLabel, 0); Canvas.SetTop(leftLabel, 0);
         var rightLabel = new TextBlock { Text = "오른손  4 · 5 · 6", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F") }; keys.Children.Add(rightLabel); Canvas.SetLeft(rightLabel, 230); Canvas.SetTop(rightLabel, 0);
-        var hint = new TextBlock { Foreground = EditorModalDesign.Color("#9F9F9F"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+        var hint = new TextBlock { Foreground = EditorModalDesign.Color("#8A8A8A"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
         var settingPreset = false;
         foreach (var (field, i) in KeyFields.Select((field, i) => (field, i)))
         {
             System.Windows.Automation.AutomationProperties.SetName(field, $"{i + 1}점 키"); keys.Children.Add(field);
             EditorModalDesign.Input(field); field.FontSize = 14;
-            Canvas.SetLeft(field, i < 3 ? (2 - i) * 48 : 230 + (i - 3) * 48); Canvas.SetTop(field, 20);
+            Canvas.SetLeft(field, i < 3 ? i * 48 : 230 + (i - 3) * 48); Canvas.SetTop(field, 20);
             field.TextChanged += (_, _) => { if (!settingPreset) mode.SelectedIndex = 3; };
             field.GotKeyboardFocus += (_, _) => field.SelectAll();
             field.PreviewMouseLeftButtonDown += (_, e) => { field.Focus(); field.SelectAll(); e.Handled = true; };
@@ -148,7 +149,8 @@ public sealed class SixDotDialog : CompactDialog
         {
             var custom = mode.SelectedIndex == 3;
             foreach (var field in KeyFields) { field.IsReadOnly = !custom; field.Background = EditorModalDesign.Color(custom ? "#FBFBFB" : "#F5F5F5"); field.Foreground = EditorModalDesign.Color(custom ? "#1A1A1A" : "#9F9F9F"); field.FontWeight = FontWeights.Bold; }
-            hint.Text = custom ? "고칠 키를 선택한 뒤 원하는 키를 누릅니다." : "정해진 값이라 고칠 수 없다. 고치려면 ‘사용자’를 고른다.";
+            hint.Text = custom ? "칸을 누르고 쓸 글쇠를 바로 누른다." : "정해진 값이라 고칠 수 없다. 고치려면 「사용자」를 고른다.";
+            leftLabel.Foreground = rightLabel.Foreground = EditorModalDesign.Color(custom ? "#5F5F5F" : "#9F9F9F");
         }
         UpdateMode();
         var keyCard = EditorModalDesign.Card(keys, new Thickness(0)); keyCard.Padding = new Thickness(16, 12, 16, 8); body.Children.Add(keyCard); body.Children.Add(hint);
@@ -180,20 +182,6 @@ public sealed class MemoDialog : EditorDialog
     protected override bool Apply() => true;
 }
 
-public sealed class DraftDialog : EditorDialog
-{
-    private readonly ComboBox choice;
-    public int SelectedIndex => choice.SelectedIndex;
-    public DraftDialog(BrailleDraft[] drafts) : base("표 점역 초안 선택", 700)
-    {
-        choice = new() { ItemsSource = drafts.Select(d => d.Label).ToArray(), SelectedIndex = 0 };
-        var preview = new TextBox { IsReadOnly = true, AcceptsReturn = true, Height = 250, FontSize = 22, FontFamily = new FontFamily("Segoe UI Symbol"), VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Text = drafts[0].Cells };
-        choice.SelectionChanged += (_, _) => { if (choice.SelectedIndex >= 0) preview.Text = drafts[choice.SelectedIndex].Cells; };
-        Row("초안", choice); Fields.Children.Add(preview);
-    }
-    protected override bool Apply() => choice.SelectedIndex >= 0;
-}
-
 public sealed class FindDialog : CompactDialog
 {
     public FindDialog(SearchPanel target, string initialQuery, bool showReplacement,
@@ -204,6 +192,7 @@ public sealed class FindDialog : CompactDialog
         var replacement = new TextBox();
         var result = new TextBlock { Margin = new Thickness(0, 20, 0, 0), TextWrapping = TextWrapping.Wrap, Foreground = (Brush)FindResource("Muted") };
         var sixDot = new SixDotInput(); sixDot.Configure(sixDotKeys);
+        var hint = new TextBlock { FontSize = 12, Foreground = EditorModalDesign.Color("#8A8A8A"), Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
         var toggle = new ToggleButton { IsChecked = target == SearchPanel.Braille, Width = 32, Height = 32, MinHeight = 0, Padding = new Thickness(0), Background = EditorModalDesign.Color("#FBFBFB"), BorderBrush = EditorModalDesign.Color("#EAEAEA") };
         toggle.BorderThickness = new Thickness(1); toggle.Template = EditorModalDesign.ButtonTemplate(typeof(ToggleButton));
         System.Windows.Automation.AutomationProperties.SetName(toggle, "점자 입력");
@@ -214,6 +203,7 @@ public sealed class FindDialog : CompactDialog
             toggle.BorderThickness = new Thickness(on ? 2 : 1);
             toggle.BorderBrush = EditorModalDesign.Color(on ? "#005FB8" : "#EAEAEA"); toggle.Background = EditorModalDesign.Color(on ? "#EFF6FC" : "#FBFBFB");
             toggle.ToolTip = on ? "점자 입력 켬" : "점자 입력 끔"; sixDot.Reset();
+            hint.Text = on ? "점자로 바꿀 말" : "바꿀 말을 적는다"; query.FontSize = replacement.FontSize = on ? 16 : 12;
         }
         toggle.Checked += (_, _) => UpdateToggle(); toggle.Unchecked += (_, _) => UpdateToggle(); UpdateToggle();
         SearchPanel Target() => toggle.IsChecked == true ? SearchPanel.Braille : SearchPanel.Text;
@@ -230,8 +220,6 @@ public sealed class FindDialog : CompactDialog
             {
                 var input = new Grid { Width = 198, Height = 32 };
                 input.Children.Add(control);
-                var hint = new TextBlock { Text = "바꿀 말을 적는다", FontSize = 12, Foreground = EditorModalDesign.Color("#9F9F9F"),
-                    Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
                 System.Windows.Automation.AutomationProperties.SetAutomationId(hint, "ReplacementPlaceholder");
                 input.Children.Add(hint);
                 control.TextChanged += (_, _) => hint.Visibility = control.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -253,7 +241,7 @@ public sealed class FindDialog : CompactDialog
             };
             control.LostKeyboardFocus += (_, _) => sixDot.Reset();
         }
-        Field("찾을 내용", query, true); Field("바꿀 내용", replacement, false);
+        Field("찾을 내용", query, true); Field("바꿀 내용", replacement, false); UpdateToggle();
         panel.Children.Add(new TextBlock { Text = "찾기 설정", Foreground = (Brush)FindResource("Muted"), FontSize = 12, Margin = new Thickness(0, 16, 0, 8) });
         var formCard = EditorModalDesign.Card(form, new Thickness(0)); formCard.Padding = new Thickness(16, 12, 16, 8); panel.Children.Add(formCard); panel.Children.Add(result);
         var busy = false;

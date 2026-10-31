@@ -19,9 +19,9 @@ internal static class WindowsInstitutionClientChecks
             && accounts.Items.Single() is { LoginId: "a b", Alias: null, Self: true, UsedCredits: 7 },
             "Institution dashboard and account data retain server values including a negative balance and nulls");
         var jobs = await client.AccountJobsAsync("a b", new(2026, 10, 1), new(2026, 10, 30));
-        check(jobs.Items.Single() is { JobId: "job-1", DonePages: null, FailedPages: 1, Credits: 4 } && jobs.TotalPages == 3
+        check(jobs.Items.Single() is { JobId: "job-1", FileName: "국어.pdf", DonePages: null, FailedPages: 1, Credits: 4 } && jobs.TotalPages == 3
             && fixture.LastUri!.Contains("a%20b/jobs?from=2026-10-01&to=2026-10-30", StringComparison.OrdinalIgnoreCase),
-            "Institution account detail escapes the login ID and retains actual per-job counts and dates");
+            "Institution account detail escapes the login ID, composes decomposed Korean file names and retains actual per-job counts and dates");
         var orders = await client.OrdersAsync(); var receipt = await client.ReceiptAsync(Guid.Parse("3f56ae22-d121-48b1-a804-a3b48e3d3b82"));
         var notices = await client.NoticesAsync(); var requests = await client.RequestsAsync();
         check(orders.Items.Single() is { AmountKrw: 1200, CreditAmount: null, ReceiptFileName: "receipt.pdf" }
@@ -92,7 +92,7 @@ internal static class WindowsInstitutionClientChecks
                 "/api/org/dashboard" => new { orgName = "기관 A", orgCode = "A", contractType = "BASIC", contractStartedAt = "2026-01-01", contractExpiresAt = (string?)null, creditAllocated = 10, creditUsed = 15, creditRemaining = -5, monthlyUsage = new[] { new { month = "2026-10", credits = 2 } } },
                 "/api/org/accounts" when Malformed => new { usageSince = (string?)null, items = new[] { new { loginId = "a", status = "ACTIVE", role = "ROLE_USER", usedCredits = 1 } } },
                 "/api/org/accounts" => new { usageSince = "2026-01-01", items = new[] { new { loginId = "a b", alias = (string?)null, status = "ACTIVE", role = "ROLE_USER", lastLoginAt = (string?)null, usedCredits = 7, self = true } } },
-                var p when p.EndsWith("/jobs", StringComparison.Ordinal) => new { loginId = "a b", alias = (string?)null, from = "2026-10-01", to = "2026-10-30", items = new[] { new { jobId = "job-1", fileName = "test.pdf", mode = "a", status = "COMPLETED", totalPages = 3, donePages = (int?)null, failedPages = 1, credits = 4, startedAt = "2026-10-01T00:00:00", finishedAt = (string?)null } }, totalPages = 3, totalCredits = 4 },
+                var p when p.EndsWith("/jobs", StringComparison.Ordinal) => new { loginId = "a b", alias = (string?)null, from = "2026-10-01", to = "2026-10-30", items = new[] { new { jobId = "job-1", fileName = "국어.pdf".Normalize(NormalizationForm.FormD), mode = "a", status = "COMPLETED", totalPages = 3, donePages = (int?)null, failedPages = 1, credits = 4, startedAt = "2026-10-01T00:00:00", finishedAt = (string?)null } }, totalPages = 3, totalCredits = 4 },
                 "/api/org/orders" => new { receiptEmail = (string?)null, items = new[] { new { id = "3f56ae22-d121-48b1-a804-a3b48e3d3b82", orderDate = "2026-10-01", description = "충전", amountKrw = 1200, creditAmount = (long?)null, paidAt = (string?)null, invoiceStatus = "ISSUED", receiptFileName = "receipt.pdf" } } },
                 var p when p.EndsWith("/receipt", StringComparison.Ordinal) => new { fileName = "receipt.pdf", url = BadReceipt ? "http://untrusted.invalid/receipt" : "https://storage.invalid/receipt" },
                 "/api/org/notices" => new[] { new { id = "3f56ae22-d121-48b1-a804-a3b48e3d3b82", scope = "ORG", title = "공지", body = "내용", startsOn = (string?)null, endsOn = (string?)null, createdAt = "2026-10-01T00:00:00Z" } },

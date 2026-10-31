@@ -14,7 +14,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class OpenDocumentDialog : CompactDialog
 {
     internal ComboBox Forms { get; } = new();
-    internal TextBox FileNames { get; } = new() { IsReadOnly = true, Text = "PDF · HWP · HWPX · TXT · JPG · PNG · SMJ" };
+    internal TextBox FileNames { get; } = new() { IsReadOnly = true };
     private readonly ComboBox korean = Choices(["정자(1급)", "약자(2급)"], "약자(2급)"), rule = Choices(["한글 규정", "영어 규정"], "한글 규정"), mixed = Choices(["한국어", "영어"], "한국어");
     private readonly Button start;
     private BrailleOptions current;
@@ -40,17 +40,11 @@ public sealed class OpenDocumentDialog : CompactDialog
         layoutRoot.Children.Add(header);
         var body = new StackPanel { Margin = new(24, 16, 24, 0) }; Grid.SetRow(body, 1); layoutRoot.Children.Add(body);
         body.Children.Add(new TextBlock { Text = "파일", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        var browse = Button("찾기…", () =>
-        {
-            var paths = SelectPaths(this);
-            if (paths is not null) SetPaths(paths);
-            return Task.CompletedTask;
-        });
+        // The file explorer chose the files before this dialog; the field only shows their names.
+        var fileField = new Border { Height = 32, CornerRadius = new(4), Background = Brush("#FBFBFB"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(1), Margin = new(0, 0, 0, 16), Child = FileNames };
         FileNames.IsHitTestVisible = false; FileNames.Focusable = false; FileNames.BorderThickness = new(0); FileNames.Padding = new(11, 0, 11, 0);
         FileNames.VerticalContentAlignment = VerticalAlignment.Center; FileNames.Background = Brushes.Transparent;
-        browse.Content = FileNames; browse.HorizontalContentAlignment = HorizontalAlignment.Stretch; browse.Padding = new(0); browse.Margin = new(0, 0, 0, 16);
-        browse.Height = browse.MinHeight = 32; browse.Background = Brush("#FBFBFB"); browse.BorderBrush = Brush("#EAEAEA"); browse.Template = SurfaceTemplate(4, stretchContent: true); browse.ToolTip = "올릴 파일 선택";
-        AutomationProperties.SetName(browse, "올릴 파일 선택"); body.Children.Add(browse);
+        AutomationProperties.SetName(FileNames, "올릴 파일"); body.Children.Add(fileField);
         body.Children.Add(new TextBlock { Text = "점역 설정", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
         var form = new Grid { Margin = new(16, 12, 16, 4) }; form.ColumnDefinitions.Add(new() { Width = new(134) }); form.ColumnDefinitions.Add(new());
         for (var i = 0; i < 4; i++) form.RowDefinitions.Add(new() { Height = new(36) });

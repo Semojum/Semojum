@@ -17,7 +17,7 @@ internal static class WindowsEditorDialogDesignChecks
 {
     internal static void Run(Window owner, Action<bool, string> check)
     {
-        var keys = new SixDotDialog("W E R U I O", true, true) { Owner = owner };
+        var keys = new SixDotDialog("R E W U I O", true, true) { Owner = owner };
         keys.Show();
         try
         {
@@ -25,11 +25,18 @@ internal static class WindowsEditorDialogDesignChecks
             var mode = Children(keys).OfType<SegmentedChoice>().Single();
             check(keys.Width == 520 && keys.Height == 356 && keys.KeyFields.All(field => field.IsReadOnly), "Six-dot Figma size and preset fields");
             CheckIcons(keys, check);
-            check(Canvas.GetLeft(keys.KeyFields[2]) < Canvas.GetLeft(keys.KeyFields[1]) && Canvas.GetLeft(keys.KeyFields[1]) < Canvas.GetLeft(keys.KeyFields[0]), "Six-dot left hand displayed in physical key order");
+            check(Canvas.GetLeft(keys.KeyFields[0]) < Canvas.GetLeft(keys.KeyFields[1]) && Canvas.GetLeft(keys.KeyFields[1]) < Canvas.GetLeft(keys.KeyFields[2]), "Six-dot left hand displayed in dot order 1 · 2 · 3");
             mode.SelectedIndex = 2;
-            check(string.Concat(keys.KeyFields.Select(field => field.Text)) == "XCVNM,", "Six-dot three-row dot mapping remains unchanged");
+            check(string.Concat(keys.KeyFields.Select(field => field.Text)) == "VCXNM,", "Six-dot three-row preset maps dots 1 · 2 · 3 to V · C · X");
             mode.SelectedIndex = 3;
             check(keys.KeyFields.All(field => !field.IsReadOnly), "Custom six-dot keys are editable");
+            static bool Ink(Brush? brush, string hex) => brush is SolidColorBrush { Color: var color } && color == (Color)ColorConverter.ConvertFromString(hex);
+            var texts = Children(keys).OfType<TextBlock>().ToArray(); var segments = mode.Items.OfType<ListBoxItem>().ToArray();
+            check(texts.Any(t => t.Text == "칸을 누르고 쓸 글쇠를 바로 누른다." && Ink(t.Foreground, "#8A8A8A")) &&
+                texts.Count(t => t.Text is "왼손  1 · 2 · 3" or "오른손  4 · 5 · 6" && Ink(t.Foreground, "#5F5F5F")) == 2 &&
+                Ink(segments[3].Foreground, "#003E92") && Ink(segments[0].Background, "#FBFBFB") && Ink(segments[0].Foreground, "#5F5F5F") &&
+                Children(keys).OfType<Border>().Where(b => b.Child is SegmentedChoice or Canvas).Count(b => b.CornerRadius == new CornerRadius(6)) == 2,
+                "Custom six-dot mode follows the final Figma hint, hand labels, segment colors and 6px cards");
         }
         finally { keys.Close(); }
 
@@ -58,7 +65,7 @@ internal static class WindowsEditorDialogDesignChecks
             var query = Children(find).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "찾을 내용");
             var replacement = Children(find).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "바꿀 내용");
             var hint = Children(find).OfType<TextBlock>().Single(t => AutomationProperties.GetAutomationId(t) == "ReplacementPlaceholder");
-            check(hint.Text == "바꿀 말을 적는다" && hint.IsVisible && !hint.IsHitTestVisible && replacement.Text == "",
+            check(hint.Text == "바꿀 말을 적는다" && hint.IsVisible && !hint.IsHitTestVisible && replacement.Text == "" && query.FontSize == 12,
                 "Empty replacement shows the Figma hint without intercepting input");
             replacement.Focus(); replacement.Text = "변경"; find.UpdateLayout();
             check(replacement.IsKeyboardFocusWithin && hint.Visibility == Visibility.Collapsed,
@@ -73,6 +80,8 @@ internal static class WindowsEditorDialogDesignChecks
             var toggleProvider = (IToggleProvider)togglePeer.GetPattern(PatternInterface.Toggle)!;
             toggleProvider.Toggle(); find.UpdateLayout();
             CheckFindToggle(toggle, true, check);
+            check(hint.Text == "점자로 바꿀 말" && query.FontSize == 16 && replacement.FontSize == 16,
+                "Braille input shows the final Figma braille hint and 16-pixel braille fields");
             check(query.IsKeyboardFocusWithin, "Accessible toggle keeps the focused search input available");
             CheckIcons(find, check);
             var source = PresentationSource.FromVisual(query) ?? throw new InvalidOperationException("Missing find input presentation source");

@@ -39,7 +39,8 @@ internal sealed class InstitutionNoticeDialog : InstitutionDetailsDialog
         var category = notice.Scope switch { "ORG" => "우리 기관", "ALL" => "전체", _ => notice.Scope };
         var badge = new Border { Background = Brushes.White, BorderBrush = FigmaDialogElements.Brush(notice.Scope == "ORG" ? "#C42B1C" : "#5F5F5F"), BorderThickness = new(1), CornerRadius = new(10), Padding = new(9, 1, 9, 1), Child = new TextBlock { Text = category, Foreground = FigmaDialogElements.Brush(notice.Scope == "ORG" ? "#C42B1C" : "#5F5F5F") } };
         DockPanel.SetDock(badge, Dock.Left); metadata.Children.Add(badge);
-        metadata.Children.Add(new TextBlock { Text = notice.CreatedAt, Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }); ContentPanel.Children.Add(metadata);
+        var sent = InstitutionUsage.InKorea(notice.CreatedAt)?.ToString("yyyy. MM. dd.", System.Globalization.CultureInfo.InvariantCulture) ?? notice.CreatedAt;
+        metadata.Children.Add(new TextBlock { Text = sent + "  ·  보낸 사람 운영자", Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }); ContentPanel.Children.Add(metadata);
         ContentPanel.Children.Add(new Border { Background = FigmaDialogElements.Brush("#F9F9F9"), CornerRadius = new(6), Padding = new(16, 12, 16, 12), Child = new TextBlock { Text = notice.Body, TextWrapping = TextWrapping.Wrap, FontSize = 12 } });
         CreditRequestButton = Button("크레딧 추가 요청", () => { CreditRequested = true; DialogResult = true; return Task.CompletedTask; }); CreditRequestButton.Width = 146; CreditRequestButton.Height = 32; CreditRequestButton.IsEnabled = canRequest;
         CreditRequestButton.ToolTip = canRequest ? "운영자에게 크레딧 추가를 요청합니다." : "기관 권한을 확인한 뒤 요청할 수 있습니다."; Footer.Children.Add(CreditRequestButton); Done();
@@ -51,7 +52,7 @@ internal sealed class InstitutionOrderDialog : InstitutionDetailsDialog
     internal Button ReceiptButton { get; }
     internal InstitutionOrderDialog(InstitutionOrder order, string? receiptEmail, Func<Task> openReceipt) : base("주문 상세", 448, "institution-order-detail-close.svg")
     {
-        void Section(string? title, params (string Label, string Value)[] fields)
+        void Section(string? title, params (string Label, object Value)[] fields)
         {
             if (title is not null) ContentPanel.Children.Add(new TextBlock { Text = title, Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
             var rows = new StackPanel { Margin = new(16, 8, 16, 8) };
@@ -59,12 +60,17 @@ internal sealed class InstitutionOrderDialog : InstitutionDetailsDialog
             {
                 var row = new Grid { MinHeight = 36 }; row.ColumnDefinitions.Add(new() { Width = new(134) }); row.ColumnDefinitions.Add(new());
                 row.Children.Add(new TextBlock { Text = label, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
-                var data = new TextBlock { Text = value, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap }; Grid.SetColumn(data, 1); row.Children.Add(data); rows.Children.Add(row);
+                var data = value as FrameworkElement ?? new TextBlock { Text = value as string, FontSize = 14, TextWrapping = TextWrapping.Wrap };
+                data.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(data, 1); row.Children.Add(data); rows.Children.Add(row);
             }
             ContentPanel.Children.Add(new Border { Background = FigmaDialogElements.Brush("#F9F9F9"), CornerRadius = new(6), Child = rows, Margin = new(0, 0, 0, 16) });
         }
         Section(null, ("내용", order.Description), ("금액", "₩" + order.AmountKrw.ToString("N0")), ("요청한 사람", "정보 없음"), ("요청한 날", order.OrderDate));
-        Section("결제와 증빙", ("결제일", string.IsNullOrWhiteSpace(order.PaidAt) ? "정보 없음" : order.PaidAt), ("세금계산서", InstitutionStatusTextConverter.Label(order.InvoiceStatus, "invoice") + (string.IsNullOrWhiteSpace(receiptEmail) ? "" : " · " + receiptEmail)));
+        // No payment status field exists; a recorded payment date means the order is paid.
+        var paid = !string.IsNullOrWhiteSpace(order.PaidAt); var paidColor = FigmaDialogElements.Brush(paid ? "#0F7B0F" : "#C42B1C");
+        var payment = new Border { Background = Brushes.White, BorderBrush = paidColor, BorderThickness = new(1), CornerRadius = new(10), Padding = new(9, 1, 9, 1), HorizontalAlignment = HorizontalAlignment.Left,
+            Child = new TextBlock { Text = paid ? "완납" : "미납", Foreground = paidColor, FontSize = 12 } };
+        Section("결제와 증빙", ("결제", payment), ("세금계산서", InstitutionStatusTextConverter.Label(order.InvoiceStatus, "invoice") + (string.IsNullOrWhiteSpace(receiptEmail) ? "" : " · " + receiptEmail)));
         ReceiptButton = Button("증빙 열기", async () => await RunAsync(openReceipt)); ReceiptButton.Width = 138; ReceiptButton.Height = 32;
         ReceiptButton.IsEnabled = !string.IsNullOrWhiteSpace(order.ReceiptFileName); ReceiptButton.ToolTip = ReceiptButton.IsEnabled ? "서버가 제공한 증빙을 엽니다." : "제공된 증빙이 없습니다."; Footer.Children.Add(ReceiptButton); Done();
     }

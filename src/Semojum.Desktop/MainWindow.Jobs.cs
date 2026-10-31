@@ -19,7 +19,7 @@ public partial class MainWindow
     private bool HasOtherTabForJob(OpenDocument context) => context.Model.JobId is { } id
         && (openDocuments.Any(other => !ReferenceEquals(other, context) && other.Model.JobId == id) || HasClosedJobRecovery(context));
     // The same window and commands can be exercised against an isolated HTTP service in Windows smoke checks.
-    internal MainWindow(SemojumApiClient service) : this(smoke: true, testWithoutAccount: true)
+    internal MainWindow(SemojumApiClient service, bool startEmpty = false) : this(smoke: true, testWithoutAccount: true, startEmpty: startEmpty)
     { api = service; api.RefreshedIdentityAllowed = account => AutomaticLogin.IsSameDesktopArea(api.Account, account); api.RefreshRequiresIdentity = account => account.Role == "ROLE_ORG_ADMIN"; jobs = new(service); }
 
     private void CreditNotice_Close(object sender, RoutedEventArgs e) => session.CreditNotice = "";
@@ -213,13 +213,14 @@ public partial class MainWindow
                 ct.ThrowIfCancellationRequested();
                 if (!JobClient.ApplyReceivedStatus(model, status))
                     throw new InvalidDataException("현재 문서와 다른 작업의 상태는 적용할 수 없습니다.");
-                model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 변환 완료)" : "";
+                model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 완료)" : "";
                 // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
                 // count twice nor shorten the estimate a second time (C-02).
                 var finishedSinceOpen = status.FinishedPages - initialFinished;
                 var remainingSeconds = finishedSinceOpen > 0 ? started.Elapsed.TotalSeconds / finishedSinceOpen * status.RemainingPages : 0;
-                model.Progress = status.IsTerminal ? null : status.ToProgress(
-                    remainingSeconds > 0 ? $"잔여 약 {Math.Max(1, Math.Ceiling(remainingSeconds / 60))}분 (처리 속도 기준)" : "남은 시간 계산 중");
+                var remaining = TimeSpan.FromMinutes(Math.Max(1, Math.Ceiling(remainingSeconds / 60)));
+                model.Progress = status.IsTerminal ? null : status.ToProgress(remainingSeconds <= 0 ? "남은 시간 계산 중"
+                    : remaining.TotalHours >= 1 ? $"잔여 {(int)remaining.TotalHours}시간 {remaining.Minutes}분" : $"잔여 {remaining.Minutes}분");
                 model.Status = $"AI 변환 {status.FinishedPages}/{status.TotalPages}쪽 처리 · 성공 {status.SucceededPages} · 확인 필요 {status.FailedPages} · {status.Label}";
                 foreach (var page in status.Pages.Where(p => JobStatus.IsSucceededPage(p.Value) || JobStatus.IsFailedPage(p.Value)).OrderBy(p => p.Key))
                 {

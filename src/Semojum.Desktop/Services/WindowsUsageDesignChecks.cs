@@ -34,8 +34,22 @@ internal static class WindowsUsageDesignChecks
             var fill = usageBar?.Template.FindName("RangeFill", usageBar) as FrameworkElement;
             var track = usageBar?.Template.FindName("UsageTrack", usageBar) as FrameworkElement;
             var balance = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "OrganizationCreditBalance");
-            var allocation = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "OrganizationCreditAllocation");
-            var purchase = Descendants(dialog).OfType<Button>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "OrganizationCreditPurchase");
+            check(!Descendants(dialog).OfType<FrameworkElement>().Any(e => System.Windows.Automation.AutomationProperties.GetAutomationId(e) is "OrganizationCreditAllocation" or "OrganizationCreditPurchase")
+                  && !Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("할당", StringComparison.Ordinal)),
+                "The institution credit card has no allocation caption or purchase button, as in the final design");
+            var percents = Descendants(dialog).OfType<TextBlock>().Where(t => t.Text == "17%").ToArray();
+            check(percents.Length == 2 && percents.All(t => DockPanel.GetDock(t) == Dock.Right && t.IsVisible),
+                "Both credit cards show the whole percentage separately at the right under their bars");
+            var period = Descendants(dialog).OfType<Semojum.Desktop.Controls.SegmentedChoice>().Single();
+            check(period.Items.Cast<ListBoxItem>().Select(i => i.Content).SequenceEqual(new object[] { "이번 달", "지난달" }) && period is { SelectedIndex: 0, Width: 150, Height: 32 }
+                  && !((ListBoxItem)period.Items[1]).IsEnabled && Grid.GetColumn(period) == 2,
+                "The heading row carries the 이번 달 / 지난달 choice; last month stays unavailable until the server can return it");
+            check(!Descendants(dialog).OfType<DatePicker>().Any() && !Descendants(dialog).OfType<Button>().Any(b => b.Content is "조회" or "선택 작업 열기"),
+                "The work-history card is ruled only by its 최근 30일 choice, without date fields or query buttons");
+            var loginStatus = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageStatusLogin");
+            check(loginStatus is { Text: "fixture", HorizontalAlignment: HorizontalAlignment.Right } && VisualTreeHelper.GetParent(loginStatus) is DockPanel { Parent: Border { Height: 28 } }
+                  && !Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.StartsWith("남은 크레딧", StringComparison.Ordinal)),
+                "The 28px status bar shows only the login ID at the right");
             var originalWidth = dialog.Width;
             foreach (var requestedWidth in new[] { originalWidth, 960d, 480d })
             {
@@ -49,36 +63,20 @@ internal static class WindowsUsageDesignChecks
                       trackBounds.Left >= -1 && trackBounds.Right <= dialog.ActualWidth + 1,
                     $"The returned 17.49% usage remains proportional and visible at {dialog.ActualWidth:0.#}px (fill={fillWidth:0.##}, track={trackWidth:0.##})");
                 var balanceBounds = balance.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, balance.ActualWidth, balance.ActualHeight));
-                var allocationBounds = allocation.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, allocation.ActualWidth, allocation.ActualHeight));
-                var purchaseBounds = purchase.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, purchase.ActualWidth, purchase.ActualHeight));
-                var displayedText = new FormattedText(allocation.Text, CultureInfo.CurrentCulture, allocation.FlowDirection,
-                    new Typeface(allocation.FontFamily, allocation.FontStyle, allocation.FontWeight, allocation.FontStretch),
-                    allocation.FontSize, allocation.Foreground, VisualTreeHelper.GetDpi(allocation).PixelsPerDip)
-                    { MaxTextWidth = Math.Max(1, allocation.ActualWidth) };
-                check(balance.IsVisible && allocation.IsVisible && purchase.IsVisible && purchase.IsEnabled &&
-                      allocation.ActualWidth > 0 && allocation.ActualHeight + 2 >= displayedText.Height &&
-                      !Overlaps(allocationBounds, purchaseBounds) && !Overlaps(balanceBounds, purchaseBounds) &&
-                      allocationBounds.Left >= -1 && allocationBounds.Right <= dialog.ActualWidth + 1 &&
-                      purchaseBounds.Left >= -1 && purchaseBounds.Right <= dialog.ActualWidth + 1,
-                    $"Organization balance, full allocation and purchase action remain readable without overlap at {dialog.ActualWidth:0.#}px (allocation={allocationBounds}, purchase={purchaseBounds})");
+                check(balance.IsVisible && balance.ActualWidth > 0 && balanceBounds.Left >= -1 && balanceBounds.Right <= dialog.ActualWidth + 1,
+                    $"Organization balance remains readable at {dialog.ActualWidth:0.#}px (balance={balanceBounds})");
             }
-            var originalBalance = balance.Text; var originalAllocation = allocation.Text;
+            var originalBalance = balance.Text;
             balance.Text = "2,147,483,647";
-            allocation.Text = "잔여 / 할당 2,147,483,647 크레딧";
             dialog.Width = 480;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             var longBalance = balance.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, balance.ActualWidth, balance.ActualHeight));
-            var longAllocation = allocation.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, allocation.ActualWidth, allocation.ActualHeight));
-            var longPurchase = purchase.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, purchase.ActualWidth, purchase.ActualHeight));
-            FormattedText Measure(TextBlock block) => new(block.Text, CultureInfo.CurrentCulture, block.FlowDirection,
-                new Typeface(block.FontFamily, block.FontStyle, block.FontWeight, block.FontStretch), block.FontSize,
-                block.Foreground, VisualTreeHelper.GetDpi(block).PixelsPerDip) { MaxTextWidth = Math.Max(1, block.ActualWidth) };
-            check(balance.ActualWidth > 0 && allocation.ActualWidth > 0 &&
-                  balance.ActualHeight + 2 >= Measure(balance).Height && allocation.ActualHeight + 2 >= Measure(allocation).Height &&
-                  !Overlaps(longBalance, longAllocation) && !Overlaps(longBalance, longPurchase) && !Overlaps(longAllocation, longPurchase) &&
-                  longBalance.Right <= dialog.ActualWidth + 1 && longAllocation.Right <= dialog.ActualWidth + 1 && longPurchase.Right <= dialog.ActualWidth + 1,
-                $"Long credit values remain readable and do not overlap at 480px (balance={longBalance}, allocation={longAllocation}, purchase={longPurchase})");
-            balance.Text = originalBalance; allocation.Text = originalAllocation;
+            var measured = new FormattedText(balance.Text, CultureInfo.CurrentCulture, balance.FlowDirection,
+                new Typeface(balance.FontFamily, balance.FontStyle, balance.FontWeight, balance.FontStretch), balance.FontSize,
+                balance.Foreground, VisualTreeHelper.GetDpi(balance).PixelsPerDip) { MaxTextWidth = Math.Max(1, balance.ActualWidth) };
+            check(balance.ActualWidth > 0 && balance.ActualHeight + 2 >= measured.Height && longBalance.Left >= -1 && longBalance.Right <= dialog.ActualWidth + 1,
+                $"A long credit balance remains readable at 480px (balance={longBalance})");
+            balance.Text = originalBalance;
             dialog.Width = originalWidth;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "내 작업별 크레딧") && fixture.JobRequests > 0,
@@ -95,7 +93,14 @@ internal static class WindowsUsageDesignChecks
                 var row = jobGrid.Items.Cast<object>().Single(x => Equals(x.GetType().GetProperty("FileName")?.GetValue(x), filename));
                 return row.GetType().GetProperty(property)?.GetValue(row)?.ToString() ?? "";
             }
-            check(Row("진행 중.pdf", "BadgeText") == "진행 중 2/4" && Row("진행 중.pdf", "Pages") == "2/4", "Actual progress appears in the badge and the separate pages column remains unchanged");
+            check(Row("진행 중.pdf", "BadgeText") == "진행 중 2/4" && Row("진행 중.pdf", "Pages") == "4" && Row("진행 중.pdf", "Credits") == "—" && Row("진행 중.pdf", "Finished") == "—",
+                "Progress appears only in the badge; the pages column shows the total and a running job shows — for credits and completion");
+            check(Row("실제 작업.pdf", "Pages") == "4" && Row("실제 작업.pdf", "Finished") == "10-21 10:24" && Row("부분 실패.pdf", "Finished") == "10-21",
+                "Completion uses the Figma MM-dd HH:mm form and a date-only value is not given an invented time");
+            string? OpenLabel(string filename) => Descendants(jobGrid).OfType<Button>()
+                .FirstOrDefault(b => b.DataContext is { } row && Equals(row.GetType().GetProperty("FileName")?.GetValue(row), filename))?.Content as string;
+            check(OpenLabel("진행 중.pdf") == "이어서 열기" && OpenLabel("실제 작업.pdf") == "열기" && OpenLabel("대기.pdf") == "열기",
+                "Only a converting job offers 이어서 열기; finished and waiting jobs keep 열기");
             check(Row("부분 실패.pdf", "BadgeText") == "부분 실패 1쪽", "The partial failure badge uses the actual server-provided count");
             check(Row("완료 일부 실패.pdf", "BadgeText") == "부분 실패 1쪽", "A completed job with failed pages shows partial failure as in the server contract");
             check(Row("진행 0.pdf", "BadgeText") == "진행 중 0/4", "A valid zero progress count is displayed");
@@ -104,6 +109,7 @@ internal static class WindowsUsageDesignChecks
             check(Row("완료 0.pdf", "BadgeText") == "완료" && Row("완료 null.pdf", "BadgeText") == "완료", "Completed jobs keep their state for valid zero and server-null failure counts");
             check(Row("완료 오류.pdf", "BadgeText") == "상태 확인 필요", "A malformed completed failure count is not misreported as successful completion");
             check(Row("완전 실패.pdf", "BadgeText") == "변환 실패", "A fully failed job is not described as a partial failure");
+            check(Row("한글.pdf", "BadgeText") == "변환 실패", "A decomposed Korean file name from the server is listed in composed form");
             check(!fixture.Paths.Any(p => p.StartsWith("/api/org/", StringComparison.Ordinal)), "My page does not call privileged organization APIs");
             if (Environment.GetEnvironmentVariable("USAGE_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(dialog, capture);
             dialog.Navigation.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -155,7 +161,7 @@ internal static class WindowsUsageDesignChecks
         {
             JobRequests++;
             return new { items = new object[] {
-                new { jobId = "job:1", fileName = "실제 작업.pdf", status = "COMPLETED", failedPages = 0, donePages = 4, totalPages = 4, credits = 4, finishedAt = "2026-10-21" },
+                new { jobId = "job:1", fileName = "실제 작업.pdf", status = "COMPLETED", failedPages = 0, donePages = 4, totalPages = 4, credits = 4, finishedAt = "2026-10-21T10:24:00" },
                 new { jobId = "job:2", fileName = "부분 실패.pdf", status = "PARTIALLY_COMPLETED", failedPages = 1, donePages = 3, totalPages = 4, credits = 3, finishedAt = "2026-10-21" },
                 new { jobId = "job:3", fileName = "진행 중.pdf", status = "IN_PROGRESS", failedPages = 0, donePages = 2, totalPages = 4, credits = 2, finishedAt = "" },
                 new { jobId = "job:4", fileName = "대기.pdf", status = "PENDING", failedPages = 0, donePages = 0, totalPages = 4, credits = 0, finishedAt = "" },
@@ -177,7 +183,8 @@ internal static class WindowsUsageDesignChecks
                 new { jobId = "job:20", fileName = "완료 null.pdf", status = "COMPLETED", failedPages = (int?)null, totalPages = 4 },
                 new { jobId = "job:21", fileName = "완료 오류.pdf", status = "COMPLETED", failedPages = -1, totalPages = 4 },
                 new { jobId = "job:22", fileName = "완전 실패.pdf", status = "FAILED", failedPages = 4, totalPages = 4 },
-                new { jobId = "job:23", fileName = "완료 일부 실패.pdf", status = "COMPLETED", failedPages = 1, totalPages = 4 }
+                new { jobId = "job:23", fileName = "완료 일부 실패.pdf", status = "COMPLETED", failedPages = 1, totalPages = 4 },
+                new { jobId = "job:24", fileName = "\u1112\u1161\u11AB\u1100\u1173\u11AF.pdf", status = "FAILED", totalPages = 1 }
             } };
         }
         private object Posts(string query)
