@@ -17,7 +17,7 @@ internal static class BoardDesign
 {
     internal static Brush Brush(string color) => (Brush)new BrushConverter().ConvertFromString(color)!;
     internal static SvgViewbox Icon(string name) => new() { Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/board-{name}.svg"), Width = 16, Height = 16, Stretch = Stretch.None };
-    internal static DockPanel Shell(Window window, DockPanel root, string? loginId, out StackPanel sidebar)
+    internal static DockPanel Shell(Window window, DockPanel root, out StackPanel sidebar)
     {
         if (window.Content is Grid frame && frame.Children[0] is Border { Child: DockPanel heading })
         {
@@ -35,8 +35,8 @@ internal static class BoardDesign
         var view = new MenuItem { Header = "보기(_V)", Width = 64 }; menu.Items.Add(view);
         var information = new MenuItem { Header = "정보(_A)", Width = 64 }; var help = new MenuItem { Header = "도움말" }; help.Click += (_, _) => new HelpWindow("게시판") { Owner = window }.Show(); information.Items.Add(help); menu.Items.Add(information);
         DockPanel.SetDock(menu, Dock.Top); shell.Children.Add(menu);
-        var status = new Border { Height = 28, Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0),
-            Child = new TextBlock { Text = loginId ?? "", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(12, 0, 24, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis } };
+        var status = new Border { Height = 28, Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0) };
+        AutomationProperties.SetAutomationId(status, "BoardStatusBar");
         DockPanel.SetDock(status, Dock.Bottom); shell.Children.Add(status);
         sidebar = new StackPanel { Margin = new(0, 14, 0, 0) };
         var navigation = new Border { Width = 220, Background = Brush("#F9F9F9"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 0, 1, 0), Child = sidebar };
@@ -91,25 +91,12 @@ internal static class BoardDesign
 
 public sealed class BoardDialog : CompactDialog
 {
-    public BoardDialog(BoardClient client, string workInfo, bool initiallyMine = false) : base("게시판 - 세모점", 1440, 1000, editor: true, editorActions: true)
+    public BoardDialog(BoardClient client, string workInfo, bool initiallyMine = false) : base("게시판 - 누리닷", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White;
-        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Style = (Style)FindResource("BoardListGrid") };
-        var noticeText = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle);
-        noticeText.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d));
-        noticeText.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
-        var regularPost = new DataTrigger { Binding = new Binding(nameof(BoardRow.NoticeId)), Value = null };
-        regularPost.Setters.Add(new Setter(TextBlock.FontSizeProperty, 12d));
-        regularPost.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Normal));
-        noticeText.Triggers.Add(regularPost);
-        foreach (var (label, name, width) in new[] { ("번호", "Number", 70d), ("제목", "DisplayTitle", 570d), ("글쓴이", "Author", 120d), ("작성일", "CreatedAt", 100d), ("조회", "ViewCount", 80d) })
-        {
-            var column = new DataGridTextColumn { Header = label, Binding = new Binding(name), Width = width };
-            if (name is "Number" or "DisplayTitle") column.ElementStyle = noticeText;
-            grid.Columns.Add(column);
-        }
+        var grid = new BoardListView((Style)FindResource("BoardListGrid"));
         var previousFooter = (Border)Actions.Parent; previousFooter.Child = null; previousFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar);
+        var root = BoardDesign.Shell(this, Root, out var sidebar);
         var heading = new DockPanel { Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var headerButtons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(headerButtons, Dock.Right); heading.Children.Add(headerButtons);
         var count = new TextBlock { Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Muted") };
@@ -235,10 +222,10 @@ public sealed class PostEditorDialog : CompactDialog
     private sealed record AttachmentChoice(string Name, long? ExistingId, string? LocalPath) { public override string ToString() => Name; }
     public BoardPost? SavedPost { get; private set; }
     public long SavedId { get; private set; }
-    public PostEditorDialog(BoardClient client, BoardPost? post, string workInfo) : base(post is null ? "게시판 — 글쓰기 - 세모점" : "게시판 — 글 수정 - 세모점", 1440, 1000, editor: true, editorActions: true)
+    public PostEditorDialog(BoardClient client, BoardPost? post, string workInfo) : base(post is null ? "게시판 — 글쓰기 - 누리닷" : "게시판 — 글 수정 - 누리닷", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White; var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
+        var root = BoardDesign.Shell(this, Root, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
         var heading = new TextBlock { Text = post is null ? "글쓰기" : "글 수정", FontSize = 20, FontWeight = FontWeights.SemiBold, Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var card = new DockPanel(); Actions.HorizontalAlignment = HorizontalAlignment.Right; Actions.Margin = new(0, 16, 0, 0); DockPanel.SetDock(Actions, Dock.Bottom); card.Children.Add(Actions);
         var panel = new StackPanel(); card.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); root.Children.Add(BoardDesign.Card(card, new(19, 15, 19, 19)));
@@ -296,11 +283,11 @@ public sealed class PostEditorDialog : CompactDialog
 
 public sealed class PostDialog : CompactDialog
 {
-    public PostDialog(BoardClient client, BoardPost post, string workInfo) : base("게시판 — " + post.Title + " - 세모점", 1440, 1000, editor: true)
+    public PostDialog(BoardClient client, BoardPost post, string workInfo) : base("게시판 — " + post.Title + " - 누리닷", 1440, 1000, editor: true)
     {
         Background = Brushes.White; var panel = new StackPanel();
         var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, client.CurrentLoginId, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
+        var root = BoardDesign.Shell(this, Root, out var sidebar); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
         Actions.Margin = new(0, 0, 0, 8); Actions.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(Actions, Dock.Top); root.Children.Add(Actions);
         root.Children.Add(BoardDesign.Card(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, new(19, 15, 19, 15)));
         void Render()

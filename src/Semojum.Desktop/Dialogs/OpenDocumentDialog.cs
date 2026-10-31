@@ -98,7 +98,7 @@ public sealed class OpenDocumentDialog : CompactDialog
     private static readonly string[] Supported = [".pdf", ".hwp", ".hwpx", ".txt", ".jpg", ".jpeg", ".png", ".smj"];
     internal static string[]? SelectPaths(Window owner)
     {
-        var picker = new OpenFileDialog { Multiselect = true, Filter = "지원 파일|*.pdf;*.hwp;*.hwpx;*.txt;*.jpg;*.jpeg;*.png;*.smj|세모점 작업|*.smj|문서|*.pdf;*.hwp;*.hwpx;*.txt|이미지|*.jpg;*.jpeg;*.png" };
+        var picker = new OpenFileDialog { Multiselect = true, Filter = "지원 파일|*.pdf;*.hwp;*.hwpx;*.txt;*.jpg;*.jpeg;*.png;*.smj|누리닷 작업|*.smj|문서|*.pdf;*.hwp;*.hwpx;*.txt|이미지|*.jpg;*.jpeg;*.png" };
         while (picker.ShowDialog(owner) == true)
         {
             try { ValidatePaths(picker.FileNames); return picker.FileNames; }
@@ -123,7 +123,7 @@ public sealed class OpenDocumentDialog : CompactDialog
     internal void SetPaths(string[] paths)
     {
         ValidatePaths(paths);
-        Paths = paths; FileNames.Text = string.Join("; ", paths.Select(Path.GetFileName));
+        Paths = paths; FileNames.Text = string.Join("; ", paths.Select(path => DisplayFileName.Normalize(Path.GetFileName(path))));
         var local = IsLocal;
         start.Content = local ? "열기" : "변환 시작";
         start.IsEnabled = local || serverSettingsAvailable;

@@ -10,7 +10,7 @@ namespace Semojum.Desktop.Controls;
 // Preserve custom button colors while giving the three design-system colors their states.
 public sealed class FigmaButtonStateBrush : IMultiValueConverter
 {
-    internal static MultiBinding Binding(bool border = false)
+    public static MultiBinding Binding(bool border = false)
     {
         var binding = new MultiBinding { Converter = new FigmaButtonStateBrush(), ConverterParameter = border };
         foreach (var name in new[] { nameof(Control.Background), nameof(Control.BorderBrush), nameof(UIElement.IsMouseOver), nameof(ButtonBase.IsPressed), nameof(UIElement.IsEnabled) })
@@ -53,7 +53,7 @@ public sealed class FigmaButtonStateBrush : IMultiValueConverter
 
 public sealed class FigmaButtonForegroundBrush : IMultiValueConverter
 {
-    internal static MultiBinding Binding()
+    public static MultiBinding Binding()
     {
         var binding = new MultiBinding { Converter = new FigmaButtonForegroundBrush() };
         foreach (var name in new[] { nameof(Control.Foreground), nameof(Control.Background), nameof(UIElement.IsEnabled) })
@@ -75,7 +75,7 @@ public sealed class FigmaButtonForegroundBrush : IMultiValueConverter
 
 public sealed class FigmaDisabledIconOpacity : IMultiValueConverter
 {
-    internal static MultiBinding Binding()
+    public static MultiBinding Binding()
     {
         var binding = new MultiBinding { Converter = new FigmaDisabledIconOpacity() };
         foreach (var name in new[] { nameof(Control.Background), nameof(UIElement.IsEnabled) })
@@ -89,7 +89,7 @@ public sealed class FigmaDisabledIconOpacity : IMultiValueConverter
 
 public sealed class FigmaInputFocusBrush : IMultiValueConverter
 {
-    internal static MultiBinding Binding()
+    public static MultiBinding Binding()
     {
         var binding = new MultiBinding { Converter = new FigmaInputFocusBrush() };
         foreach (var name in new[] { nameof(Control.Background), nameof(UIElement.IsKeyboardFocusWithin) })

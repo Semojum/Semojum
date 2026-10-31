@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using Microsoft.Win32;
+using Semojum.Core;
 using static Semojum.Desktop.Dialogs.FigmaDialogElements;
 
 namespace Semojum.Desktop.Dialogs;
@@ -30,13 +31,13 @@ public sealed class SaveAsDialog : CompactDialog
         layoutRoot.Children.Add(header);
         var body = new StackPanel { Margin = new(24, 16, 24, 0) }; Grid.SetRow(body, 1); layoutRoot.Children.Add(body);
         body.Children.Add(new TextBlock { Text = "파일 이름", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        name = new TextBox { Text = Path.GetFileNameWithoutExtension(title) };
+        name = new TextBox { Text = DisplayFileName.Normalize(Path.GetFileNameWithoutExtension(title)) };
         name.Height = name.MinHeight = 32; name.Padding = new(11, 0, 11, 0); name.VerticalContentAlignment = VerticalAlignment.Center;
         name.Background = Brushes.White; name.BorderBrush = Brush("#EAEAEA"); name.Margin = new(0, 0, 0, 16);
         name.Template = NameInputTemplate();
         AutomationProperties.SetName(name, "파일 이름"); body.Children.Add(name);
         body.Children.Add(new TextBlock { Text = "저장 설정", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        format = Choices(["세모점 작업 파일 (*.smj)", "점자 파일 (*.brf)", "원문 텍스트 (*.txt)"]); format.SelectedIndex = 0;
+        format = Choices(["누리닷 작업 파일 (*.smj)", "점자 파일 (*.brf)", "원문 텍스트 (*.txt)"]); format.SelectedIndex = 0;
         var form = new Grid { Margin = new(16, 10, 16, 10) }; form.ColumnDefinitions.Add(new() { Width = new(134) }); form.ColumnDefinitions.Add(new());
         form.Children.Add(new TextBlock { Text = "파일 형식", FontSize = 14, Foreground = Brush("#1A1A1A"), VerticalAlignment = VerticalAlignment.Center });
         var slot = new Grid { Width = 260, Height = 32, HorizontalAlignment = HorizontalAlignment.Left };
@@ -54,8 +55,8 @@ public sealed class SaveAsDialog : CompactDialog
             try
             {
                 if (string.IsNullOrWhiteSpace(name.Text)) throw new ArgumentException("파일 이름을 입력해 주세요.");
-                var picker = new SaveFileDialog { Title = "저장할 위치 선택", FileName = name.Text.Trim(), AddExtension = true, OverwritePrompt = true,
-                    Filter = "세모점 작업 파일|*.smj|BRF 점자문서|*.brf|원문 텍스트|*.txt", FilterIndex = format.SelectedIndex + 1,
+                var picker = new SaveFileDialog { Title = "저장할 위치 선택", FileName = DisplayFileName.Normalize(name.Text.Trim()), AddExtension = true, OverwritePrompt = true,
+                    Filter = "누리닷 작업 파일|*.smj|BRF 점자문서|*.brf|원문 텍스트|*.txt", FilterIndex = format.SelectedIndex + 1,
                     DefaultExt = format.SelectedIndex switch { 1 => ".brf", 2 => ".txt", _ => ".smj" } };
                 if (currentPath is not null) picker.InitialDirectory = Path.GetDirectoryName(currentPath);
                 if (picker.ShowDialog(this) == true) { FileName = picker.FileName; format.SelectedIndex = picker.FilterIndex - 1; DialogResult = true; }

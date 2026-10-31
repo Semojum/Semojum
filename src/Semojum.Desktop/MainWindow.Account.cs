@@ -14,7 +14,7 @@ public partial class MainWindow
 {
     private readonly IAccountCredentialStore accountCredentials = new WindowsAccountCredentialStore();
     private string? automaticLoginMessage;
-    private string WorkInformation() => $"세모점 {CurrentVersion.ToString(3)}\n운영체제: {Environment.OSVersion}\n작업 ID: {session.JobId ?? "로컬 초안"}\n상태: {session.JobStatus}\n원본 쪽: {session.ActiveBlock?.Page}\n블록 수: {session.Blocks.Count}\n판면: {session.Layout.Columns}칸 × {session.Layout.Lines}줄\n점역 오류 블록: {string.Join(", ", session.Blocks.Where(b => b.IsBrailleLocked).Select(b => b.Id))}";
+    private string WorkInformation() => $"누리닷 {CurrentVersion.ToString(3)}\n운영체제: {Environment.OSVersion}\n작업 ID: {session.JobId ?? "로컬 초안"}\n상태: {session.JobStatus}\n원본 쪽: {session.ActiveBlock?.Page}\n블록 수: {session.Blocks.Count}\n판면: {session.Layout.Columns}칸 × {session.Layout.Lines}줄\n점역 오류 블록: {string.Join(", ", session.Blocks.Where(b => b.IsBrailleLocked).Select(b => b.Id))}";
     private AppVersionInfo? availableVersion;
     private bool downloadingUpdate;
     private bool accountStarting;
@@ -117,7 +117,9 @@ public partial class MainWindow
                 allowClose = true; Close(); return;
             }
             await TryAutomaticLoginAsync();
-            if (!EnsureAccount(allowInstitution: true)) { allowClose = true; Close(); return; }
+            if (resourcesReleased || !IsVisible) return;
+            IsEnabled = windowWasEnabled; content.IsEnabled = true;
+            if (!await EnsureAccountAsync(allowInstitution: true)) { allowClose = true; if (IsVisible) Close(); return; }
             LoadAccountPreferences();
             if (preferences.WorkFolder is not null) await OpenWorkFolderAsync(false);
             await RestoreActiveJobAsync();
@@ -136,7 +138,7 @@ public partial class MainWindow
     }
     private void ShowVersion()
     {
-        var message = $"세모점 {CurrentVersion.ToString(3)}\n";
+        var message = $"누리닷 {CurrentVersion.ToString(3)}\n";
         if (availableVersion is not { } info) { MessageBox.Show(this, message + "버전 정보가 등록되지 않았거나 서버에 연결할 수 없습니다.", "버전 정보"); return; }
         message += $"최신 버전: {info.Latest}\n{info.ReleaseNotes}\n{updateStatus}";
         if (info.Required(CurrentVersion)) message += "\n이 버전은 더 이상 지원되지 않습니다. 업데이트 후 실행해 주세요.";
@@ -195,7 +197,8 @@ public partial class MainWindow
             { session.Status = "로그아웃 중 문서가 바뀌어 열어 둔 내용을 유지했습니다. 저장하려면 다시 로그인해 주세요."; return; }
             foreach (var d in openDocuments.ToArray()) RemoveDocument(d);
             SetSession(BlankDocument(), null, false);
-            if (!EnsureAccount(allowInstitution: true)) { allowClose = true; Close(); return; }
+            IsEnabled = locked.First(item => ReferenceEquals(item.Window, this)).WasEnabled;
+            if (!await EnsureAccountAsync(allowInstitution: true)) { allowClose = true; if (IsVisible) Close(); return; }
             LoadAccountPreferences();
         }
         finally
@@ -205,7 +208,7 @@ public partial class MainWindow
     }
     private async Task NewTextDocumentAsync(string text = "", string title = "제목 없음.smj")
     {
-        if (fileBusy || !smoke && !EnsureAccount()) return;
+        if (fileBusy || !smoke && !await EnsureAccountAsync()) return;
         var model = BlankDocument(); model.Title = title; model.ActiveBlock!.Source = text;
         await ConfigureTextJobAsync(model);
         model.IsDirty = text.Length > 0;

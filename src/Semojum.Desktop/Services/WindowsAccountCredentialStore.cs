@@ -7,14 +7,6 @@ using Semojum.Core.Integration;
 
 namespace Semojum.Desktop.Services;
 
-internal interface IAccountCredentialStore
-{
-    SessionCredential? Read();
-    void Write(SessionCredential credential);
-    void Delete();
-    void DeleteIfMatches(SessionCredential credential);
-}
-
 /// <summary>Windows Credential Manager stores the refresh token for the current Windows user on this device.</summary>
 internal sealed class WindowsAccountCredentialStore(string target = "Semojum/Desktop/Session") : IAccountCredentialStore
 {

@@ -18,7 +18,7 @@ public sealed class UsageDialog : CompactDialog
     public string? FileName { get; private set; }
     public bool LogoutRequested { get; private set; }
     internal TabControl Navigation { get; } = new() { TabStripPlacement = Dock.Left };
-    public UsageDialog(SemojumApiClient api, string workInfo = "") : base("마이페이지 - 세모점", 1440, 1000, editor: true)
+    public UsageDialog(SemojumApiClient api, string workInfo = "") : base("마이페이지 - 누리닷", 1440, 1000, editor: true)
     {
         Background = Brushes.White; ApplyCaptionDesign(); var tabs = Navigation;
         tabs.Style = (Style)FindResource("UsageNavigation");
@@ -31,8 +31,7 @@ public sealed class UsageDialog : CompactDialog
         var helpItem = new MenuItem { Header = "도움말" }; helpItem.Click += (_, _) => new HelpWindow("사용량과 작업 이력") { Owner = this }.Show(); infoMenu.Items.Add(helpItem);
         DockPanel.SetDock(menu, Dock.Top); Root.Children.Add(menu);
         var statusLine = new DockPanel { Margin = new(20, 0, 16, 0) };
-        var login = new TextBlock { Text = api.Account?.LoginId ?? "로그인 안 됨", HorizontalAlignment = HorizontalAlignment.Right, Foreground = (Brush)FindResource("Muted") };
-        DockPanel.SetDock(login, Dock.Right); statusLine.Children.Add(login); var balanceStatus = new TextBlock(); statusLine.Children.Add(balanceStatus);
+        var balanceStatus = new TextBlock(); statusLine.Children.Add(balanceStatus);
         var statusBorder = new Border { Height = 24, Background = new SolidColorBrush(Color.FromRgb(243, 243, 243)), BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(0, 1, 0, 0), Child = statusLine };
         DockPanel.SetDock(statusBorder, Dock.Bottom); Root.Children.Add(statusBorder); Body(tabs);
         var panel = new StackPanel { Margin = new(24, 20, 24, 24) }; TextElement.SetFontWeight(panel, FontWeights.Normal);

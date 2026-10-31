@@ -5,11 +5,19 @@ using System.Windows.Controls;
 using System.Windows.Automation;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using System.Windows.Data;
+using System.Globalization;
+using Semojum.Core;
 
 namespace Semojum.Desktop.Dialogs;
 
 public sealed class ImageOrderDialog : CompactDialog
 {
+    private sealed class DisplayPathConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is string path ? DisplayFileName.Normalize(path) : value;
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+    }
     public string[] Paths { get; private set; }
     public ImageOrderDialog(string[] paths) : base("이미지 올리기", 720, 480)
     {
@@ -21,6 +29,9 @@ public sealed class ImageOrderDialog : CompactDialog
         var content = new Grid(); content.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) }); panel.Children.Add(content);
         var items = new ListBox { ItemsSource = order, AllowDrop = true, Margin = new(0, 0, 8, 0) };
+        var label = new FrameworkElementFactory(typeof(TextBlock));
+        label.SetBinding(TextBlock.TextProperty, new Binding { Converter = new DisplayPathConverter() });
+        items.ItemTemplate = new DataTemplate { VisualTree = label };
         AutomationProperties.SetName(items, "이미지 순서"); content.Children.Add(items);
         var image = new Image { Margin = new(8), Stretch = System.Windows.Media.Stretch.Uniform };
         AutomationProperties.SetName(image, "선택한 이미지 미리보기");
@@ -30,7 +41,7 @@ public sealed class ImageOrderDialog : CompactDialog
             if (items.SelectedItem is not string path) return;
             try { var bitmap = new BitmapImage(); bitmap.BeginInit(); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.DecodePixelWidth = 1000; bitmap.UriSource = new Uri(path, UriKind.Absolute); bitmap.EndInit(); bitmap.Freeze(); image.Source = bitmap; Status.Text = ""; }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or FileFormatException or ArgumentException)
-            { image.Source = null; Status.Text = "미리보기를 읽을 수 없습니다: " + Path.GetFileName(path); }
+            { image.Source = null; Status.Text = "미리보기를 읽을 수 없습니다: " + DisplayFileName.Normalize(Path.GetFileName(path)); }
         };
         items.SelectedIndex = order.Count > 0 ? 0 : -1;
         void MoveTo(int from, int to)

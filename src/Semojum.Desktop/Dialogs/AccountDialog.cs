@@ -14,11 +14,16 @@ namespace Semojum.Desktop.Dialogs;
 
 public sealed class AccountDialog : Window
 {
+    private Grid? embeddedScreen;
+    private PasswordBox? embeddedPassword;
+    private CancellationTokenSource? embeddedLifetime;
+    private TaskCompletionSource<bool>? embeddedResult;
     public AccountDialog(SemojumApiClient api) : this(api, null, null) { }
     internal AccountDialog(SemojumApiClient api, IAccountCredentialStore? credentials, string? initialMessage, bool allowInstitution = false)
     {
-        Title = "세모점 로그인"; Width = 1440; Height = 1000; MinWidth = 420; MinHeight = 400;
+        Title = "누리닷 로그인"; Width = 1440; Height = 1000; MinWidth = 420; MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; ResizeMode = ResizeMode.CanResize; WindowStyle = WindowStyle.None;
+        WindowBounds.UseMonitorWorkArea(this);
         WindowChrome.SetWindowChrome(this, new WindowChrome { CaptionHeight = 32, GlassFrameThickness = new(0), CornerRadius = new(0),
             ResizeBorderThickness = new(4), UseAeroCaptionButtons = false });
         Background = Brush("#F7F9FC");
@@ -38,9 +43,9 @@ public sealed class AccountDialog : Window
         Caption("min", "최소화", () => SystemCommands.MinimizeWindow(this));
         Caption("max", "최대화 / 복원", () => { if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this); else SystemCommands.MaximizeWindow(this); });
         Caption("close", "닫기", () => SystemCommands.CloseWindow(this));
-        heading.Children.Add(new TextBlock { Text = "세모점", FontSize = 12, Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+        heading.Children.Add(new TextBlock { Text = "누리닷", FontSize = 12, Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
         root.Children.Add(new Border { Background = Brush("#F3F3F3"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 0, 0, 1), Child = heading });
-        var screen = new Grid { Background = Brush("#F7F9FC") }; Grid.SetRow(screen, 1); root.Children.Add(screen);
+        var screen = new Grid { Background = Brush("#F7F9FC") }; embeddedScreen = screen; Grid.SetRow(screen, 1); root.Children.Add(screen);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalContentAlignment = VerticalAlignment.Center, HorizontalContentAlignment = HorizontalAlignment.Center };
         screen.Children.Add(scroll);
@@ -58,13 +63,13 @@ public sealed class AccountDialog : Window
             Grid.SetRow(child, row); if (inset && child is FrameworkElement element) element.Margin = new(59, 0, 59, 0); fields.Children.Add(child);
         }
         var logo = DesignIcon("login-logo.svg", 96); logo.HorizontalAlignment = HorizontalAlignment.Center;
-        AutomationProperties.SetName(logo, "세모점 로고"); Place(logo, 1, false);
-        Place(new TextBlock { Text = "세모점", FontSize = 28, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center }, 3, false);
+        AutomationProperties.SetName(logo, "누리닷 로고"); Place(logo, 1, false);
+        Place(new TextBlock { Text = "누리닷", FontSize = 28, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center }, 3, false);
         Place(new TextBlock { Text = "아이디", FontSize = 12, Foreground = Brush("#5F5F5F") }, 5);
         var login = new TextBox { BorderThickness = new(0), Background = Brushes.Transparent, Padding = new(11, 0, 11, 0), VerticalContentAlignment = VerticalAlignment.Center };
         AutomationProperties.SetName(login, "아이디"); Place(InputField(login), 7);
         Place(new TextBlock { Text = "비밀번호", FontSize = 12, Foreground = Brush("#5F5F5F") }, 9);
-        var password = new PasswordBox { BorderThickness = new(0), Background = Brushes.Transparent, Padding = new(11, 0, 11, 0), VerticalContentAlignment = VerticalAlignment.Center };
+        var password = new PasswordBox { BorderThickness = new(0), Background = Brushes.Transparent, Padding = new(11, 0, 11, 0), VerticalContentAlignment = VerticalAlignment.Center }; embeddedPassword = password;
         AutomationProperties.SetName(password, "비밀번호"); Place(InputField(password), 11);
         var error = new TextBlock { Text = initialMessage ?? "", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new(59, 6, 59, 0) };
         error.Visibility = string.IsNullOrEmpty(error.Text) ? Visibility.Collapsed : Visibility.Visible;
@@ -87,13 +92,14 @@ public sealed class AccountDialog : Window
                 BorderBrush = Brush("#EAEAEA"), Style = RoundedButtonStyle() };
             AutomationProperties.SetName(button, label); button.Click += (_, _) => action(); return button;
         }
-        links.Children.Add(Link("공지사항", "login-bell.svg", () => new PublicNoticesDialog(api) { Owner = this }.ShowDialog()));
-        var inquiry = Link("문의하기", "login-mail.svg", () => new PublicInquiryDialog(api) { Owner = this }.ShowDialog()); inquiry.Margin = new(16, 0, 0, 0);
+        Window ActiveOwner() => Window.GetWindow(screen) ?? this;
+        links.Children.Add(Link("공지사항", "login-bell.svg", () => new PublicNoticesDialog(api) { Owner = ActiveOwner() }.ShowDialog()));
+        var inquiry = Link("문의하기", "login-mail.svg", () => new PublicInquiryDialog(api) { Owner = ActiveOwner() }.ShowDialog()); inquiry.Margin = new(16, 0, 0, 0);
         links.Children.Add(inquiry); group.Children.Add(links);
         var version = new TextBlock { Text = "V" + MainWindow.CurrentVersion.ToString(3), FontSize = 12, Foreground = Brush("#8A8A8A"),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new(0, 0, 40, 20), IsHitTestVisible = false };
         screen.Children.Add(version);
-        var lifetime = new CancellationTokenSource();
+        var lifetime = new CancellationTokenSource(); embeddedLifetime = lifetime;
         Closed += (_, _) => { lifetime.Cancel(); password.Clear(); };
         submit.Click += async (_, _) =>
         {
@@ -136,7 +142,7 @@ public sealed class AccountDialog : Window
                         error.Text = "기존 로그인 정보를 삭제하지 못해 로그인을 취소했습니다."; return;
                     }
                 }
-                DialogResult = true;
+                if (embeddedResult is { } result) result.TrySetResult(true); else DialogResult = true;
             }
             catch (OperationCanceledException) when (!lifetime.IsCancellationRequested)
             { error.Text = "서버 응답이 지연되었습니다. 연결 상태를 확인하고 다시 시도해 주세요."; }
@@ -145,8 +151,8 @@ public sealed class AccountDialog : Window
             {
                 if (ex.Code is "AUTH4001" or "AUTH4006")
                 {
-                    var rejected = FileNotices.LoginRejected(ex); rejected.Owner = this; rejected.ShowDialog();
-                    if (rejected.Choice == 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
+                    var rejected = FileNotices.LoginRejected(ex); rejected.Owner = ActiveOwner(); rejected.ShowDialog();
+                    if (rejected.Choice == 1) new PublicInquiryDialog(api) { Owner = ActiveOwner() }.ShowDialog();
                     password.Focus(); password.SelectAll();
                     return;
                 }
@@ -162,7 +168,34 @@ public sealed class AccountDialog : Window
             catch (Exception) { error.Text = "로그인 응답을 처리하지 못했습니다. 다시 시도해 주세요."; }
             finally { submit.IsEnabled = true; remember.IsEnabled = credentials is not null; }
         };
-        Loaded += (_, _) => { WindowBounds.Fit(this); login.Focus(); };
+        Loaded += (_, _) => WindowBounds.Fit(this);
+        screen.Loaded += (_, _) => login.Focus();
+    }
+
+    internal async Task<bool> ShowEmbeddedAsync(MainWindow owner, bool allowCancel = false)
+    {
+        var screen = embeddedScreen ?? throw new InvalidOperationException("로그인 화면을 만들지 못했습니다.");
+        if (screen.Parent is not Panel parent) throw new InvalidOperationException("로그인 화면이 이미 사용 중입니다.");
+        parent.Children.Remove(screen);
+        var completion = embeddedResult = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (allowCancel)
+        {
+            var back = new Button { Content = "편집기로 돌아가기", HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top, Margin = new(20), Padding = new(12, 4, 12, 4) };
+            AutomationProperties.SetAutomationId(back, "EmbeddedLoginCancel");
+            back.Click += (_, _) => completion.TrySetResult(false);
+            screen.Children.Add(back);
+        }
+        void OwnerClosed(object? _, EventArgs __) => completion.TrySetResult(false);
+        owner.Closed += OwnerClosed;
+        try { return await owner.ShowEmbeddedScreenAsync(screen, "누리닷 로그인", completion.Task); }
+        finally
+        {
+            owner.Closed -= OwnerClosed;
+            embeddedLifetime?.Cancel(); embeddedPassword?.Clear();
+            embeddedResult = null;
+            Close();
+        }
     }
 
     private static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;

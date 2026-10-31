@@ -3,16 +3,16 @@ using System.IO;
 using System.Net.Http;
 using Semojum.Core.Integration;
 
-namespace Semojum.Desktop.Services;
+namespace Semojum.Feature.Account;
 
-internal sealed record AutomaticLoginResult(AccountIdentity? Account, string? Message);
-internal static class AutomaticLogin
+public sealed record AutomaticLoginResult(AccountIdentity? Account, string? Message);
+public static class AutomaticLogin
 {
-    internal static bool IsEditorAllowed(AccountIdentity account) => account.Role != "ROLE_ORG_ADMIN" && account is not { Role: "ROLE_ADMIN", AdminScope: "WEB" };
-    internal static bool IsDesktopAllowed(AccountIdentity account) => account.Role == "ROLE_ORG_ADMIN" || IsEditorAllowed(account);
-    internal static bool IsSameDesktopArea(AccountIdentity? current, AccountIdentity next) =>
+    public static bool IsEditorAllowed(AccountIdentity account) => account.Role != "ROLE_ORG_ADMIN" && account is not { Role: "ROLE_ADMIN", AdminScope: "WEB" };
+    public static bool IsDesktopAllowed(AccountIdentity account) => account.Role == "ROLE_ORG_ADMIN" || IsEditorAllowed(account);
+    public static bool IsSameDesktopArea(AccountIdentity? current, AccountIdentity next) =>
         current?.Role == "ROLE_ORG_ADMIN" ? next.Role == "ROLE_ORG_ADMIN" : IsEditorAllowed(next);
-    internal static async Task<string?> RememberAsync(SemojumApiClient api, IAccountCredentialStore credentials)
+    public static async Task<string?> RememberAsync(SemojumApiClient api, IAccountCredentialStore credentials)
     {
         try
         {
@@ -27,14 +27,14 @@ internal static class AutomaticLogin
             return "로그인 정보를 안전하게 저장하지 못해 로그인을 취소했습니다. " + ex.Message;
         }
     }
-    internal static async Task LogoutAsync(SemojumApiClient api, IAccountCredentialStore credentials)
+    public static async Task LogoutAsync(SemojumApiClient api, IAccountCredentialStore credentials)
     {
         var credential = api.GetOwnedSessionCredential();
         if (credential is not null) credentials.DeleteIfMatches(credential);
         try { await api.LogoutAsync(); }
         catch (Exception ex) when (ex is HttpRequestException or SemojumApiException) { }
     }
-    internal static async Task<AutomaticLoginResult> RestoreAsync(SemojumApiClient api, IAccountCredentialStore credentials)
+    public static async Task<AutomaticLoginResult> RestoreAsync(SemojumApiClient api, IAccountCredentialStore credentials)
     {
         SessionCredential? credential = null;
         try

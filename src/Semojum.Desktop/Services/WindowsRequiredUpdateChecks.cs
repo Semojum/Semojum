@@ -106,16 +106,17 @@ internal static class WindowsRequiredUpdateChecks
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
             timer.Tick += (_, _) =>
             {
-                var dialog = Application.Current.Windows.OfType<AccountDialog>().FirstOrDefault(d => d.Owner == window && d.IsVisible);
-                if (dialog is null) return;
-                loginUsable = dialog.IsEnabled; dialog.Close();
+                if (window.Title != "누리닷 로그인") return;
+                loginUsable = window.IsEnabled && window.WindowState == WindowState.Maximized
+                    && !Application.Current.Windows.OfType<AccountDialog>().Any(d => d.IsVisible);
+                window.PrepareSmokeShutdown(); window.Close();
             };
             try
             {
                 timer.Start();
                 var startup = (Task)typeof(MainWindow).GetMethod("StartAccountAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!;
                 await startup.WaitAsync(TimeSpan.FromSeconds(8));
-                check(loginUsable, "The login dialog remains usable while the editor window is disabled during startup");
+                check(loginUsable, "Startup displays a usable maximized login in the existing window");
             }
             finally { timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); if (window.IsVisible) window.Close(); }
         }

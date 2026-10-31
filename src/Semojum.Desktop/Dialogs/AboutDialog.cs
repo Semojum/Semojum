@@ -6,7 +6,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class AboutDialog : CompactDialog
 {
     internal TextBlock EngineVersion { get; } = new() { Text = "확인 중…" };
-    public AboutDialog(string version, Func<Task<string>> engineVersion) : base("세모점 정보", 440, 278)
+    public AboutDialog(string version, Func<Task<string>> engineVersion) : base("누리닷 정보", 440, 278)
     {
         var body = new StackPanel { Margin = new(16, 7, 16, 0) }; Body(body);
         void Info(string label, FrameworkElement value)
@@ -20,7 +20,7 @@ public sealed class AboutDialog : CompactDialog
         var engine = new StackPanel { Orientation = Orientation.Horizontal };
         engine.Children.Add(new TextBlock { Text = "Semojum V", FontSize = 14 }); EngineVersion.FontSize = 14; engine.Children.Add(EngineVersion);
         Info("점역 엔진", engine);
-        Info("운영 기관", new TextBlock { Text = "세모점", FontSize = 14 });
+        Info("운영 기관", new TextBlock { Text = "누리닷", FontSize = 14 });
         Info("연락처", new TextBlock { Text = "contact@semo-jum.com", FontSize = 14 });
         OnLoad(async () =>
         {

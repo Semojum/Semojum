@@ -4,7 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using SharpVectors.Converters;
 
-namespace Semojum.Desktop.Controls;
+namespace Semojum.Feature.Editor.Wpf;
 
 /// <summary>Navigation for actual page identities; missing and unavailable pages are never invented.</summary>
 public sealed class PanelPageBar : UserControl
@@ -17,8 +17,8 @@ public sealed class PanelPageBar : UserControl
     private HashSet<int> available = [];
     private int? current;
     private string stateKey = "";
-    internal event Action<int>? PageRequested;
-    internal event Action? InvalidPageRequested;
+    public event Action<int>? PageRequested;
+    public event Action? InvalidPageRequested;
     public PanelPageBar()
     {
         Height = 32;
@@ -41,11 +41,11 @@ public sealed class PanelPageBar : UserControl
         layout.Children.Add(total); layout.Children.Add(numbers); layout.Children.Add(next);
         SizeChanged += (_, _) => numbers.Visibility = ActualWidth >= 350 ? Visibility.Visible : Visibility.Collapsed;
     }
-    internal void SetIcons(string left, string right)
+    public void SetIcons(string left, string right)
     {
         previous.Content = Icon(left); next.Content = Icon(right);
     }
-    internal void SetPages(IEnumerable<int> pageNumbers, IEnumerable<int> navigable, int? selected)
+    public void SetPages(IEnumerable<int> pageNumbers, IEnumerable<int> navigable, int? selected)
     {
         var actual = pageNumbers.Distinct().Order().ToArray(); var allowed = navigable.ToHashSet();
         var key = string.Join(",", actual) + "|" + string.Join(",", allowed.Order()) + "|" + selected;

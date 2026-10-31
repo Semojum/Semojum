@@ -47,7 +47,7 @@ public sealed class WorkFolderDialog : Window
         {
             var listed = LocalWorkspace.ListFolder(folder);
             CurrentFolder = Path.GetFullPath(folder); entries.ItemsSource = listed; location.Text = CurrentFolder;
-            error.Text = listed.Length == 0 ? "이 폴더에는 세모점 작업 파일이나 하위 폴더가 없습니다." : "";
+            error.Text = listed.Length == 0 ? "이 폴더에는 누리닷 작업 파일이나 하위 폴더가 없습니다." : "";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         { error.Text = "폴더를 읽지 못했습니다. 다른 폴더를 선택해 주세요.\n" + ex.Message; }

@@ -3,9 +3,11 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 
-namespace Semojum.Desktop.Dialogs;
+using Semojum.Desktop.Dialogs;
 
-internal sealed class InstitutionReceiptVisibilityConverter : IValueConverter
+namespace Semojum.Feature.Institution.Presentation;
+
+public sealed class InstitutionReceiptVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
@@ -15,11 +17,11 @@ internal sealed class InstitutionReceiptVisibilityConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
 }
 
-internal sealed class InstitutionStatusTextConverter : IValueConverter
+public sealed class InstitutionStatusTextConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => Label(value as string, parameter as string);
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
-    internal static string Label(string? value, string? kind) => (kind, value) switch
+    public static string Label(string? value, string? kind) => (kind, value) switch
     {
         ("account", "ACTIVE") => "활성",
         ("account", "INACTIVE") => "잠김",
@@ -31,7 +33,7 @@ internal sealed class InstitutionStatusTextConverter : IValueConverter
     };
 }
 
-internal sealed class InstitutionStatusBrushConverter : IValueConverter
+public sealed class InstitutionStatusBrushConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => FigmaDialogElements.Brush((parameter as string, value as string) switch
     { ("account", "ACTIVE") => "#0F7B0F", ("notice", "ORG") => "#C42B1C", _ => "#5F5F5F" });

@@ -19,6 +19,22 @@ internal static class WindowsFileDialogDesignChecks
         var general = new BrailleForm("builtin:GENERAL_BOOK", "일반 도서", true, null, new(), new());
         var saved = new BrailleForm("user:sample", "내 양식", false, null, new(), new());
         var open = new OpenDocumentDialog([general, saved], new AccountDefaults(new(), saved.FormId, "odd"));
+        check(!open.FileNames.Text.Contains("DOCX", StringComparison.OrdinalIgnoreCase), "The upload picker does not advertise DOCX");
+        try { open.SetPaths(["document.docx"]); check(false, "The upload picker rejects DOCX"); }
+        catch (ArgumentException) { check(true, "The upload picker rejects DOCX"); }
+        var decomposed = "가나다.txt".Normalize(System.Text.NormalizationForm.FormD);
+        open.SetPaths([decomposed]);
+        check(open.FileNames.Text == "가나다.txt" && open.Paths.Single() == decomposed,
+            "The selected filename displays composed Korean while retaining the original path");
+        var imagePath = Path.Combine(Path.GetTempPath(), "가.png".Normalize(System.Text.NormalizationForm.FormD));
+        var imageOrder = new ImageOrderDialog([imagePath]); imageOrder.Show(); imageOrder.UpdateLayout();
+        try
+        {
+            var imageList = Descendants(imageOrder).OfType<ListBox>().Single(l => AutomationProperties.GetName(l) == "이미지 순서");
+            check(imageList.Items.Cast<string>().Single() == imagePath && Descendants(imageList).OfType<TextBlock>().Any(t => t.Text.Contains("가.png", StringComparison.Ordinal)),
+                "Image ordering displays composed Korean without changing the selected file path");
+        }
+        finally { imageOrder.Close(); }
         var missingName = "missing-" + Guid.NewGuid().ToString("N") + ".txt";
         open.SetPaths([missingName]); open.Show();
         try

@@ -5,6 +5,7 @@ if (args.Contains("--sidecar-fixture")) return await IntegrationChecks.RunFixtur
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("Board feature retains its last loaded state on failure and cancellation", FeatureBoardChecks.RunAsync),
+    ("Decomposed Korean filenames display composed while keeping their actual path", FileNameNormalizationChecks.RunAsync),
     ("Navigation validates absolute, relative, missing and overflow page numbers", () => Sync(() =>
     {
         var first = new EditorBlock { Id = 1, Page = 12, Source = "abc" };

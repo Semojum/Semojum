@@ -11,15 +11,15 @@ using static System.Windows.UIElement;
 namespace Semojum.Desktop.Dialogs;
 
 // Common Figma primitives shared by dialogs; screen-specific layout remains in each dialog.
-internal static class FigmaDialogElements
+public static class FigmaDialogElements
 {
-    internal static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;
-    internal static SvgViewbox DesignIcon(string name, double width, double height) => new()
+    public static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;
+    public static SvgViewbox DesignIcon(string name, double width, double height) => new()
     {
         Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{name}"),
         Width = width, Height = height, Stretch = Stretch.None
     };
-    internal static ControlTemplate SurfaceTemplate(double radius, bool stretchContent = false)
+    public static ControlTemplate SurfaceTemplate(double radius, bool stretchContent = false)
     {
         var root = new FrameworkElementFactory(typeof(Grid));
         var outer = new FrameworkElementFactory(typeof(Border), "FocusOuter"); outer.SetValue(Border.CornerRadiusProperty, new CornerRadius(radius + 3));
@@ -39,7 +39,7 @@ internal static class FigmaDialogElements
         focus.Setters.Add(new Setter(VisibilityProperty, Visibility.Visible, "FocusOuter")); focus.Setters.Add(new Setter(VisibilityProperty, Visibility.Visible, "FocusInner")); template.Triggers.Add(focus);
         return template;
     }
-    internal static Style ScopeStyle()
+    public static Style ScopeStyle()
     {
         var border = new FrameworkElementFactory(typeof(Border)); border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
         border.SetValue(Border.BorderThicknessProperty, new Thickness(1));

@@ -86,6 +86,7 @@ internal static class WindowsQa4Checks
         WindowsSpacingPreviewChecks.Run(owner, check);
         await WindowsResponsiveChecks.RunAsync(check);
         await WindowsCaptionChecks.RunAsync(check);
+        await WindowsEmbeddedScreenChecks.RunAsync(check);
         await WindowsLongDocumentChecks.RunAsync(directory, check);
         await WindowsMemoDeleteChecks.RunAsync(directory, check);
         await WindowsMemoRestoreChecks.RunAsync(directory, check);

@@ -38,14 +38,12 @@ internal static class WindowsOwnedModalChecks
                     Trace("range-loaded");
                     var ownerContent = (UIElement)owner.Content; var layer = AdornerLayer.GetAdornerLayer(ownerContent);
                     seen = layer?.GetAdorners(ownerContent)?.Any(a => AutomationProperties.GetAutomationId(a) == "FigmaModalBackdrop") == true;
-                    var expectedX = owner.Left + (owner.ActualWidth - range.ActualWidth) / 2;
-                    var expectedY = owner.Top + (owner.ActualHeight - range.ActualHeight) * .45;
-                    check(Math.Abs(range.Left - expectedX) < 3 && Math.Abs(range.Top - expectedY) < 3, "An owned modal uses the Figma horizontal center and 45-percent vertical placement");
+                    check(NativeCentersMatch(owner, range), "An owned modal is centered on its owner in screen pixels");
                     if (Environment.GetEnvironmentVariable("MODAL_COMPOSITE_CAPTURE") is { Length: > 0 } capture) CaptureComposite(owner, range, capture); Trace("composite-done");
                     var beforeX = range.Left; var beforeY = range.Top; owner.Left += 20; owner.Top += 10;
                     followed = Math.Abs(range.Left - beforeX - 20) < 3 && Math.Abs(range.Top - beforeY - 10) < 3;
                     Trace("owner-move-done"); owner.Width = 900; owner.Height = 550; owner.UpdateLayout(); Trace("owner-resize-done");
-                    resized = Math.Abs(range.Left - (owner.Left + (owner.ActualWidth - range.ActualWidth) / 2)) < 3 && Math.Abs(range.Top - (owner.Top + (owner.ActualHeight - range.ActualHeight) * .45)) < 3;
+                    resized = NativeCentersMatch(owner, range);
                     range.Left += 15; range.Top += 10; var movedX = range.Left; var movedY = range.Top; owner.Left += 10; Trace("manual-move-done");
                     manualMove = Math.Abs(range.Left - movedX) < 3 && Math.Abs(range.Top - movedY) < 3;
                     nested = new NoticeDialog("검증", "중첩 대화상자", ["확인"]) { Owner = range }; Trace("nested-created");
@@ -93,6 +91,14 @@ internal static class WindowsOwnedModalChecks
     private static void Trace(string stage)
     { if (Environment.GetEnvironmentVariable("MODAL_TRACE") is { Length: > 0 } path) File.AppendAllText(path, stage + Environment.NewLine); }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowEnabled(IntPtr hwnd);
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { internal int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+    private static bool NativeCentersMatch(Window owner, Window dialog)
+    {
+        if (!GetWindowRect(new WindowInteropHelper(owner).Handle, out var parent) || !GetWindowRect(new WindowInteropHelper(dialog).Handle, out var child)) return false;
+        return Math.Abs(parent.Left + parent.Right - child.Left - child.Right) <= 4
+            && Math.Abs(parent.Top + parent.Bottom - child.Top - child.Bottom) <= 4;
+    }
     private static void CaptureComposite(Window owner, Window child, string path)
     {
         owner.UpdateLayout(); child.UpdateLayout();

@@ -13,6 +13,10 @@ internal static class WindowsCaptionChecks
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        check(WindowBounds.MaximizeArea(0, 0, 0, 0, 1920, 1040) == (0, 0, 1920, 1040),
+            "A bottom taskbar remains outside the maximized work area");
+        check(WindowBounds.MaximizeArea(-1920, 0, -1860, 0, 0, 1080) == (60, 0, 1860, 1080),
+            "A side taskbar and negative monitor origin use the current monitor's work area");
         var window = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { Width = 1440, Height = 900 };
         window.Show();
         try
@@ -37,9 +41,22 @@ internal static class WindowsCaptionChecks
             check(logo is { Width: 16, Height: 16, CornerRadius.TopLeft: 4, Child: TextBlock { Text: "S" } }
                 && logo.Background is SolidColorBrush { Color: var color } && color == Color.FromRgb(0, 95, 184),
                 "Editor caption shows the 16px blue Figma S logo");
-            window.Title = "문서 - 세모점";
-            check(Descendants(window).OfType<TextBlock>().Any(t => t.Text == "문서 - 세모점"),
+            window.Title = "문서 - 누리닷";
+            check(Descendants(window).OfType<TextBlock>().Any(t => t.Text == "문서 - 누리닷"),
                 "Editor caption retains the real document title and app name");
+            window.WindowState = WindowState.Maximized;
+            await Task.Delay(150); window.UpdateLayout();
+            var hwnd = new WindowInteropHelper(window).Handle;
+            if (IsZoomed(hwnd) && WindowBounds.TryGetWorkArea(window, out var workArea) && window.StatusBar.IsVisible)
+            {
+                var bottom = window.StatusBar.PointToScreen(new Point(window.StatusBar.ActualWidth, window.StatusBar.ActualHeight));
+                var top = window.StatusBar.PointToScreen(new Point(0, 0));
+                check(top.Y >= workArea.Top - 2 && bottom.Y <= workArea.Bottom + 2 && bottom.X <= workArea.Right + 2,
+                    $"Maximized status bar fits within the current monitor work area (bottom {bottom.Y:F0}, work bottom {workArea.Bottom:F0})");
+            }
+            else Console.WriteLine("SKIP: the host did not expose a maximized native window for status-bar inspection.");
+            window.WindowState = WindowState.Normal;
+            await Task.Delay(100); window.UpdateLayout();
             if (Environment.GetEnvironmentVariable("CAPTION_CAPTURE") is { Length: > 0 } capture)
                 await WindowsSmoke.RenderElementAsync(window, capture);
             if (Environment.GetEnvironmentVariable("CAPTION_INTERACTIVE_CHECKS") == "1")
@@ -128,5 +145,6 @@ internal static class WindowsCaptionChecks
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr window);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(IntPtr window, int index);
 }

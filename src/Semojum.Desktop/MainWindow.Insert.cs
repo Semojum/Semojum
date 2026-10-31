@@ -33,6 +33,7 @@ public partial class MainWindow
         PanelGrid.LayoutUpdated += (_, _) => UpdateDraftDivider();
         PreviewKeyDown += (_, e) =>
         {
+            if (embeddedScreenActive) return;
             if (DraftDock.Visibility != Visibility.Visible) return;
             if (e.Key == Key.Escape) { CloseDraftDock(); e.Handled = true; }
             else if (e.Key == Key.Enter && DraftDock.IsKeyboardFocusWithin) { ApplyDraftDock(); e.Handled = true; }
@@ -424,8 +425,7 @@ public partial class MainWindow
         {
             ("정렬", ["왼쪽정렬", "가운데정렬", "오른쪽정렬"]),
             ("점자 줄", ["상단줄", "중단줄", "하단줄", "상단굵은줄", "하단굵은줄", "표시작", "표중앙", "표끝", "표구분선", "표지시작", "표지세로", "표지끝"]),
-            ("한글 강조", ["강조", "굵은", "색강조", "취소선"]),
-            ("빈칸", ["밑줄빈칸", "네모빈칸"])
+            ("한글 강조", ["강조", "굵은", "색강조", "취소선"])
         };
         MenuItem Item(string name)
         {
@@ -558,10 +558,10 @@ public partial class MainWindow
         new AppliedRulesDialog(api, rows, block.HasManualBraille || block.Translation?.SourceText is { } source && source != block.Source,
             block.Source, editor.SelectionLength > 0 ? editor.SelectedText : block.Braille, $"{at.Line}줄 {at.Column}칸") { Owner = this }.ShowDialog();
     }
-    private void RuleSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    private async void RuleSearch_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key != System.Windows.Input.Key.Enter) return;
         e.Handled = true;
-        if (EnsureAccount()) new RuleDialog(api, [], "", "", RuleSearch.Text.Trim()) { Owner = this }.ShowDialog();
+        if (await EnsureAccountAsync()) new RuleDialog(api, [], "", "", RuleSearch.Text.Trim()) { Owner = this }.ShowDialog();
     }
 }

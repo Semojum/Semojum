@@ -17,7 +17,7 @@ internal static class WindowsInteractiveFocusWait
         var showInTaskbar = window.ShowInTaskbar;
         try
         {
-            window.Title = $"세모점 검사: {name} — 이 창을 선택하세요";
+            window.Title = $"누리닷 검사: {name} — 이 창을 선택하세요";
             window.ShowInTaskbar = true;
             Console.WriteLine($"WAIT FOR FOCUS: {name}. Select the test window titled '{window.Title}' within 45 seconds; do not interact with its contents.");
             var handle = new WindowInteropHelper(window).Handle;

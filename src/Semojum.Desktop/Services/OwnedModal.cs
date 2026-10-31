@@ -37,10 +37,8 @@ internal static class OwnedModal
         void Position()
         {
             if (!owner.IsVisible || !dialog.IsVisible || manuallyMoved) return;
-            var left = owner.Left + Math.Max(0, owner.ActualWidth - dialog.ActualWidth) / 2;
-            var top = owner.Top + Math.Max(0, owner.ActualHeight - dialog.ActualHeight) * .45;
             moving = true;
-            try { dialog.Left = left; dialog.Top = top; WindowBounds.Fit(dialog); }
+            try { WindowBounds.Fit(dialog); WindowBounds.CenterOwned(owner, dialog); }
             finally { moving = false; }
         }
         void Loaded(object? _, RoutedEventArgs __) { Position(); ready = true; }

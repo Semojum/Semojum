@@ -11,6 +11,7 @@ namespace Semojum.Desktop.Dialogs;
 /// <summary>Institution administrator's desktop workspace.</summary>
 public sealed partial class InstitutionWindow : CompactDialog
 {
+    private Window ModalOwner => Window.GetWindow(Root) ?? this;
     private readonly SemojumApiClient api;
     private readonly Guid? institutionSessionMarker;
     private readonly Func<Task<bool>> logout;
@@ -36,7 +37,7 @@ public sealed partial class InstitutionWindow : CompactDialog
     internal Button NoticeDetail { get; }
     internal Button OrderDetail { get; }
     internal TextBlock ReceiptAddress { get; } = new() { Foreground = FigmaDialogElements.Brush("#5F5F5F") };
-    internal TextBlock SessionIdentity { get; } = new() { Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+    internal TextBlock SessionIdentity { get; } = new() { Visibility = Visibility.Collapsed, Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
     internal TextBlock StatusSummary { get; } = new() { Text = "기관 정보 없음", Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     internal StackPanel Chart { get; } = new() { Orientation = Orientation.Horizontal };
     internal TextBlock ChartEmpty { get; } = new() { Text = "월별 사용량 정보 없음", Foreground = FigmaDialogElements.Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap };
@@ -56,17 +57,22 @@ public sealed partial class InstitutionWindow : CompactDialog
     internal Button Refresh { get; }
     internal MenuItem LogoutItem { get; }
 
-    public InstitutionWindow(SemojumApiClient api, Func<Task<bool>> logout) : base("기관 관리 - 세모점", 1440, 1000, editor: true)
+    public InstitutionWindow(SemojumApiClient api, Func<Task<bool>> logout) : base("기관 관리 - 누리닷", 1440, 1000, editor: true)
     {
         this.api = api; this.logout = logout; institutionSessionMarker = api.SessionMarker;
-        MinWidth = 480; MinHeight = 360; ApplyCaption();
+        MinWidth = 480; MinHeight = 360; Root.Background = Brushes.White; ApplyCaption();
         var menu = new Menu { Height = 32, Padding = new(4, 0, 0, 0) };
         var file = new MenuItem { Header = "파일(_F)", Width = 64 }; menu.Items.Add(file);
         LogoutItem = new MenuItem { Header = "로그아웃" }; LogoutItem.Click += async (_, _) => await LogoutAsync(); file.Items.Add(LogoutItem);
         var exit = new MenuItem { Header = "닫기" }; exit.Click += (_, _) => Close(); file.Items.Add(exit);
         menu.Items.Add(new MenuItem { Header = "보기(_V)", Width = 64 });
         var information = new MenuItem { Header = "정보(_A)", Width = 64 }; menu.Items.Add(information);
-        var help = new MenuItem { Header = "도움말" }; help.Click += (_, _) => new HelpWindow("사용량과 작업 이력") { Owner = this }.Show(); information.Items.Add(help);
+        var help = new MenuItem { Header = "도움말" }; help.Click += (_, _) => new HelpWindow("사용량과 작업 이력") { Owner = ModalOwner }.Show(); information.Items.Add(help);
+        Root.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != System.Windows.Input.Key.F1 || ReferenceEquals(ModalOwner, this)) return;
+            new HelpWindow("사용량과 작업 이력") { Owner = ModalOwner }.Show(); e.Handled = true;
+        };
         DockPanel.SetDock(menu, Dock.Top); Root.Children.Add(menu);
         SessionIdentity.Text = api.Account?.LoginId ?? "로그인 정보 없음";
         var statusLine = new DockPanel(); DockPanel.SetDock(SessionIdentity, Dock.Right); statusLine.Children.Add(SessionIdentity); statusLine.Children.Add(StatusSummary);
@@ -158,7 +164,26 @@ public sealed partial class InstitutionWindow : CompactDialog
         var orderCard = Card("주문 내역", Orders, ReceiptAddress, orderActions); orderCard.MinHeight = 202; content.Children.Add(orderCard);
         content.Children.Add(RequestsExpander);
         Refresh = Button("새로 고침", () => RefreshAsync()); Refresh.Height = 32; content.Children.Add(Refresh);
-        Loaded += async (_, _) => await RefreshAsync();
+        Root.Loaded += async (_, _) => await RefreshAsync();
+    }
+
+    internal async Task ShowEmbeddedAsync(MainWindow owner)
+    {
+        if (Content is not Grid frame || frame.Children.OfType<ContentPresenter>().SingleOrDefault() is not { } presenter || !ReferenceEquals(presenter.Content, Root))
+            throw new InvalidOperationException("기관 관리 화면을 만들지 못했습니다.");
+        presenter.Content = null;
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var closed = false;
+        void OnClosed(object? _, EventArgs __) { closed = true; completion.TrySetResult(true); }
+        void OwnerClosed(object? _, EventArgs __) => completion.TrySetResult(false);
+        Closed += OnClosed; owner.Closed += OwnerClosed;
+        try { await owner.ShowEmbeddedScreenAsync(Root, "누리닷 기관 관리", completion.Task); }
+        finally
+        {
+            owner.Closed -= OwnerClosed;
+            if (!closed) Close();
+            Closed -= OnClosed;
+        }
     }
     private async Task LogoutAsync()
     {

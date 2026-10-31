@@ -39,12 +39,12 @@ public sealed partial class InstitutionWindow
                 Identity.Text = value.OrgName + " · " + value.OrgCode;
                 Allocated.Text = value.CreditAllocated.ToString("N0"); Balance.Text = value.CreditRemaining.ToString("N0");
                 CreditDetail.Text = $"{value.CreditUsed:N0} / {value.CreditAllocated:N0} 크레딧";
-                UsagePercent.Text = UsageRatio(value.CreditAllocated, value.CreditUsed);
+                UsagePercent.Text = InstitutionUsage.UsageRatio(value.CreditAllocated, value.CreditUsed);
                 UsageBar.Visibility = UsagePercent.Text == "정보 없음" ? Visibility.Collapsed : Visibility.Visible;
                 UsageBar.Value = value.CreditAllocated > 0 && value.CreditUsed >= 0 ? Math.Clamp(100d * value.CreditUsed / value.CreditAllocated, 0, 100) : 0;
                 Contract.Text = ValidDate(value.ContractExpiresAt) ? value.ContractExpiresAt! : "정보 없음";
                 ContractDetail.Text = ValidDate(value.ContractStartedAt) ? "시작 " + value.ContractStartedAt : "시작일 정보 없음";
-                ContractRemaining.Text = RemainingDays(value.ContractExpiresAt, TodayInKorea());
+                ContractRemaining.Text = InstitutionUsage.RemainingDays(value.ContractExpiresAt, TodayInKorea());
                 StatusSummary.Text = $"기관 {value.OrgName}  |  남은 크레딧 {value.CreditRemaining:N0}  |  계약 만료 {ContractRemaining.Text}";
                 RenderMonthlyUsage(value.MonthlyUsage);
                 AccountRequest.IsEnabled = CreditRequest.IsEnabled = true; AccountRequest.ToolTip = CreditRequest.ToolTip = "운영자에게 요청을 보냅니다.";
@@ -66,21 +66,6 @@ public sealed partial class InstitutionWindow
         }
         finally { refreshing = false; Refresh.IsEnabled = true; }
     }
-    internal static string UsageRatio(long allocated, long used) => allocated <= 0 || used < 0 ? "정보 없음"
-        : decimal.Round((decimal)used * 100 / allocated, 0, MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture) + "%";
-    internal static decimal? SixMonthAverage(IReadOnlyList<InstitutionMonthlyUsage> months)
-    {
-        if (months.Count != 6 || months.Any(m => m.Credits < 0)) return null;
-        var parsed = new List<DateTime>(6);
-        foreach (var month in months.OrderBy(m => m.Month, StringComparer.Ordinal))
-        {
-            if (!DateTime.TryParseExact(month.Month + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)) return null;
-            parsed.Add(date);
-        }
-        parsed.Sort();
-        if (parsed.Zip(parsed.Skip(1), (a, b) => (long)a.Year * 12 + a.Month + 1 == (long)b.Year * 12 + b.Month).Any(consecutive => !consecutive)) return null;
-        return decimal.Round(months.Sum(m => (decimal)m.Credits) / 6m, 0, MidpointRounding.AwayFromZero);
-    }
     internal void RenderMonthlyUsage(IReadOnlyList<InstitutionMonthlyUsage> months)
     {
         Chart.Children.Clear();
@@ -88,7 +73,7 @@ public sealed partial class InstitutionWindow
         ChartArea.Visibility = usable ? Visibility.Visible : Visibility.Collapsed;
         ChartEmpty.Text = months.Count == 0 ? "월별 사용량 정보 없음" : "월별 사용량을 표시할 수 없습니다.";
         ChartEmpty.Visibility = usable ? Visibility.Collapsed : Visibility.Visible;
-        var average = SixMonthAverage(months);
+        var average = InstitutionUsage.SixMonthAverage(months);
         ChartAverage.Text = average.HasValue ? $"6개월 평균 {average.Value:N0}" : "6개월 평균 정보 없음";
         ChartAverage.ToolTip = ChartAverage.Text;
         if (!usable) { ChartMaximum.Text = ChartMiddle.Text = ChartLower.Text = ""; return; }
@@ -141,17 +126,11 @@ public sealed partial class InstitutionWindow
     }
     private static bool ValidDate(string? date) => DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
     private static DateOnly TodayInKorea() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time")).DateTime);
-    internal static string RemainingDays(string? date, DateOnly today)
-    {
-        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var expires)) return "정보 없음";
-        var days = expires.DayNumber - today.DayNumber;
-        return days > 0 ? $"{days:N0}일 남음" : days == 0 ? "오늘 만료" : $"{-(long)days:N0}일 경과";
-    }
     private async Task RequestAccountAsync() => await RequestAsync(true);
     private async Task RequestCreditAsync() => await RequestAsync(false);
     private async Task RequestAsync(bool account)
     {
-        var dialog = new InstitutionRequestDialog(account, async message => { await Client.CreateRequestAsync(account ? "ACCOUNT_ISSUE" : "CREDIT_ADD", message, Lifetime.Token); }) { Owner = this };
+        var dialog = new InstitutionRequestDialog(account, async message => { await Client.CreateRequestAsync(account ? "ACCOUNT_ISSUE" : "CREDIT_ADD", message, Lifetime.Token); }) { Owner = ModalOwner };
         if (dialog.ShowDialog() == true) await RefreshAsync();
     }
     private async Task CancelSelectedRequestAsync()
@@ -166,19 +145,19 @@ public sealed partial class InstitutionWindow
         try
         {
             var jobs = await Client.AccountJobsAsync(account.LoginId, ct: Lifetime.Token);
-            var detail = new InstitutionAccountDetailDialog(account, jobs, async locked => { await Client.SetLockAsync(account.LoginId, locked, Lifetime.Token); }) { Owner = this };
+            var detail = new InstitutionAccountDetailDialog(account, jobs, async locked => { await Client.SetLockAsync(account.LoginId, locked, Lifetime.Token); }) { Owner = ModalOwner };
             if (detail.ShowDialog() == true) await RefreshAsync();
         }
         catch (Exception ex) { ErrorText.Text = "계정 정보를 불러오지 못했습니다. " + ex.Message; }
     }
     private async Task OpenNoticeAsync(InstitutionNotice notice)
     {
-        var dialog = new InstitutionNoticeDialog(notice, CreditRequest.IsEnabled) { Owner = this };
+        var dialog = new InstitutionNoticeDialog(notice, CreditRequest.IsEnabled) { Owner = ModalOwner };
         if (dialog.ShowDialog() == true && dialog.CreditRequested) await RequestCreditAsync();
     }
     private Task OpenOrderAsync(InstitutionOrder order)
     {
-        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenReceiptForAsync(order)) { Owner = this };
+        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenReceiptForAsync(order)) { Owner = ModalOwner };
         dialog.ShowDialog(); return Task.CompletedTask;
     }
     private async Task OpenReceiptAsync()
@@ -199,10 +178,10 @@ public sealed partial class InstitutionWindow
             var receipt = await Client.ReceiptAsync(order.Id, lifetime);
             // A late response from a closed window or an earlier login must never launch a URL.
             // A token refresh retains the marker; logout and even a same-account login replace it.
-            if (lifetime.IsCancellationRequested || !IsVisible || api.SessionMarker != marker || api.Account is not { Role: "ROLE_ORG_ADMIN" } current || current.LoginId != owner.LoginId) return;
+            if (lifetime.IsCancellationRequested || !Root.IsVisible || api.SessionMarker != marker || api.Account is not { Role: "ROLE_ORG_ADMIN" } current || current.LoginId != owner.LoginId) return;
             ReceiptLauncher(receipt.Url);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception ex) { if (!lifetime.IsCancellationRequested && IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = "증빙을 열지 못했습니다. " + ex.Message; }
+        catch (Exception ex) { if (!lifetime.IsCancellationRequested && Root.IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = "증빙을 열지 못했습니다. " + ex.Message; }
     }
 }

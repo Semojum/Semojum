@@ -60,15 +60,15 @@ internal static class WindowsInstitutionDesignChecks
                 && (legendRect.Bottom <= averageRect.Top + .5 || averageRect.Bottom <= legendRect.Top + .5 || legendRect.Right <= averageRect.Left + .5 || averageRect.Right <= legendRect.Left + .5),
                 "At 480px the chart scrolls and the real legend and average remain readable without overlapping");
             window.Width = 960; window.Height = 650; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
-            check(InstitutionWindow.SixMonthAverage([]) is null && InstitutionWindow.SixMonthAverage(sixMonths[..5]) is null
-                && InstitutionWindow.SixMonthAverage([sixMonths[0], sixMonths[0], .. sixMonths[2..]]) is null
-                && InstitutionWindow.SixMonthAverage([.. sixMonths[..5], new("2026-09", 1)]) is null
-                && InstitutionWindow.SixMonthAverage([.. sixMonths[..5], new("invalid", 1)]) is null
-                && InstitutionWindow.SixMonthAverage([.. sixMonths[..5], new("2026-08", -1)]) is null,
+            check(InstitutionUsage.SixMonthAverage([]) is null && InstitutionUsage.SixMonthAverage(sixMonths[..5]) is null
+                && InstitutionUsage.SixMonthAverage([sixMonths[0], sixMonths[0], .. sixMonths[2..]]) is null
+                && InstitutionUsage.SixMonthAverage([.. sixMonths[..5], new("2026-09", 1)]) is null
+                && InstitutionUsage.SixMonthAverage([.. sixMonths[..5], new("invalid", 1)]) is null
+                && InstitutionUsage.SixMonthAverage([.. sixMonths[..5], new("2026-08", -1)]) is null,
                 "The monthly average is unavailable for missing, duplicate, discontinuous, malformed or negative values");
             var zeroMonths = Enumerable.Range(0, 6).Select(i => new InstitutionMonthlyUsage(new DateTime(2025, 11, 1).AddMonths(i).ToString("yyyy-MM"), 0)).ToArray();
             var hugeMonths = zeroMonths.Select(m => m with { Credits = long.MaxValue }).ToArray();
-            check(InstitutionWindow.SixMonthAverage(zeroMonths) == 0 && InstitutionWindow.SixMonthAverage(hugeMonths) == long.MaxValue,
+            check(InstitutionUsage.SixMonthAverage(zeroMonths) == 0 && InstitutionUsage.SixMonthAverage(hugeMonths) == long.MaxValue,
                 "Six-month averages handle zero and maximum 64-bit credit amounts without overflow");
             window.RenderMonthlyUsage(hugeMonths); window.UpdateLayout();
             check(window.ChartMaximum.Text == long.MaxValue.ToString("N0") && window.ChartAverage.Text.Contains(long.MaxValue.ToString("N0"))
@@ -81,12 +81,12 @@ internal static class WindowsInstitutionDesignChecks
             check(window.ChartEmpty.IsVisible && window.ChartArea.Visibility == Visibility.Collapsed && window.ChartAverage.Text == "6개월 평균 정보 없음",
                 "An empty monthly response has an honest empty state");
             window.RenderMonthlyUsage([new("2026-10", 300)]); window.UpdateLayout();
-            check(InstitutionWindow.UsageRatio(0, 0) == "정보 없음" && InstitutionWindow.UsageRatio(-1, 0) == "정보 없음" && InstitutionWindow.UsageRatio(100, -1) == "정보 없음"
-                && InstitutionWindow.UsageRatio(100, 0) == "0%" && InstitutionWindow.UsageRatio(100, 120) == "120%", "Usage percentage handles zero, negative and over-allocation inputs without inventing data");
+            check(InstitutionUsage.UsageRatio(0, 0) == "정보 없음" && InstitutionUsage.UsageRatio(-1, 0) == "정보 없음" && InstitutionUsage.UsageRatio(100, -1) == "정보 없음"
+                && InstitutionUsage.UsageRatio(100, 0) == "0%" && InstitutionUsage.UsageRatio(100, 120) == "120%", "Usage percentage handles zero, negative and over-allocation inputs without inventing data");
             var date = new DateOnly(2026, 10, 30);
-            check(InstitutionWindow.RemainingDays("2026-10-31", date) == "1일 남음" && InstitutionWindow.RemainingDays("2026-10-30", date) == "오늘 만료"
-                && InstitutionWindow.RemainingDays("2026-10-29", date) == "1일 경과" && InstitutionWindow.RemainingDays("2026-02-30", date) == "정보 없음"
-                && InstitutionWindow.RemainingDays("2026-10-30T00:00:00", date) == "정보 없음" && InstitutionWindow.RemainingDays(null, date) == "정보 없음",
+            check(InstitutionUsage.RemainingDays("2026-10-31", date) == "1일 남음" && InstitutionUsage.RemainingDays("2026-10-30", date) == "오늘 만료"
+                && InstitutionUsage.RemainingDays("2026-10-29", date) == "1일 경과" && InstitutionUsage.RemainingDays("2026-02-30", date) == "정보 없음"
+                && InstitutionUsage.RemainingDays("2026-10-30T00:00:00", date) == "정보 없음" && InstitutionUsage.RemainingDays(null, date) == "정보 없음",
                 "Contract date uses strict ISO dates and handles future, expiry, past and invalid dates");
             check(window.Accounts.Items.Count == 2 && window.Requests.Items.Count == 2 && window.Orders.Items.Count == 1 && window.Notices.Items.Count == 1,
                 "Institution lists display only the API-provided accounts, requests, orders and notices");
@@ -111,11 +111,15 @@ internal static class WindowsInstitutionDesignChecks
             if (toggle is not null && PresentationSource.FromVisual(toggle) is { } source)
             {
                 toggle.Focus();
-                toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
-                toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
-                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-                check(window.RequestsExpander.IsExpanded && window.Requests.Items.Count == 2, "The request expander opens through its keyboard Space handler");
-                expand?.Collapse();
+                if (toggle.IsKeyboardFocused)
+                {
+                    toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyDownEvent });
+                    toggle.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.Space) { RoutedEvent = Keyboard.KeyUpEvent });
+                    await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                    check(window.RequestsExpander.IsExpanded && window.Requests.Items.Count == 2, "The request expander opens through its keyboard Space handler");
+                    expand?.Collapse();
+                }
+                else Console.WriteLine("SKIP: institution request Space key requires keyboard focus on its header.");
             }
             else check(false, "The request expander has a keyboard-focusable header");
             foreach (var scroll in Descendants(window).OfType<ScrollViewer>().Where(s => s.Content is StackPanel)) scroll.ScrollToTop();

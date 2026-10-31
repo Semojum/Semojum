@@ -26,6 +26,9 @@ internal static class WindowsMenuDesignChecks
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
             var menus = window.ApplicationMenu.Items.OfType<MenuItem>().ToArray();
             check(menus.Length == 6 && menus.Select(m => m.Header?.ToString()).SequenceEqual(["파일(_F)", "편집(_E)", "보기(_V)", "삽입(_I)", "설정(_M)", "정보(_A)"]), "Main menu preserves the six final Figma categories");
+            check(!window.AllTagsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Header, "빈칸")), "The insert menu no longer includes the blank submenu");
+            check(!Descendants(window.FormatToolbarScroll).OfType<ComboBox>().Any(c => c.Items.OfType<ComboBoxItem>().Any(i => Equals(i.Content, "3칸"))), "The format toolbar no longer includes the indentation dropdown");
+            check(window.AccountLabel.Visibility == Visibility.Collapsed, "The lower status bar does not show the account name");
             var size = menus[2].Items.OfType<MenuItem>().First(m => Equals(m.Header, "글자 크기"));
             check(size.Items.OfType<MenuItem>().Select(m => m.Header?.ToString()).SequenceEqual(["작게", "보통", "크게"]), "Font-size submenu follows the final design and retains its commands");
             menus[0].IsSubmenuOpen = true; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();

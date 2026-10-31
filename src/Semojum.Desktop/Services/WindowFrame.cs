@@ -18,6 +18,7 @@ internal static class WindowFrame
         var content = window.Content;
         window.Content = null;
         window.WindowStyle = WindowStyle.None;
+        WindowBounds.UseMonitorWorkArea(window);
         window.UseLayoutRounding = true;
         WindowChrome.SetWindowChrome(window, new WindowChrome
         {

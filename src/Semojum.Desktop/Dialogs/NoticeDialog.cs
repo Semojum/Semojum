@@ -19,7 +19,7 @@ public class NoticeDialog : Window
     public NoticeDialog(string message, string detail, string[] labels, bool error = false, double width = 520, double height = 180)
     {
         MessageText = message; DetailText = detail;
-        Title = "세모점"; Width = width; Height = Math.Max(height, 196); MinHeight = Height; MinWidth = width;
+        Title = "누리닷"; Width = width; Height = Math.Max(height, 196); MinHeight = Height; MinWidth = width;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Style = (Style)FindResource(typeof(Window)); Background = FigmaDialogElements.Brush("#F3F3F3"); FontSize = 12; UseLayoutRounding = true;
         WindowChrome.SetWindowChrome(this, new() { CaptionHeight = 0, ResizeBorderThickness = new(0), GlassFrameThickness = new(0), UseAeroCaptionButtons = false });

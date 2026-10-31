@@ -6,6 +6,59 @@ namespace Semojum.Desktop.Services;
 
 internal static class WindowBounds
 {
+    internal static (int X, int Y, int Width, int Height) MaximizeArea(int monitorLeft, int monitorTop, int workLeft, int workTop, int workRight, int workBottom)
+        => (workLeft - monitorLeft, workTop - monitorTop, Math.Max(1, workRight - workLeft), Math.Max(1, workBottom - workTop));
+
+    internal static bool TryGetWorkArea(Window window, out Rect area)
+    {
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero || !GetMonitorInfo(MonitorFromWindow(handle, 2), ref info)) { area = Rect.Empty; return false; }
+        area = new Rect(info.Work.Left, info.Work.Top, info.Work.Right - info.Work.Left, info.Work.Bottom - info.Work.Top);
+        return true;
+    }
+
+    // WindowChrome's custom frame must maximize to the current monitor's work area,
+    // including taskbars on any edge and monitors with negative coordinates.
+    internal static void UseMonitorWorkArea(Window window)
+    {
+        void Attach(object? _, EventArgs __)
+        {
+            if (HwndSource.FromHwnd(new WindowInteropHelper(window).Handle) is { } source) source.AddHook(WorkAreaHook);
+        }
+        if (new WindowInteropHelper(window).Handle == IntPtr.Zero) window.SourceInitialized += Attach;
+        else Attach(null, EventArgs.Empty);
+    }
+
+    private static IntPtr WorkAreaHook(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message != 0x0024 || lParam == IntPtr.Zero) return IntPtr.Zero; // WM_GETMINMAXINFO
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(MonitorFromWindow(hwnd, 2), ref info)) return IntPtr.Zero;
+        var area = MaximizeArea(info.Monitor.Left, info.Monitor.Top, info.Work.Left, info.Work.Top, info.Work.Right, info.Work.Bottom);
+        var bounds = Marshal.PtrToStructure<MinMaxInfo>(lParam);
+        bounds.MaxPosition = new NativePoint { X = area.X, Y = area.Y };
+        bounds.MaxSize = new NativePoint { X = area.Width, Y = area.Height };
+        Marshal.StructureToPtr(bounds, lParam, false);
+        handled = true;
+        return IntPtr.Zero;
+    }
+
+    internal static void CenterOwned(Window owner, Window dialog)
+    {
+        var parent = new WindowInteropHelper(owner).Handle;
+        var child = new WindowInteropHelper(dialog).Handle;
+        if (parent == IntPtr.Zero || child == IntPtr.Zero || !GetWindowRect(parent, out var parentRect)
+            || !GetWindowRect(child, out var childRect)) return;
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(MonitorFromWindow(parent, 2), ref info)) return;
+        var width = childRect.Right - childRect.Left; var height = childRect.Bottom - childRect.Top;
+        var left = parentRect.Left + (parentRect.Right - parentRect.Left - width) / 2;
+        var top = parentRect.Top + (parentRect.Bottom - parentRect.Top - height) / 2;
+        left = Math.Clamp(left, info.Work.Left, Math.Max(info.Work.Left, info.Work.Right - width));
+        top = Math.Clamp(top, info.Work.Top, Math.Max(info.Work.Top, info.Work.Bottom - height));
+        SetWindowPos(child, IntPtr.Zero, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010);
+    }
     // Keep title bars and action rows reachable on small / scaled desktops.
     internal static void Fit(Window window)
     {
@@ -31,6 +84,8 @@ internal static class WindowBounds
         SetWindowPos(handle, IntPtr.Zero, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010);
     }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct MinMaxInfo { public NativePoint Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
     [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);

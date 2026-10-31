@@ -31,7 +31,7 @@ public sealed class HelpWindow : Window
     ];
     public HelpWindow(string context, Func<string, Task>? runCommand = null)
     {
-        Title = "세모점 도움말 - 세모점"; Width = 1100; Height = 700; MinWidth = 600; MinHeight = 320; Background = Brushes.White;
+        Title = "누리닷 도움말 - 누리닷"; Width = 1100; Height = 700; MinWidth = 600; MinHeight = 320; Background = Brushes.White;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = new DockPanel(); Content = root;
         Services.WindowFrame.Apply(this, editor: true);
@@ -130,7 +130,7 @@ public sealed class HelpWindow : Window
         void Visit(Topic topic) { if (index >= 0 && history[index] == topic) return; history.RemoveRange(index + 1, history.Count - index - 1); history.Add(topic); index++; Render(topic); }
         toolbar.Children.Add(CompactDialog.Button("이전", () => { if (index > 0) Render(history[--index]); return Task.CompletedTask; }));
         toolbar.Children.Add(CompactDialog.Button("다음", () => { if (index + 1 < history.Count) Render(history[++index]); return Task.CompletedTask; }));
-        toolbar.Children.Add(CompactDialog.Button("인쇄", () => { var print = new PrintDialog(); if (print.ShowDialog() == true) print.PrintDocument(((IDocumentPaginatorSource)reader.Document).DocumentPaginator, "세모점 도움말"); return Task.CompletedTask; }));
+        toolbar.Children.Add(CompactDialog.Button("인쇄", () => { var print = new PrintDialog(); if (print.ShowDialog() == true) print.PrintDocument(((IDocumentPaginatorSource)reader.Document).DocumentPaginator, "누리닷 도움말"); return Task.CompletedTask; }));
         var toolbarNames = new[] { "이전", "다음", "인쇄" }; var toolbarAssets = new[] { "help-prev", "help-next", "help-print" };
         for (var i = 0; i < toolbar.Children.Count; i++)
         {
