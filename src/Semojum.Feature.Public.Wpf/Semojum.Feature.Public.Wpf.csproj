@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0-windows10.0.19041.0</TargetFramework><UseWPF>true</UseWPF><EnableWindowsTargeting>true</EnableWindowsTargeting></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Semojum.Core/Semojum.Core.csproj" /><ProjectReference Include="../Semojum.UI.Common/Semojum.UI.Common.csproj" /><PackageReference Include="SharpVectors.Wpf" Version="1.8.5" /><Resource Include="Assets/Figma/*.svg" /></ItemGroup>
+</Project>

@@ -1,7 +1,7 @@
 <Application x:Class="Semojum.Desktop.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:svg="http://sharpvectors.codeplex.com/svgc/" xmlns:controls="clr-namespace:Semojum.Desktop.Controls" xmlns:common="clr-namespace:Semojum.Desktop.Controls;assembly=Semojum.UI.Common">
   <Application.Resources>
    <ResourceDictionary>
-    <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Controls/FigmaIcons.xaml"/><ResourceDictionary Source="Styles/BoardListGrid.xaml"/><ResourceDictionary Source="Styles/UsageJobsGrid.xaml"/><ResourceDictionary Source="Styles/InstitutionListGrid.xaml"/><ResourceDictionary Source="Styles/InstitutionJobsGrid.xaml"/><ResourceDictionary Source="Styles/AppliedRulesGrid.xaml"/></ResourceDictionary.MergedDictionaries>
+    <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Controls/FigmaIcons.xaml"/><ResourceDictionary Source="/Semojum.Feature.Board.Wpf;component/Styles/BoardListGrid.xaml"/><ResourceDictionary Source="/Semojum.Feature.Usage.Wpf;component/Styles/UsageJobsGrid.xaml"/><ResourceDictionary Source="/Semojum.Feature.Usage.Wpf;component/Styles/UsageNavigation.xaml"/><ResourceDictionary Source="/Semojum.Feature.Institution.Wpf;component/Styles/InstitutionListGrid.xaml"/><ResourceDictionary Source="/Semojum.Feature.Institution.Wpf;component/Styles/InstitutionJobsGrid.xaml"/><ResourceDictionary Source="/Semojum.Feature.Rules.Wpf;component/Styles/AppliedRulesGrid.xaml"/><ResourceDictionary Source="/Semojum.Feature.Rules.Wpf;component/Styles/RuleCard.xaml"/></ResourceDictionary.MergedDictionaries>
     <SolidColorBrush x:Key="Ink" Color="#1A1A1A" />
     <SolidColorBrush x:Key="Muted" Color="#5F5F5F" />
     <SolidColorBrush x:Key="Line" Color="#D1D1D1" />
@@ -44,23 +44,6 @@
       </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="{StaticResource Accent}"/><Setter Property="BorderBrush" Value="{StaticResource Accent}"/><Setter Property="Foreground" Value="White"/></Style>
-    <Style x:Key="UsageNavigation" TargetType="TabControl">
-      <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">
-        <Grid>
-          <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <Border Background="#FAFAFA" BorderBrush="#D6D6D6" BorderThickness="0,0,1,0"><TabPanel IsItemsHost="True" Margin="0,14,0,0" VerticalAlignment="Top"/></Border>
-          <ContentPresenter Grid.Column="1" ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
-        </Grid>
-      </ControlTemplate></Setter.Value></Setter>
-      <Setter Property="ItemContainerStyle"><Setter.Value><Style TargetType="TabItem">
-        <Setter Property="Height" Value="32"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
-          <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Center" RecognizesAccessKey="True"/></Border>
-        </ControlTemplate></Setter.Value></Setter>
-        <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#EFF6FC"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger></Style.Triggers>
-      </Style></Setter.Value></Setter>
-    </Style>
     <Style x:Key="FormChoice" TargetType="ListBoxItem">
       <Setter Property="Height" Value="24"/><Setter Property="Padding" Value="16,0"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem">
@@ -92,7 +75,7 @@
         </ControlTemplate></Setter.Value></Setter></Style>
       </Style.Resources>
     </Style>
-    <controls:ProgressWidthConverter x:Key="ProgressWidth"/>
+    <common:ProgressWidthConverter x:Key="ProgressWidth"/>
     <Style x:Key="FlatUsageBar" TargetType="ProgressBar">
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ProgressBar">
         <Border BorderBrush="#B5B5B5" BorderThickness="1" Background="White">
@@ -129,29 +112,6 @@
       </ControlTemplate></Setter.Value></Setter>
       <Style.Triggers><Trigger Property="AcceptsReturn" Value="True"><Setter Property="Height" Value="Auto"/></Trigger></Style.Triggers>
     </Style>
-  <Style x:Key="RuleCard" TargetType="Expander">
-    <Setter Property="MinHeight" Value="110"/><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#D6D6D6"/>
-    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander">
-      <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
-        <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Padding="0" HorizontalContentAlignment="Stretch">
-            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"><ContentPresenter/></Border></ControlTemplate></ToggleButton.Template>
-            <DockPanel Margin="11,11,11,8" MinHeight="60">
-              <TextBlock x:Name="Arrow" DockPanel.Dock="Right" Text="▸" Margin="8,0,0,0" VerticalAlignment="Top" Foreground="#5F646D"/>
-              <ContentPresenter ContentSource="Header"/>
-            </DockPanel>
-          </ToggleButton>
-          <ContentPresenter x:Name="Details" Grid.Row="1" ContentSource="Content" Margin="11,0,11,4" Visibility="Collapsed"/>
-          <TextBlock Grid.Row="2" Text="{TemplateBinding Tag}" TextWrapping="Wrap" Foreground="#767676" Margin="11,0,11,8"/>
-        </Grid>
-      </Border>
-      <ControlTemplate.Triggers>
-        <Trigger Property="IsExpanded" Value="True"><Setter TargetName="Details" Property="Visibility" Value="Visible"/><Setter TargetName="Arrow" Property="Text" Value="▾"/></Trigger>
-      </ControlTemplate.Triggers>
-    </ControlTemplate></Setter.Value></Setter>
-    <Style.Triggers><Trigger Property="IsExpanded" Value="True"><Setter Property="Background" Value="#CCE4F7"/><Setter Property="BorderBrush" Value="#005FB8"/><Setter Property="MinHeight" Value="228"/></Trigger></Style.Triggers>
-  </Style>
     <Style TargetType="ComboBox">
       <Setter Property="Padding" Value="11,0,27,0"/><Setter Property="Height" Value="32"/><Setter Property="MinHeight" Value="0"/><Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Background" Value="#FBFBFB"/><Setter Property="BorderBrush" Value="#EAEAEA"/>

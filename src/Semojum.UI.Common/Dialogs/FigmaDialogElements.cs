@@ -14,9 +14,9 @@ namespace Semojum.Desktop.Dialogs;
 public static class FigmaDialogElements
 {
     public static Brush Brush(string value) => (Brush)new BrushConverter().ConvertFromString(value)!;
-    public static SvgViewbox DesignIcon(string name, double width, double height) => new()
+    public static SvgViewbox DesignIcon(string name, double width, double height, string assemblyName = "Semojum.Mockup") => new()
     {
-        Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{name}"),
+        Source = new Uri($"pack://application:,,,/{assemblyName};component/Assets/Figma/{name}"),
         Width = width, Height = height, Stretch = Stretch.None
     };
     public static ControlTemplate SurfaceTemplate(double radius, bool stretchContent = false)

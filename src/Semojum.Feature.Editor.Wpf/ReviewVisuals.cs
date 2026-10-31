@@ -34,7 +34,7 @@ internal static class ReviewVisuals
     {
         if (icons.TryGetValue(kind, out var icon)) return icon;
         var name = kind switch { ReviewKind.SuggestCorrection => "draft", ReviewKind.SuggestDeletion => "trash", _ => "resolve" };
-        var resource = Application.GetResourceStream(new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/review-status-{name}.svg"))
+        var resource = Application.GetResourceStream(new Uri($"pack://application:,,,/Semojum.Feature.Editor.Wpf;component/Assets/Figma/review-status-{name}.svg"))
             ?? throw new InvalidOperationException($"검토 아이콘을 찾을 수 없습니다: {name}");
         using var stream = resource.Stream;
         icon = new FileSvgReader(new WpfDrawingSettings(), false).Read(stream);

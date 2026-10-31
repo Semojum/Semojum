@@ -5,9 +5,13 @@ using System.Windows.Input;
 
 namespace Semojum.Desktop;
 
-public partial class MainWindow
+public partial class MainWindow : Semojum.UI.Common.IEmbeddedScreenHost
 {
     private bool embeddedScreenActive;
+
+    Window Semojum.UI.Common.IEmbeddedScreenHost.Window => this;
+    Task<T> Semojum.UI.Common.IEmbeddedScreenHost.ShowScreenAsync<T>(FrameworkElement screen, string title, Task<T> completion)
+        => ShowEmbeddedScreenAsync(screen, title, completion);
 
     // Keep the native shell and its caption controls; replace only the editor content.
     internal async Task<T> ShowEmbeddedScreenAsync<T>(FrameworkElement screen, string title, Task<T> completion)

@@ -68,11 +68,11 @@ public partial class MainWindow : Window
         translator = new(engine);
         InitializeComponent();
         InitializeOriginalUpload();
-        WindowFrame.Apply(this, editor: true);
+        WindowFrame.Apply(this, editor: true, mainEditor: true);
         NativeIme.Attach(SourceEditor);
         Loaded += (_, _) =>
         {
-            WindowBounds.Fit(this);
+            WindowBounds.Fit(this, constrainFutureResize: false);
             if (!smoke) WindowState = WindowState.Maximized;
         };
         PopulateTagMenu();
@@ -451,7 +451,8 @@ public partial class MainWindow : Window
                 case "usage":
                     if (await EnsureAccountAsync())
                     {
-                        var usage = new UsageDialog(api, WorkInformation()) { Owner = this };
+                        var workInfo = WorkInformation();
+                        var usage = new UsageDialog(api, workInfo, DesktopUsageActions.Create(api, workInfo)) { Owner = this };
                         if (usage.ShowDialog() == true)
                         {
                             if (usage.LogoutRequested) await LogoutAccountAsync();

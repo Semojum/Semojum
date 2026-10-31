@@ -19,7 +19,7 @@ internal static class WindowsUsageDesignChecks
     {
         var fixture = new Fixture(); using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
         await api.LoginAsync("fixture", "fixture");
-        var dialog = new UsageDialog(api); dialog.Show();
+        var dialog = new UsageDialog(api, actions: DesktopUsageActions.Create(api, "")); dialog.Show();
         try
         {
             await WaitAsync(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "8,251"));

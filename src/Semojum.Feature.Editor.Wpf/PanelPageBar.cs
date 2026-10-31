@@ -86,6 +86,6 @@ public sealed class PanelPageBar : UserControl
         button.Width = button.MinWidth = 24; button.Height = button.MinHeight = 24; button.Margin = new Thickness(0); button.Padding = new Thickness(0);
         button.Background = Brushes.Transparent; button.BorderBrush = Brushes.Transparent;
     }
-    private static SvgViewbox Icon(string file) => new() { Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{file}"), Width = 16, Height = 16, Stretch = Stretch.None, IsHitTestVisible = false };
+    private static SvgViewbox Icon(string file) => new() { Source = new Uri($"pack://application:,,,/Semojum.Feature.Editor.Wpf;component/Assets/Figma/{file}"), Width = 16, Height = 16, Stretch = Stretch.None, IsHitTestVisible = false };
     private static SolidColorBrush Brush(string color) => (SolidColorBrush)new BrushConverter().ConvertFromString(color)!;
 }

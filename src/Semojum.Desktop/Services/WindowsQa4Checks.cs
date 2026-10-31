@@ -272,7 +272,7 @@ internal static class WindowsQa4Checks
             check(!rows[0].IsExpanded && rows[1].IsExpanded, "QA4 rule accordion keeps one rule expanded");
             check(Children((DependencyObject)rows[0].Content).OfType<TextBlock>().Any(t => t.Text == "첫 줄\n  ⠁⠃ 원문\n마지막 줄"), "QA4 expanded rule retains full text, line breaks and indentation");
         });
-        var usage = new UsageDialog(api);
+        var usage = new UsageDialog(api, actions: DesktopUsageActions.Create(api, ""));
         await Capture(usage, "37-usage.png", () =>
         {
             check(usage.Navigation.Items.Count == 5 && usage.Navigation.TabStripPlacement == Dock.Left, "QA4 my page has five vertical sections");

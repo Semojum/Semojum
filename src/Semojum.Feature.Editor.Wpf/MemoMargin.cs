@@ -29,7 +29,7 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
     internal static DrawingGroup WarningDrawing => WarningIcon.Value;
     private static DrawingGroup LoadIcon(string name)
     {
-        var resource = Application.GetResourceStream(new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{name}"))
+        var resource = Application.GetResourceStream(new Uri($"pack://application:,,,/Semojum.Feature.Editor.Wpf;component/Assets/Figma/{name}"))
             ?? throw new InvalidOperationException($"Figma 아이콘을 불러올 수 없습니다: {name}");
         using var stream = resource.Stream;
         var drawing = new FileSvgReader(new WpfDrawingSettings(), false).Read(stream);
