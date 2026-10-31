@@ -1,6 +1,8 @@
 using System.Globalization;
 
-namespace Semojum.Core;
+using Semojum.Core;
+
+namespace Semojum.Feature.Editor;
 
 public enum NavigationTarget { OriginalPage, Line, Review, Memo, BraillePage }
 public sealed record NavigationLocation(EditorBlock Block, SearchPanel Panel, int Offset);

@@ -1,6 +1,9 @@
 using System.Text.Json;
 
-namespace Semojum.Core.Integration;
+using Semojum.Core;
+using Semojum.Core.Integration;
+
+namespace Semojum.Feature.Settings;
 
 public sealed record AccountDefaults(BrailleOptions Options, string? FormId, string PageNumberLine);
 public sealed record BrailleForm(string FormId, string Name, bool Builtin, string? BaseFormId, PageLayout Layout, BrailleOptions Options)

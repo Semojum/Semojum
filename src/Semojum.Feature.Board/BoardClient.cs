@@ -2,7 +2,9 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
-namespace Semojum.Core.Integration;
+using Semojum.Core.Integration;
+
+namespace Semojum.Feature.Board;
 
 public sealed record BoardAttachment(long AttachmentId, string FileName, long Size, string Url);
 public sealed record BoardAnswer(long AnswerId, string Content, bool Mine, string AnsweredAt, string UpdatedAt);
@@ -20,7 +22,12 @@ public sealed record BoardNotification(long NotificationId, long PostId, string 
 }
 public sealed record BoardNotifications(int UnreadCount, BoardNotification[] Items);
 
-public sealed class BoardClient(SemojumApiClient api)
+public interface IBoardListSource
+{
+    Task<BoardPage> ListAsync(int page, string field, string keyword, bool mine, CancellationToken ct = default);
+}
+
+public sealed class BoardClient(SemojumApiClient api) : IBoardListSource
 {
     public string? CurrentLoginId => api.Account?.LoginId;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

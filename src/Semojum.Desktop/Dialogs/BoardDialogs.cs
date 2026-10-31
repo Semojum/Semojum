@@ -122,59 +122,51 @@ public sealed class BoardDialog : CompactDialog
         var fieldsView = new Grid { Width = 120, Height = 32 }; fieldsView.Children.Add(fields); fieldsView.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = BoardDesign.Brush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
         var chevron = BoardDesign.Icon("chevron-down"); chevron.HorizontalAlignment = HorizontalAlignment.Right; chevron.Margin = new(0, 0, 5, 0); chevron.IsHitTestVisible = false; fieldsView.Children.Add(chevron);
         Actions.Children.Add(fieldsView); Actions.Children.Add(query);
-        int page = 1, total = 0; bool mine = initiallyMine, loadingList = false;
+        var list = new BoardListViewModel(client, initiallyMine);
         var pageInput = new TextBox { Width = 44, Height = 24, MinHeight = 0, Padding = new(8, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center };
         System.Windows.Automation.AutomationProperties.SetName(pageInput, "게시판 쪽 번호");
         var pageTotal = new TextBlock { Foreground = BoardDesign.Brush("#5F5F5F"), Margin = new(8, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
         var numberButtons = new StackPanel { Orientation = Orientation.Horizontal };
         Button? previous = null, next = null;
-        int TotalPages() => Math.Max(1, Math.Max(0, total) / 10 + (total > 0 && total % 10 != 0 ? 1 : 0));
+        int TotalPages() => list.TotalPages;
         // A delayed list request must not trap the user in the dialog. Other
         // operations keep the shared busy guard to protect pending edits.
-        Closing += (_, e) => { if (loadingList) { e.Cancel = false; Lifetime.Cancel(); } };
-        async Task LoadAsync()
+        Closing += (_, e) => { if (list.IsLoading) { e.Cancel = false; Lifetime.Cancel(); } };
+        async Task LoadAsync(int? targetPage = null, bool? targetMine = null)
         {
-            loadingList = true;
-            try
-            {
-                var field = fields.SelectedIndex switch { 1 => "TITLE", 2 => "CONTENT", 3 => "AUTHOR", _ => "TITLE_CONTENT" };
-                var data = await client.ListAsync(page, field, query.Text, mine, Lifetime.Token);
-                if (Lifetime.IsCancellationRequested) return;
-                total = data.TotalCount; grid.ItemsSource = data.Notices.Concat(data.Items).ToArray();
-                count.Text = $"{total}건";
-                ((TextBlock)title.Children[0]).Text = mine ? "내 글" : "전체 글";
-                if (sidebar.Children.Count >= 3) { BoardDesign.SetNavigationSelected((Button)sidebar.Children[0], !mine); BoardDesign.SetNavigationSelected((Button)sidebar.Children[2], mine); }
-                RenderPages();
-            }
-            finally { loadingList = false; }
+            var field = fields.SelectedIndex switch { 1 => "TITLE", 2 => "CONTENT", 3 => "AUTHOR", _ => "TITLE_CONTENT" };
+            await list.LoadAsync(targetPage ?? list.Page, targetMine ?? list.Mine, field, query.Text, Lifetime.Token);
+            if (Lifetime.IsCancellationRequested) return;
+            grid.ItemsSource = list.Rows;
+            count.Text = $"{list.TotalCount}건";
+            ((TextBlock)title.Children[0]).Text = list.Mine ? "내 글" : "전체 글";
+            if (sidebar.Children.Count >= 3) { BoardDesign.SetNavigationSelected((Button)sidebar.Children[0], !list.Mine); BoardDesign.SetNavigationSelected((Button)sidebar.Children[2], list.Mine); }
+            RenderPages();
         }
         async Task GoPageAsync(int target)
         {
             if (target < 1 || target > TotalPages()) { Status.Text = $"1부터 {TotalPages()}까지의 쪽 번호를 입력해 주세요."; RenderPages(); return; }
-            var oldPage = page; page = target;
-            try { await LoadAsync(); }
-            catch { page = oldPage; RenderPages(); throw; }
+            try { await LoadAsync(target); }
+            catch { RenderPages(); throw; }
         }
         async Task SwitchListAsync(bool targetMine)
         {
-            var oldMine = mine; var oldPage = page;
-            mine = targetMine; page = 1;
-            try { await LoadAsync(); }
-            catch { mine = oldMine; page = oldPage; RenderPages(); throw; }
+            try { await LoadAsync(1, targetMine); }
+            catch { RenderPages(); throw; }
         }
         void RenderPages()
         {
-            pageInput.Text = page.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            pageInput.Text = list.Page.ToString(System.Globalization.CultureInfo.InvariantCulture);
             pageTotal.Text = "/ " + TotalPages().ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (previous is not null) previous.IsEnabled = page > 1;
-            if (next is not null) next.IsEnabled = page < TotalPages();
+            if (previous is not null) previous.IsEnabled = list.Page > 1;
+            if (next is not null) next.IsEnabled = list.Page < TotalPages();
             numberButtons.Children.Clear();
-            var first = Math.Max(1, Math.Min(page - 1, Math.Max(1, TotalPages() - 2)));
+            var first = Math.Max(1, Math.Min(list.Page - 1, Math.Max(1, TotalPages() - 2)));
             for (var n = first; n <= Math.Min(TotalPages(), first + 2); n++)
             {
                 var target = n;
                 var button = Button(n.ToString(System.Globalization.CultureInfo.InvariantCulture), async () => await RunAsync(() => GoPageAsync(target)));
-                PublicDialogDesign.StyleAction(button, target == page);
+                PublicDialogDesign.StyleAction(button, target == list.Page);
                 button.Width = 24; button.Height = 24; button.MinWidth = 0; button.MinHeight = 0; button.Padding = new(0); button.Margin = new(0, 0, 2, 0);
                 System.Windows.Automation.AutomationProperties.SetName(button, $"게시판 {n}쪽");
                 numberButtons.Children.Add(button);
@@ -190,7 +182,7 @@ public sealed class BoardDialog : CompactDialog
         }
         grid.MouseDoubleClick += async (_, _) => await RunAsync(OpenAsync);
         Action("검색", async () => await GoPageAsync(1));
-        var mineButton = Action("내 글 보기", async () => await SwitchListAsync(!mine)); mineButton.Width = 94; mineButton.Margin = new(0);
+        var mineButton = Action("내 글 보기", async () => await SwitchListAsync(!list.Mine)); mineButton.Width = 94; mineButton.Margin = new(0);
         var notifications = Action("알림", () => new NotificationsDialog(client, workInfo) { Owner = this }.ShowDialog());
         notifications.Margin = new(8, 0, 0, 0);
         var write = Action("글쓰기", async () => { var d = new PostEditorDialog(client, null, workInfo) { Owner = this }; if (d.ShowDialog() == true) await GoPageAsync(1); }, true); write.Margin = new(16, 0, 0, 0);
@@ -202,11 +194,11 @@ public sealed class BoardDialog : CompactDialog
         // Paging and notifications remain accessible when the window is resized.
         var navigation = new StackPanel { Orientation = Orientation.Horizontal }; var pageMenu = new ContextMenu(); pageMenu.Items.Add(new MenuItem { Header = navigation, StaysOpenOnClick = true }); grid.ContextMenu = pageMenu;
         count.ToolTip = "이전·다음 쪽: 목록에서 마우스 오른쪽 단추 또는 PageUp·PageDown";
-        navigation.Children.Add(Button("이전", async () => await RunAsync(async () => { if (page > 1) await GoPageAsync(page - 1); })));
-        navigation.Children.Add(Button("다음", async () => await RunAsync(async () => { if (page < TotalPages()) await GoPageAsync(page + 1); })));
-        previous = Button("이전", async () => await RunAsync(() => GoPageAsync(page - 1)));
+        navigation.Children.Add(Button("이전", async () => await RunAsync(async () => { if (list.Page > 1) await GoPageAsync(list.Page - 1); })));
+        navigation.Children.Add(Button("다음", async () => await RunAsync(async () => { if (list.Page < TotalPages()) await GoPageAsync(list.Page + 1); })));
+        previous = Button("이전", async () => await RunAsync(() => GoPageAsync(list.Page - 1)));
         previous.Content = BoardDesign.Icon("chevron-left"); previous.ToolTip = "이전 쪽"; System.Windows.Automation.AutomationProperties.SetName(previous, "이전 쪽"); PublicDialogDesign.StyleAction(previous); previous.Width = 24; previous.MinWidth = 0; previous.Height = 24; previous.MinHeight = 0; previous.Padding = new(0); previous.Margin = new(0, 0, 4, 0);
-        next = Button("다음", async () => await RunAsync(() => GoPageAsync(page + 1)));
+        next = Button("다음", async () => await RunAsync(() => GoPageAsync(list.Page + 1)));
         next.Content = BoardDesign.Icon("chevron-right"); next.ToolTip = "다음 쪽"; System.Windows.Automation.AutomationProperties.SetName(next, "다음 쪽"); PublicDialogDesign.StyleAction(next); next.Width = 24; next.MinWidth = 0; next.Height = 24; next.MinHeight = 0; next.Padding = new(0); next.Margin = new(2, 0, 0, 0);
         var pager = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         pager.Children.Add(previous); pager.Children.Add(pageInput); pager.Children.Add(pageTotal); pager.Children.Add(numberButtons); pager.Children.Add(next);
@@ -232,9 +224,9 @@ public sealed class BoardDialog : CompactDialog
         {
             if (e.Key == System.Windows.Input.Key.Enter) { e.Handled = true; await RunAsync(OpenAsync); }
             else if (e.Key is System.Windows.Input.Key.PageDown or System.Windows.Input.Key.PageUp)
-            { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && page < TotalPages()) await GoPageAsync(page + 1); else if (e.Key == System.Windows.Input.Key.PageUp && page > 1) await GoPageAsync(page - 1); }); }
+            { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && list.Page < TotalPages()) await GoPageAsync(list.Page + 1); else if (e.Key == System.Windows.Input.Key.PageUp && list.Page > 1) await GoPageAsync(list.Page - 1); }); }
         };
-        OnLoad(LoadAsync);
+        OnLoad(() => LoadAsync());
     }
 }
 

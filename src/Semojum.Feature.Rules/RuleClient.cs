@@ -1,6 +1,8 @@
 using System.Text.Json;
 
-namespace Semojum.Core.Integration;
+using Semojum.Core.Integration;
+
+namespace Semojum.Feature.Rules;
 
 public sealed record BrailleRule(string RuleId, string Source, string Section, string Name, string Contents,
     string? FullText = null, bool? Supported = null)

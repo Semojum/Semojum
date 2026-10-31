@@ -4,7 +4,7 @@ using System.Net.Http;
 using System.Text.Json;
 using Semojum.Core.Integration;
 
-namespace Semojum.Desktop.Services;
+namespace Semojum.Feature.Institution;
 
 public sealed record InstitutionMonthlyUsage(string Month, long Credits);
 public sealed record InstitutionDashboard(string OrgName, string OrgCode, string ContractType, string? ContractStartedAt, string? ContractExpiresAt,

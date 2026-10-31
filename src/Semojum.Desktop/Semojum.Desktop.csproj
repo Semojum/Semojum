@@ -9,6 +9,11 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Semojum.Core/Semojum.Core.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Board/Semojum.Feature.Board.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Rules/Semojum.Feature.Rules.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Settings/Semojum.Feature.Settings.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Editor/Semojum.Feature.Editor.csproj" />
+    <ProjectReference Include="../Semojum.Feature.Institution/Semojum.Feature.Institution.csproj" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
     <Resource Include="Assets/Figma/*.svg" />
