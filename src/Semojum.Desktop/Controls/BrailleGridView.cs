@@ -19,6 +19,15 @@ public sealed partial class BrailleGridView : ListBox
     public Brush SelectionHighlightBrush { get; set; } = new SolidColorBrush(Color.FromRgb(204, 228, 247));
     public Brush SelectionTextBrush { get; set; } = new SolidColorBrush(Color.FromRgb(31, 31, 31));
     public bool ShowLineNumbers { get; set; } = true;
+    public Brush LineNumberForeground { get; set; } = new SolidColorBrush(Color.FromRgb(138, 138, 138));
+    public Brush LineNumberBackground { get; set; } = new SolidColorBrush(Color.FromRgb(250, 250, 250));
+    public bool CustomLineNumberForeground { get; set; }
+    public bool CustomLineNumberBackground { get; set; }
+    internal const double NumberWidth = 32;
+    internal const double MarkerStart = 33;
+    internal const double MarkerSize = 16;
+    private const double MinimumMarkerArea = 17;
+    private const double TextInset = 12;
     private bool showMemos = true, showReviews = true;
     public bool ShowMemos { get => showMemos; set { if (showMemos != value) { showMemos = value; InvalidateMarkerCache(); InvalidateFaces(); } } }
     public bool ShowReviews { get => showReviews; set { if (showReviews != value) { showReviews = value; InvalidateMarkerCache(); InvalidateFaces(); } } }
@@ -40,11 +49,11 @@ public sealed partial class BrailleGridView : ListBox
     protected override void OnItemsChanged(System.Collections.Specialized.NotifyCollectionChangedEventArgs e) { InvalidateMarkerCache(); base.OnItemsChanged(e); }
     internal bool ActivateMarker(BrailleGridFace face, int row, double x)
     {
-        if (!CoordinatesCurrent || x < 40 || row < 0 || row >= face.Rows.Length) return false;
+        if (!CoordinatesCurrent || x < MarkerStart || row < 0 || row >= face.Rows.Length) return false;
         MarkersFor(face).TryGetValue(row, out var marker);
         var baseSlots = (marker?.Memo == true ? 1 : 0) + (marker?.Review == true ? 1 : 0);
         var manual = ManualReviewKinds(face, row);
-        var slot = (int)((x - 40) / 16);
+        var slot = (int)((x - MarkerStart) / MarkerSize);
         if (slot < 0 || slot >= baseSlots + manual.Length) return false;
         if (marker?.Memo == true && slot == 0) MemoRequested?.Invoke(marker.Block, marker.Line);
         else if (marker?.Review == true && slot == (marker.Memo ? 1 : 0)) ReviewRequested?.Invoke(marker.Block);
@@ -209,8 +218,9 @@ public sealed partial class BrailleGridView : ListBox
         private EditorBlock? dragBlock;
         private Point dragStart;
         public Face() { AllowDrop = true; }
-        private double TextLeft => 40 + Math.Max(12, (Owner is { } owner && Data is { } face ? Enumerable.Range(0, face.Rows.Length).Select(row =>
-            (owner.MarkersFor(face).TryGetValue(row, out var m) ? (m.Memo ? 1 : 0) + (m.Review ? 1 : 0) : 0) + owner.ManualReviewKinds(face, row).Length).DefaultIfEmpty(0).Max() : 0) * 16);
+        private double GutterEdge => NumberWidth + Math.Max(MinimumMarkerArea, (Owner is { } owner && Data is { } face ? Enumerable.Range(0, face.Rows.Length).Select(row =>
+            (owner.MarkersFor(face).TryGetValue(row, out var m) ? (m.Memo ? 1 : 0) + (m.Review ? 1 : 0) : 0) + owner.ManualReviewKinds(face, row).Length).DefaultIfEmpty(0).Max() : 0) * MarkerSize + 1);
+        private double TextLeft => GutterEdge + TextInset;
         private double CellWidth => (Owner?.FontSize ?? 22) * 16 / 22;
         private double CellHeight => (Owner?.FontSize ?? 22) * 28 / 22;
         protected override Size MeasureOverride(Size availableSize) => new(Math.Max(120, TextLeft + (Data?.Rows[0].Length ?? 32) * CellWidth + 1), (Data?.Rows.Length ?? 26) * CellHeight + 1);
@@ -220,38 +230,51 @@ public sealed partial class BrailleGridView : ListBox
             var owner = Owner; if (owner is not null) owner.drawSelection = owner.Selection; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length; var textLeft = TextLeft;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : Brushes.White, null, new Rect(RenderSize));
             void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
-            dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : new SolidColorBrush(Color.FromRgb(250, 250, 250)), null, new Rect(0, 0, 40, RenderSize.Height));
-            dc.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(214, 214, 214)), 1), new(39.5, 0), new(39.5, RenderSize.Height));
+            var gutterEdge = GutterEdge;
+            dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : owner?.LineNumberBackground ?? Brushes.WhiteSmoke, null, new Rect(0, 0, gutterEdge + 1, RenderSize.Height));
+            dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : new SolidColorBrush(Color.FromRgb(234, 234, 234)), 1), new(gutterEdge + .5, 0), new(gutterEdge + .5, RenderSize.Height));
             for (var y = 0; y < face.Rows.Length; y++)
             {
+                var kinds = owner?.ManualReviewKinds(face, y) ?? [];
+                var kind = kinds.Length > 0 ? kinds[^1] : (ReviewKind?)null;
+                var contrast = owner?.HighContrast == true;
+                var numberBrush = contrast ? Brushes.White : owner?.LineNumberForeground ?? Brushes.Gray;
                 if (owner?.ShowLineNumbers != false)
-                    dc.DrawText(new FormattedText((y + 1).ToString(), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                        new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
-                        12, Brushes.Gray, VisualTreeHelper.GetDpi(this).PixelsPerDip), new(12, 14 + y * ch));
+                {
+                    if (kind is { } marked)
+                    {
+                        if (!contrast && owner?.CustomLineNumberBackground != true) dc.DrawRectangle(ReviewVisuals.Background(marked), null, new Rect(0, y * ch, NumberWidth, ch));
+                        dc.DrawRectangle(contrast ? Brushes.White : ReviewVisuals.Ink(marked), null, new Rect(0, y * ch, 3, ch));
+                    }
+                    var number = new FormattedText((y + 1).ToString(), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                        new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, kind is null ? FontWeights.Normal : FontWeights.Bold, FontStretches.Normal),
+                        kind is null ? 12 : 14, kind is { } markedKind && !contrast && owner?.CustomLineNumberForeground != true ? ReviewVisuals.Ink(markedKind) : numberBrush,
+                        VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                    dc.DrawText(number, new Point((NumberWidth - number.Width) / 2, y * ch + (ch - number.Height) / 2));
+                }
                 if (owner is not null && face.Rows[y].Any(c => c is not null && owner.IsCaret(c)))
                 {
-                    dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : owner.CurrentLineBrush, null, new Rect(40, y * ch, Math.Max(0, RenderSize.Width - 40), ch));
-                    dc.DrawRectangle(owner.HighContrast ? Brushes.White : new SolidColorBrush(Color.FromRgb(0, 95, 184)), null, new Rect(40, y * ch, 2, ch));
+                    dc.DrawRectangle(owner.HighContrast ? Brushes.DarkBlue : owner.CurrentLineBrush, null, new Rect(gutterEdge, y * ch, Math.Max(0, RenderSize.Width - gutterEdge), ch));
+                    dc.DrawRectangle(owner.HighContrast ? Brushes.White : new SolidColorBrush(Color.FromRgb(0, 95, 184)), null, new Rect(gutterEdge, y * ch, 2, ch));
                 }
                 if (owner is not null && owner.MarkersFor(face).TryGetValue(y, out var marker))
                 {
                     var top = y * ch + (ch - 16) / 2;
                     void Icon(Drawing drawing, double x) { dc.PushTransform(new TranslateTransform(x, top)); dc.DrawDrawing(drawing); dc.Pop(); }
-                    if (marker.Memo) Icon(MemoMargin.MemoDrawing, 40);
-                    if (marker.Review) Icon(MemoMargin.WarningDrawing, marker.Memo ? 56 : 40);
+                    if (marker.Memo) Icon(MemoMargin.MemoDrawing, MarkerStart);
+                    if (marker.Review) Icon(MemoMargin.WarningDrawing, MarkerStart + (marker.Memo ? MarkerSize : 0));
                 }
                 if (owner is not null)
                 {
                     owner.MarkersFor(face).TryGetValue(y, out var rowMarker);
-                    var xIcon = 40 + ((rowMarker?.Memo == true ? 1 : 0) + (rowMarker?.Review == true ? 1 : 0)) * 16;
-                    var kinds = owner.ManualReviewKinds(face, y);
-                    foreach (var kind in kinds)
+                    var xIcon = MarkerStart + ((rowMarker?.Memo == true ? 1 : 0) + (rowMarker?.Review == true ? 1 : 0)) * MarkerSize;
+                    foreach (var rowKind in kinds)
                     {
                         var top = y * ch + (ch - 16) / 2;
-                        dc.PushTransform(new TranslateTransform(xIcon, top)); dc.DrawDrawing(ReviewVisuals.Icon(kind)); dc.Pop();
+                        dc.PushTransform(new TranslateTransform(xIcon, top)); dc.DrawDrawing(ReviewVisuals.Icon(rowKind)); dc.Pop();
                         xIcon += 16;
                     }
-                    if (kinds.Length > 0) dc.DrawRectangle(owner.HighContrast ? Brushes.White : ReviewVisuals.Ink(kinds[^1]), null, new Rect(40, y * ch, 2, ch));
+                    if (kinds.Length > 0) dc.DrawRectangle(owner.HighContrast ? Brushes.White : ReviewVisuals.Ink(kinds[^1]), null, new Rect(gutterEdge, y * ch, 2, ch));
                 }
                 for (var x = 0; x < cols; x++)
                 {
@@ -285,7 +308,7 @@ public sealed partial class BrailleGridView : ListBox
             if (owner?.ShowOutlines == true)
             {
                 dc.DrawLine(new Pen(owner.HighContrast ? Brushes.White : new SolidColorBrush(Color.FromRgb(242, 93, 93)), 1), new(TextLeft + cols * cw, 0), new(TextLeft + cols * cw, face.Rows.Length * ch));
-                dc.DrawLine(new Pen(Brushes.LightGray, 1), new(40, face.Rows.Length * ch), new(RenderSize.Width, face.Rows.Length * ch));
+                dc.DrawLine(new Pen(Brushes.LightGray, 1), new(gutterEdge, face.Rows.Length * ch), new(RenderSize.Width, face.Rows.Length * ch));
             }
         }
         private GridCell? Hit(Point p)
@@ -303,7 +326,7 @@ public sealed partial class BrailleGridView : ListBox
             {
                 e.Handled = true; return;
             }
-            if (p.X is >= 26 and < 40 && Data is not null)
+            if (p.X >= 26 && p.X < MarkerStart && Data is not null)
             {
                 var row = (int)Math.Floor(p.Y / CellHeight);
                 if (row >= 0 && row < Data.Rows.Length) dragBlock = Data.Rows[row].FirstOrDefault(c => c is not null)?.Block;
@@ -315,9 +338,9 @@ public sealed partial class BrailleGridView : ListBox
         }
         private void UpdateMarkerToolTip(Point point)
         {
-            var description = Owner is { } markerOwner && Data is { } markerFace && point.X >= 40 && point.X < TextLeft
+            var description = Owner is { } markerOwner && Data is { } markerFace && point.X >= MarkerStart && point.X < GutterEdge
                 ? markerOwner.MarkerDescription(markerFace, (int)Math.Floor(point.Y / CellHeight)) : "";
-            ToolTip = description.Length > 0 ? description : point.X is >= 26 and < 40 ? "드래그·Shift 선택 · 6점 입력 · Ctrl+Z · 줄 번호 옆에서 블록 이동" : null;
+            ToolTip = description.Length > 0 ? description : point.X >= 26 && point.X < MarkerStart ? "드래그·Shift 선택 · 6점 입력 · Ctrl+Z · 줄 번호 옆에서 블록 이동" : null;
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {

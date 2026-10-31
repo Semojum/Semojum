@@ -125,7 +125,7 @@ internal static class WindowsReviewMarginChecks
             grid.ShowMemos = true; grid.ShowReviews = false; grid.InvalidateFaces(); check(grid.MarkersFor(firstFace).TryGetValue(0, out var memoOnly) && memoOnly.Memo && !memoOnly.Review, "Grid review toggle keeps the actual braille memo");
             grid.ShowReviews = true; grid.InvalidateFaces(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); gridWindow.UpdateLayout();
             grid.Point(cell0, false);
-            check(!grid.ActivateMarker(firstFace, 0, 39) && !grid.ActivateMarker(firstFace, 0, 72), "Grid marker hit targets do not consume the drag gutter or first editable cell");
+            check(!grid.ActivateMarker(firstFace, 0, 32) && !grid.ActivateMarker(firstFace, 0, 72), "Grid marker hit targets do not consume the drag gutter or first editable cell");
             check(grid.ActivateMarker(firstFace, 0, 48) && grid.ActivateMarker(firstFace, 0, 64) && gridMemoClicks == 1 && gridReviewClicks == 1,
                 "Grid mouse-handler coordinate dispatch invokes the two actual callbacks separately");
             check(grid.ActiveBlock == block && grid.CaretOffset == 0, "Opening marker callbacks does not alter the selected braille cell");
@@ -133,6 +133,14 @@ internal static class WindowsReviewMarginChecks
             var faceVisual = Descendants(grid).OfType<FrameworkElement>().First(e => e.GetType().Name == "Face");
             var hit = faceVisual.GetType().GetMethod("Hit", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
             check(ReferenceEquals(hit.Invoke(faceVisual, [new Point(80, 14)]), cell0), "The first editable grid cell remains independently hittable after marker expansion");
+            check(hit.Invoke(faceVisual, [new Point(76, 14)]) is null && ReferenceEquals(hit.Invoke(faceVisual, [new Point(77, 14)]), cell0),
+                "Two visible marker slots expand the gutter without consuming the first braille cell");
+            grid.ShowMemos = false; grid.ShowReviews = false; grid.InvalidateFaces(); gridWindow.UpdateLayout();
+            check(hit.Invoke(faceVisual, [new Point(60, 14)]) is null && ReferenceEquals(hit.Invoke(faceVisual, [new Point(61, 14)]), cell0),
+                "An unmarked braille row starts at the Figma 61px text coordinate");
+            grid.ShowLineNumbers = false; grid.FontSize = 30; grid.InvalidateFaces(); gridWindow.UpdateLayout();
+            check(ReferenceEquals(hit.Invoke(faceVisual, [new Point(61, 14)]), cell0), "Hiding line numbers and enlarging the braille font keep the first cell hittable");
+            grid.FontSize = 22; grid.ShowLineNumbers = true; grid.ShowMemos = true; grid.ShowReviews = true; grid.InvalidateFaces(); gridWindow.UpdateLayout();
             var hover = faceVisual.GetType().GetMethod("UpdateMarkerToolTip", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
             hover.Invoke(faceVisual, [new Point(48, 14)]);
             check(faceVisual.ToolTip?.ToString()?.Contains("점자 메모") == true, "Grid marker hover exposes its current memo detail");
@@ -214,12 +222,18 @@ internal static class WindowsReviewMarginChecks
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); main.UpdateLayout();
             var actual = main.PageEditor.Editor.TextArea.LeftMargins.OfType<MemoMargin>().Single();
-            check(actual.GutterWidth == 12 && Math.Abs(actual.ActualWidth - 12) < .5, "The real source editor preserves its 12px gutter without markers");
+            check(actual.GutterWidth == 17 && actual.SlotPadding == 1 && Math.Abs(actual.ActualWidth - 17) < .5, "The real source editor preserves the Figma marker gutter without markers");
+            var numbers = main.PageEditor.Editor.TextArea.LeftMargins.OfType<ColoredLineNumbers>().Single();
+            check(Math.Abs(numbers.ActualWidth + actual.ActualWidth - 49) < .5, "The source number and marker regions place the separator at the Figma 49px coordinate");
+            main.ApplyAppearance(new EditorAppearance(LineNumberColor: "#123456", LineNumberBackground: "#ABCDEF"), true);
+            check(((SolidColorBrush)main.Braille.GridView.LineNumberForeground).Color == (Color)ColorConverter.ConvertFromString("#123456")
+                && ((SolidColorBrush)main.Braille.GridView.LineNumberBackground).Color == (Color)ColorConverter.ConvertFromString("#ABCDEF"),
+                "Custom line-number foreground and background also reach the visible braille grid");
             var current = main.Session.ActiveBlock!;
             current.Source = "첫 줄"; current.Memos.Add(new("actual", null, "TEXT", 0, "첫 줄", "원문 메모", DateTimeOffset.Now));
             current.Translation = new("⠁", [], [new("기호", 1, "unknown")], false, []);
             main.PageEditor.Refresh(); actual.InvalidateVisual(); await Task.Delay(150); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); main.UpdateLayout();
-            check(actual.Preview(0).Contains("원문 메모") && actual.ReviewPreview(0).Contains("기호") && Math.Abs(actual.ActualWidth - 32) < .5,
+            check(actual.Preview(0).Contains("원문 메모") && actual.ReviewPreview(0).Contains("기호") && Math.Abs(actual.ActualWidth - 33) < .5,
                 "The actual 960px source editor shows both real 16px markers without clipping");
             var brailleMargin = main.Braille.Editor.TextArea.LeftMargins.OfType<MemoMargin>().Single();
             check(!main.Braille.Editor.IsVisible && main.Braille.GridView.IsVisible && brailleMargin.Preview(0) == "", "The visible braille grid and hidden text editor are separate rendering paths");

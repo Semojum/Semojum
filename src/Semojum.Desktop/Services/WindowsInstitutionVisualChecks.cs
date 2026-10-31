@@ -15,7 +15,8 @@ internal static class WindowsInstitutionVisualChecks
     internal static async Task RunAsync(Action<bool, string> check)
     {
         var account = new InstitutionAccount("kblib02", "수학 담당", "ACTIVE", "ROLE_USER", "2026-08-13", 1140, false);
-        var jobs = new InstitutionAccountJobs("kblib02", "수학 담당", "2026-08-01", "2026-08-31", [new("job", "문서.pdf", "IMAGE", "DONE", 14, 14, 0, 11, null, null)], 14, 11);
+        var jobs = new InstitutionAccountJobs("kblib02", "수학 담당", "2026-08-01", "2026-08-31",
+            [new("job", "문서.pdf", "IMAGE", "DONE", 14, 14, 0, 11, null, null), new("job2", "둘째.pdf", "IMAGE", "DONE", 28, 28, 0, null, null, null)], 42, 11);
         var notice = new InstitutionNotice(Guid.NewGuid(), "ORG", "크레딧 소진 임박 안내", "운영자가 보낸 실제 공지 내용입니다.", null, null, "2026-08-13");
         var order = new InstitutionOrder(Guid.NewGuid(), "2026-06-02", "크레딧 추가 · 3,000", 780000, 3000, null, "PENDING", null);
         var views = new (Window Window, string Name, double Width, double Height, string Asset)[]
@@ -43,8 +44,29 @@ internal static class WindowsInstitutionVisualChecks
                         "The account-detail scrollable body renders between the title and footer without clipping");
                     check(Descendants(window).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "수학 담당"), "The account detail actually renders its server-provided alias");
                     var accountDetail = (InstitutionAccountDetailDialog)window;
-                    check(accountDetail.Jobs.HeadersVisibility == DataGridHeadersVisibility.None && accountDetail.Jobs.GridLinesVisibility == DataGridGridLinesVisibility.None && accountDetail.Jobs.RowHeight == 32 && accountDetail.Jobs.Items.Count == 1,
+                    check(accountDetail.Jobs.HeadersVisibility == DataGridHeadersVisibility.None && accountDetail.Jobs.GridLinesVisibility == DataGridGridLinesVisibility.None && accountDetail.Jobs.RowHeight == 32 && accountDetail.Jobs.Items.Count == 2,
                         "Account detail uses the Figma headerless, gridless 32px job rows while retaining actual job data");
+                    var originalOffset = body?.VerticalOffset ?? 0;
+                    accountDetail.Jobs.BringIntoView(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                    var data = accountDetail.Jobs;
+                    var item = data.Items[0];
+                    var nameValue = data.Columns[0].GetCellContent(item) as TextBlock;
+                    var pageValue = data.Columns[1].GetCellContent(item) as TextBlock;
+                    var creditValue = data.Columns[2].GetCellContent(item) as TextBlock;
+                    var firstX = nameValue?.TransformToAncestor(data).Transform(new Point()).X ?? double.NaN;
+                    var secondX = pageValue?.TransformToAncestor(data).Transform(new Point()).X ?? double.NaN;
+                    var thirdX = creditValue?.TransformToAncestor(data).Transform(new Point()).X ?? double.NaN;
+                    check(nameValue?.Text == "문서.pdf" && pageValue?.Text == "14쪽" && creditValue?.Text == "11 크레딧"
+                        && Math.Abs(firstX - 16) <= 2 && Math.Abs(secondX - (data.Columns[0].ActualWidth + 8)) <= 2
+                        && Math.Abs(thirdX - (data.Columns[0].ActualWidth + 78)) <= 2,
+                        "Account jobs render real values with the Figma first-column inset, flexible name, and 70px page column");
+                    var missingCredits = data.Columns[2].GetCellContent(data.Items[1]) as TextBlock;
+                    check(missingCredits?.Text == "— 크레딧", $"A missing job credit value retains the Figma placeholder instead of inventing a charge (rendered: {missingCredits?.Text ?? "<unrealized>"})");
+                    var originalWidth = window.Width; window.Width = 420; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+                    check(data.Columns[0].ActualWidth >= 80 && Math.Abs(data.Columns[1].ActualWidth - 70) < .5 && Math.Abs(data.Columns[2].ActualWidth - 118) < .5
+                        && data.Columns.Sum(c => c.ActualWidth) <= data.ActualWidth + .5,
+                        "At the minimum dialog width account jobs retain readable page and credit columns without overflowing");
+                    window.Width = originalWidth; body?.ScrollToVerticalOffset(originalOffset); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
                 }
                 else if (window is InstitutionOrderDialog)
                 {

@@ -131,9 +131,9 @@ public partial class MainWindow
         if (detachedPane is not null) detachedPane.Editor.ShowLineNumbers = LineNumbersToggle.IsChecked;
         if (LineNumbersToggle.IsChecked)
         {
-            ApplyLineNumberAppearance(SourceEditor, appearance); ApplyLineNumberAppearance(PageEditor.Editor, appearance);
-            ApplyLineNumberAppearance(Braille.Editor, appearance);
-            if (detachedPane is not null) ApplyLineNumberAppearance(detachedPane.Editor, appearance);
+            ApplyLineNumberAppearance(SourceEditor, appearance, currentLineNumberColor); ApplyLineNumberAppearance(PageEditor.Editor, appearance, currentLineNumberColor);
+            ApplyLineNumberAppearance(Braille.Editor, appearance, currentLineNumberColor);
+            if (detachedPane is not null) ApplyLineNumberAppearance(detachedPane.Editor, appearance, currentLineNumberColor);
         }
         Braille.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; Braille.GridView.InvalidateFaces();
         if (detachedPane is not null) { detachedPane.GridView.ShowLineNumbers = LineNumbersToggle.IsChecked; detachedPane.GridView.InvalidateFaces(); }

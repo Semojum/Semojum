@@ -17,6 +17,7 @@ internal static class WindowsAppearanceDefaultChecks
         var field = typeof(MainWindow).GetField("accountPreferences", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var edit = typeof(MainWindow).GetMethod("EditAppearanceAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
         AccountPreferences Preferences() => (AccountPreferences)field.GetValue(window)!;
+        string shownNumber = "";
         async Task<string> Edit(string button, bool changeFontSize = false)
         {
             string shown = "";
@@ -27,7 +28,7 @@ internal static class WindowsAppearanceDefaultChecks
                 if (dialog is null) return;
                 timer.Stop();
                 var inputs = (Dictionary<string, TextBox>)typeof(AppearanceDialog).GetField("inputs", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(dialog)!;
-                shown = inputs["CurrentLineColor"].Text;
+                shown = inputs["CurrentLineColor"].Text; shownNumber = inputs["LineNumberColor"].Text;
                 if (changeFontSize) inputs["TextSize"].Text = "15";
                 Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, button)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             };
@@ -44,6 +45,8 @@ internal static class WindowsAppearanceDefaultChecks
             var shown = await Edit("확인", changeFontSize: true);
             check(shown == "#F2F6FB" && Preferences().Appearance is { CurrentLineColor: "#F2F6FB", TextSize: 15 } && Blue(),
                 "A new account displays and retains the Figma default when changing another appearance setting");
+            check(shownNumber == "#8A8A8A" && Preferences().Appearance?.LineNumberColor == "#8A8A8A",
+                "The displayed Figma line-number color is saved unchanged when editing another setting");
             var root = Path.Combine(Directory.GetCurrentDirectory(), "semojum-appearance-fixture-" + Guid.NewGuid().ToString("N"));
             try
             {
@@ -51,12 +54,15 @@ internal static class WindowsAppearanceDefaultChecks
                 check(store.Load("fixture").Appearance?.CurrentLineColor == "#F2F6FB", "The chosen default persists and reloads from an isolated account profile");
             }
             finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
-            var saved = new EditorAppearance(CurrentLineColor: "#FFF5A3");
+            var saved = new EditorAppearance(CurrentLineColor: "#FFF5A3", LineNumberColor: "#123456");
             field.SetValue(window, new AccountPreferences(Appearance: saved)); window.ApplyAppearance(saved);
             shown = await Edit("확인", changeFontSize: true);
             check(shown == "#FFF5A3" && Preferences().Appearance?.CurrentLineColor == "#FFF5A3" && Yellow(),
                 "A previously saved yellow current-line color survives editing another setting");
+            check(shownNumber == "#123456" && Preferences().Appearance?.LineNumberColor == "#123456",
+                "Editing other appearance settings preserves a saved line-number color");
             shown = await Edit("기본값");
+            check(Preferences().Appearance?.LineNumberColor == "#8A8A8A", "Restoring appearance defaults restores the Figma line-number color");
             check(shown == "#FFF5A3" && Preferences().Appearance?.CurrentLineColor == "#F2F6FB" && Blue(),
                 "Explicitly restoring defaults replaces a saved color with the Figma default");
         }

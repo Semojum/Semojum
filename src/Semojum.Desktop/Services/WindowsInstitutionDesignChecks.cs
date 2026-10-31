@@ -28,6 +28,15 @@ internal static class WindowsInstitutionDesignChecks
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); await WaitFor(() => window.Refresh.IsEnabled && window.Accounts.Items.Count > 0);
+            var table = window.Accounts;
+            var header = new DataGridColumnHeader { Style = table.ColumnHeaderStyle };
+            var cell = new DataGridCell { Style = table.CellStyle };
+            check(header.Background is SolidColorBrush headerFill && headerFill.Color == Color.FromRgb(0xF4, 0xF6, 0xF9)
+                && header.Foreground is SolidColorBrush headerText && headerText.Color == Color.FromRgb(0x5F, 0x5F, 0x5F)
+                && header.Padding == new Thickness(8, 0, 8, 0) && table.ColumnHeaderHeight == 24
+                && table.HorizontalGridLinesBrush is SolidColorBrush separator && separator.Color == Color.FromRgb(0xEA, 0xEA, 0xEA)
+                && cell.Padding == new Thickness(8, 0, 8, 0),
+                "Institution tables use the Figma header, 8px content inset and row separator colors");
             check(window.Identity.Text == "테스트 기관 · O1" && window.Allocated.Text == "1,000" && window.Balance.Text == "700" && window.UsageBar.Value == 30,
                 "Institution dashboard displays actual server organization and credit values");
             check(window.UsagePercent.Text == "30%" && window.StatusSummary.Text.Contains("테스트 기관") && window.StatusSummary.Text.Contains("700") && window.ContractRemaining.Text != "정보 없음",

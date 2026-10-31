@@ -39,10 +39,19 @@ internal sealed class InstitutionAccountDetailDialog : CompactDialog
         Section("계정", ("별칭", account.Alias ?? "정보 없음"), ("메일", "제공되지 않음"), ("만든 날", "제공되지 않음"));
         Section("이 달 쓴 양", ("크레딧", account.UsedCredits.ToString("N0")), ("마지막 로그인", account.LastLoginAt ?? "정보 없음"));
         body.Children.Add(new TextBlock { Text = $"최근 작업 · {jobs.From} ~ {jobs.To}", Foreground = ExportRangeDialog.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        Jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, HeadersVisibility = DataGridHeadersVisibility.None, BorderThickness = new(0), Background = ExportRangeDialog.Brush("#F9F9F9"),
-            GridLinesVisibility = DataGridGridLinesVisibility.None, RowHeight = 32, Style = (Style)FindResource("BoardGrid"), ItemsSource = jobs.Items, MinHeight = 100, MaxHeight = 150 };
-        foreach (var (label, path) in new[] { ("파일", "FileName"), ("쪽", "TotalPages"), ("크레딧", "Credits") }) Jobs.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(path) { TargetNullValue = "—" }, Width = new(1, DataGridLengthUnitType.Star) });
-        AutomationProperties.SetName(Jobs, "해당 계정의 최근 작업"); body.Children.Add(Jobs);
+        var jobBackground = ExportRangeDialog.Brush("#F9F9F9");
+        Jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, HeadersVisibility = DataGridHeadersVisibility.None, BorderThickness = new(0), Background = jobBackground,
+            RowBackground = jobBackground, AlternatingRowBackground = jobBackground, GridLinesVisibility = DataGridGridLinesVisibility.None, RowHeight = 32,
+            Style = (Style)FindResource("BoardGrid"), ItemsSource = jobs.Items, MinHeight = 80, MaxHeight = 130 };
+        var baseCell = (Style)Jobs.Style.Setters.OfType<Setter>().Single(s => s.Property == DataGrid.CellStyleProperty).Value;
+        var nameCell = new Style(typeof(DataGridCell), baseCell); nameCell.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(16, 0, 8, 0)));
+        var detailCell = new Style(typeof(DataGridCell), baseCell); detailCell.Setters.Add(new Setter(Control.ForegroundProperty, ExportRangeDialog.Brush("#5F5F5F")));
+        var nameText = new Style(typeof(TextBlock)); nameText.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+        nameText.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding("FileName")));
+        Jobs.Columns.Add(new DataGridTextColumn { Header = "파일", Binding = new Binding("FileName"), Width = new(1, DataGridLengthUnitType.Star), MinWidth = 80, CellStyle = nameCell, ElementStyle = nameText });
+        Jobs.Columns.Add(new DataGridTextColumn { Header = "쪽", Binding = new Binding("TotalPages") { StringFormat = "{0}쪽" }, Width = 70, CellStyle = detailCell });
+        Jobs.Columns.Add(new DataGridTextColumn { Header = "크레딧", Binding = new Binding("Credits") { TargetNullValue = "— 크레딧", StringFormat = "{0} 크레딧" }, Width = 118, CellStyle = detailCell });
+        AutomationProperties.SetName(Jobs, "해당 계정의 최근 작업"); body.Children.Add(new Border { Background = jobBackground, CornerRadius = new(6), Padding = new(0, 10, 0, 10), Child = Jobs });
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 24, 0) }; Grid.SetRow(actions, 2); layout.Children.Add(actions);
         var lockState = account.Status == "INACTIVE";
         LockButton = Button(lockState ? "잠금 해제" : "잠금", async () => await RunAsync(async () =>

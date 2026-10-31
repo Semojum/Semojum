@@ -87,7 +87,7 @@ public sealed class ColoredLineNumbers : LineNumberMargin
             var text = new FormattedText(line.FirstDocumentLine.LineNumber.ToString(), System.Globalization.CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight, new Typeface((FontFamily)Application.Current.FindResource("InterfaceFont"), FontStyles.Normal, kind is null ? FontWeights.Normal : FontWeights.Bold, FontStretches.Normal),
                 kind is null ? 12 : 14, kind is { } review && !contrast && !CustomNumberColor ? Controls.ReviewVisuals.Ink(review) : numberBrush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            dc.DrawText(text, new Point(RenderSize.Width / 2 + 2 - text.Width / 2, y + (line.Height - text.Height) / 2));
+            dc.DrawText(text, new Point((RenderSize.Width - text.Width) / 2, y + (line.Height - text.Height) / 2));
         }
     }
 }
