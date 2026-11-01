@@ -31,13 +31,13 @@ public sealed class BraillePreviewDialog : CompactDialog
         var blockList = string.Join(", ", unknown.Take(10)) + (unknown.Length > 10 ? $" 외 {unknown.Length - 10}개" : "");
         var alignmentList = string.Join(", ", unknownAlign.Take(10)) + (unknownAlign.Length > 10 ? $" 외 {unknownAlign.Length - 10}개" : "");
         var warnings = new List<string>();
-        if (unknown.Length > 0) warnings.Add("현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록의 빈 줄을 확인해 주세요. 블록: " + blockList);
+        if (unknown.Length > 0) warnings.Add("직접 고친 점자의 빈 줄이 조판 빈 줄과 겹치거나 엔진이 쪽 빈 줄을 정하지 못했습니다. 빈 줄을 확인해 주세요. 블록: " + blockList);
         if (unknownAlign.Length > 0) warnings.Add("정렬 태그와 점자 줄의 대응을 확인할 수 없어 해당 정렬을 적용하지 않았습니다. 블록: " + alignmentList);
         var spacingMessage = string.Join("\n", warnings);
         bool ConfirmSpacing()
         {
             if (warnings.Count == 0) return true;
-            var notice = new NoticeDialog(unknownAlign.Length > 0 ? "조판 정보를 확인할 수 없는 블록이 있습니다." : "조판 빈 줄을 확인할 수 없는 블록이 있습니다.",
+            var notice = new NoticeDialog(unknownAlign.Length > 0 ? "조판 정보를 확인할 수 없는 블록이 있습니다." : "조판 빈 줄을 확인해 주세요.",
                 spacingMessage + "\n현재 판면을 출력하시겠습니까?", ["출력", "취소"], height: warnings.Count > 1 ? 266 : 226);
             if (confirmSpacing is { } decide) return decide(notice) == 0;
             notice.Owner = this; notice.ShowDialog(); return notice.Choice == 0;

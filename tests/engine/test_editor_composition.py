@@ -41,6 +41,46 @@ class CompositionTests(unittest.TestCase):
                     if end:
                         self.assertLessEqual(end[1], len(by_id[end[0]]))
 
+    def test_layout_blank_rows_and_header_align_match_upstream(self):
+        # blank_before / blank_after compose exactly like the same newlines inside braille (engine translate_page cells),
+        # without moving any block coordinate; header_align reaches the header line like upstream build_pages.
+        rng = random.Random(3444)
+        for case in range(160):
+            sources, upstream, by_id = [], [], {}
+            for p in range(1, rng.randint(2, 4)):
+                blocks, plain = [], []
+                for b in range(rng.randint(1, 5)):
+                    ident = p * 10 + b
+                    text = ''.join(rng.choice('⠁⠃⠉⠀\n') for _ in range(rng.randint(0, 50)))
+                    before, after = rng.choice([0, 0, 1, 2]), rng.choice([0, 0, 1, 2])
+                    if b and rng.random() < .15:
+                        text, before, after = '<!하단줄>', 0, 0
+                    block = dict(id=ident, order=b, braille=text, breaks=list(range(2, len(text), 3)), blank_before=before, blank_after=after)
+                    blocks.append(block); by_id[ident] = text
+                    body = text if not text or text.endswith('\n') or text == '<!하단줄>' else text + '\n'
+                    plain.append(dict(block, braille='\n' * before + body + '\n' * after,
+                        breaks=[x + before for x in block['breaks']], blank_before=0, blank_after=0))
+                sources.append(dict(orig_page=p, blocks=blocks)); upstream.append(dict(orig_page=p, blocks=plain))
+            opts = dict(cols=rng.choice([16, 32]), rows=rng.choice([6, 8]), page_row_pages=rng.choice(['odd', 'every', 'none']),
+                header_align=rng.choice(['left', 'center', 'right']), wrap=rng.choice(['word', 'syllable']))
+            header = rng.choice(['', '⠋⠛'])
+            result = compose(dict(sources=sources, header=header, footer='⠚', opts=opts))
+            self.assertEqual(a.build_brf_file(dict(sources=upstream, header=header, footer='⠚', opts=opts)).decode('ascii'), result['brf'], f'case {case}')
+            for page, refs, kinds in zip(result['pages'], result['maps'], result['kinds']):
+                for line, points, kind in zip(page, refs, kinds):
+                    if kind == 'blank':
+                        self.assertEqual([], points)
+                    for col, point in enumerate(points):
+                        if point:
+                            self.assertEqual(by_id[point[0]][point[1]], line[col])
+
+    def test_header_alignment_per_face(self):
+        job = dict(sources=[dict(orig_page=1, blocks=[dict(id=1, braille='⠁\n' * 6)])], header='⠋', headers={'1': '⠛'},
+            header_aligns={'1': 'left'}, opts=dict(cols=8, rows=4, page_row_pages='none', header_align='right'))
+        pages = compose(job)['pages']
+        self.assertEqual('⠛', pages[0][0])
+        self.assertEqual('⠀' * 7 + '⠋', pages[1][0])
+
     def test_crlf_offsets_and_tab_space_cells(self):
         raw = '⠁\r\n⠃\r⠉\n⠙\t⠑'
         r = compose(dict(sources=[dict(orig_page=1, blocks=[dict(id=1, braille=raw)])],

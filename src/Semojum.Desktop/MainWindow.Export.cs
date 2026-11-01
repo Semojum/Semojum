@@ -46,8 +46,10 @@ public partial class MainWindow
                 var result = await local.ComposeAsync(selected, ct);
                 if (result.Replaced.Count > 0 && !ConfirmExport("BRF에서 빈칸으로 바뀌는 문자가 있습니다.",
                     "바뀌는 문자: " + string.Join(", ", result.Replaced.Select(p => $"{p.Key}({p.Value})")) + ". 계속 내보내시겠습니까?")) throw new OperationCanceledException("내보내기를 취소했습니다.");
-                if (result.SpacingUnknownBlockIds is { Length: > 0 } ids && !ConfirmExport("조판 빈 줄을 확인할 수 없는 블록이 있습니다.",
-                    "블록 " + DescribeSpacingBlocks(ids) + ". 현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록입니다. 저장된 점자는 그대로 유지됩니다. 현재 판면으로 내보내시겠습니까?", height: 226))
+                // Layout blank lines come from the engine for every page; only edited braille whose own blank lines meet them,
+                // or a page the engine could not lay out, needs a look.
+                if (result.SpacingUnknownBlockIds is { Length: > 0 } ids && !ConfirmExport("조판 빈 줄을 확인해 주세요.",
+                    "블록 " + DescribeSpacingBlocks(ids) + ". " + SpacingReason + " 고친 점자는 그대로 둡니다. 현재 판면으로 내보내시겠습니까?", height: 226))
                     throw new OperationCanceledException("내보내기를 취소했습니다.");
                 if (result.AlignmentUnknownBlockIds is { Length: > 0 } alignmentIds && !ConfirmExport("정렬 태그와 점자 줄의 대응을 확인할 수 없습니다.",
                     "블록 " + DescribeSpacingBlocks(alignmentIds) + ". 해당 줄의 정렬을 적용하지 않은 현재 판면으로 내보내시겠습니까?"))

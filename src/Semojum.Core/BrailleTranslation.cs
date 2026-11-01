@@ -34,8 +34,10 @@ public sealed record BlockMetadata(string Type = "text", int HeadingLevel = 0, b
     string? VisualSubtype = null, bool IsBlocked = false, double? OcrConfidence = null);
 public sealed record AlternativeDraft(string Label, string Text, string? TaggedText, string? LegacyBraille, string? Reason);
 public enum RuleEvidenceOrigin { Unknown, TextPanel, BraillePanel }
+/// <param name="Axis">What the columns count (engine 3.4.44): "braille" cells (engine) or "print" source characters (AI server). Null in older data; read by origin.</param>
 public sealed record RuleEvidence(string RuleId, string Source, string Section, string Title, string Excerpt,
-    int LineNo, int ColumnStart, int ColumnEnd, string? Tag = null, RuleEvidenceOrigin Origin = RuleEvidenceOrigin.Unknown);
+    int LineNo, int ColumnStart, int ColumnEnd, string? Tag = null, RuleEvidenceOrigin Origin = RuleEvidenceOrigin.Unknown,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Axis = null);
 
 /// <summary>Uses engine break offsets; a missing map falls back to whitespace, never arbitrary syllable guesses.</summary>
 public static class BrailleWrapping

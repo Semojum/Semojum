@@ -29,8 +29,8 @@ internal static class IntegrationChecks
         yield return ("Braille folding respects syllables, empty lines and note indicators", Folding);
         yield return ("Tags distinguish pairs, singletons and layout-only footer", Tags);
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_PYTHON") is { Length: > 0 } python)
-            yield return ("Real v3.4.41 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
-        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.41 Python executable");
+            yield return ("Real v3.4.44 Korean grades, table drafts, review flags and BRF round trip", () => RealEngine(python));
+        else Console.WriteLine("SKIP real engine: set SEMOJUM_ENGINE_PYTHON to the v3.4.44 Python executable");
         if (Environment.GetEnvironmentVariable("SEMOJUM_ENGINE_EXECUTABLE") is { Length: > 0 } executable)
             yield return ("Packaged engine grades, table drafts and BRF round trip", () => RealEngine(executable, true));
     }
@@ -355,54 +355,15 @@ internal static class IntegrationChecks
         await using var sidecar = new BrailleSidecar(new(python, packaged ? [] : ["-u", Path.Combine(AppContext.BaseDirectory, "engine-adapter", "engine-entry.py")]));
         var engine = new LocalBrailleEngine(sidecar);
         var grade2 = await engine.TranslateElementAsync("가", new(), new()); Equal("⠫", grade2.Cells.Trim('⠀'));
-        Equal("3.4.41", sidecar.EngineVersion);
-        var spacingPing = await sidecar.InvokeAsync("ping");
-        var spacingCapable = spacingPing.TryGetProperty("editor_spacing_protocol", out var spacingProtocol) && spacingProtocol.GetInt32() == 1;
-        if (spacingCapable)
-        {
-        True(grade2.Spacing is not null);
-        var spacingDoc = new DocumentSession { Layout = new(Columns: 16, Lines: 12, PageNumbers: "출력 안 함", Footer: "출력 안 함") };
-        foreach (var item in new[] { ("가", "text", 0), ("나", "title", 3), ("다", "title", 3), ("라", "text", 0) })
-        {
-            var metadata = new BlockMetadata(Type: item.Item2, HeadingLevel: item.Item3);
-            var translated = await engine.TranslateElementAsync(item.Item1, metadata, new());
-            spacingDoc.Add(new EditorBlock { Id = spacingDoc.Blocks.Count + 1, Page = 1, Source = item.Item1,
-                Metadata = metadata, Braille = translated.Cells, Translation = translated });
-        }
-        var firstSpacing = await engine.ComposeAsync(SmjFile.Snapshot(spacingDoc).Manifest);
-        Equal(0, firstSpacing.SpacingUnknownBlockIds!.Length);
-        var firstRows = (await engine.ReadBrfAsync(firstSpacing.Brf))[0];
-        foreach (var line in new[] { 1, 3, 5 }) True(firstRows[line].All(c => c == '⠀'));
-        foreach (var line in new[] { 0, 2, 4, 6 }) True(firstRows[line].Any(c => c != '⠀'));
-        var spacingPath = Path.Combine(Path.GetTempPath(), "semojum-spacing-" + Guid.NewGuid() + ".smj");
-        try
-        {
-            await SmjFile.SaveAsync(spacingPath, SmjFile.Snapshot(spacingDoc));
-            var restored = await SmjFile.LoadAsync(spacingPath);
-            True(restored.Blocks[1].Translation?.Spacing is not null);
-            Equal(firstSpacing.Brf, (await engine.ComposeAsync(SmjFile.Snapshot(restored).Manifest)).Brf);
-            var savedCells = restored.Blocks[1].Braille;
-            restored.Blocks[1].EditBraille(savedCells + "\n\n");
-            var manual = await engine.ComposeAsync(SmjFile.Snapshot(restored).Manifest);
-            True(manual.SpacingUnknownBlockIds!.Contains(restored.Blocks[1].Id));
-            Equal(savedCells + "\n\n", restored.Blocks[1].Braille);
-            var grid = BrailleGrid.FromComposition(manual, restored.Blocks, restored.Layout);
-            True(grid.SelectMany(face => face.Kinds!).Contains("spacing"));
-        }
-        finally { if (File.Exists(spacingPath)) File.Delete(spacingPath); }
-        }
-        else
-        {
-            var legacy = new DocumentSession();
-            legacy.Add(new EditorBlock { Id = 1, Page = 1, Source = "가", Braille = grade2.Cells, Translation = grade2 });
-            var legacyComposition = await engine.ComposeAsync(SmjFile.Snapshot(legacy).Manifest);
-            True(legacyComposition.SpacingUnknownBlockIds!.Contains(1));
-            Equal(grade2.Cells, legacy.Blocks[0].Braille);
-        }
+        Equal("3.4.44", sidecar.EngineVersion);
+        await PageBlankLines(engine, sidecar, grade2);
+        await HeaderAlignment(engine, sidecar);
         var spaced = await engine.TranslateElementAsync("  가나다", new(), new());
         var tagged = await engine.TranslateElementAsync("<!2칸>가나다", new(), new()); Equal(tagged.Cells, spaced.Cells);
         var evidence = await engine.TranslateElementAsync("<!주>설명<!/주>", new(), new());
         True(evidence.RuleTrail?.Any(r => r.Title.Length > 0 && r.Excerpt.Length > 0 && r.ColumnEnd > r.ColumnStart) == true);
+        // 3.4.44 marks engine columns as braille cells of these very cells.
+        True(evidence.RuleTrail!.All(r => r.Axis == AppliedRules.BrailleAxis && r.ColumnEnd <= evidence.Cells.Length));
 
         var grade1 = await engine.TranslateElementAsync("가", new(), new(KoreanGrade1: true)); Equal("⠈⠣", grade1.Cells.Trim('⠀'));
         var dropped = await engine.TranslateElementAsync("가▶나", new(), new()); True(dropped.NeedsReview); Equal("▶", dropped.Dropped[0].Text);
@@ -484,6 +445,93 @@ internal static class IntegrationChecks
         True(filled.Pages![1].Lines[1][2] == '⠿' && filled.Pages[2].Lines[0].Any(c => c != '⠀'));
         headerDoc.Blocks[1].Source = "다<!머리말>가<!/머리말>나";
         await Reject<ArgumentException>(() => engine.BuildBrfAsync(headerDoc)); // Unknown manual position cannot silently become global.
+    }
+
+    private static async Task PageBlankLines(LocalBrailleEngine engine, BrailleSidecar sidecar, BrailleTranslation grade2)
+    {
+        // Engine sidecar.md §4-1 measured newlines of two joined translate_page elements.
+        const string tableSource = "<!표>\n<!행><!칸>구분<!칸>가<!/행>\n<!행><!칸>나<!칸>다<!/행>\n<!/표>";
+        (string, BlockMetadata) title = ("1 국어의 탐구와 활용", new(Type: "title", HeadingLevel: 2)), table = ("", new(Type: "table", TableSource: tableSource)),
+            image = ("그림 설명이다.", new(Type: "image")), image2 = ("또 그림이다.", new(Type: "image")), text = ("첫 글이다.", new()), text2 = ("둘째 글이다.", new());
+        foreach (var (pair, newlines) in new[] { ((title, table), 6), ((title, image), 5), ((image, image2), 3), ((text, text2), 0) })
+            Equal(newlines, string.Concat((await engine.TranslatePageAsync([pair.Item1, pair.Item2], new())).Select(e => e.Cells)).Count(c => c == '\n'));
+
+        // Screen and BRF carry the server's blank lines: the app composition equals build_brf over translate_page cells.
+        var doc = new DocumentSession { Layout = new(Columns: 32, Lines: 8, PageNumbers: "출력 안 함", Footer: "출력 안 함") };
+        foreach (var (page, (source, metadata)) in new[] { (1, title), (1, table), (1, text), (1, text2), (2, ("3 단원", new BlockMetadata(Type: "title", HeadingLevel: 3))), (2, text) })
+        {
+            var translated = await engine.TranslateElementAsync(source, metadata, new());
+            doc.Add(new EditorBlock { Id = doc.Blocks.Count + 1, Page = page, Source = source, Metadata = metadata, Braille = translated.Cells, Translation = translated with { SourceText = source } });
+        }
+        var composed = await engine.ComposeAsync(SmjFile.Snapshot(doc).Manifest);
+        Equal(0, composed.SpacingUnknownBlockIds!.Length);
+        var sources = new List<object>();
+        foreach (var page in doc.Blocks.GroupBy(b => b.Page))
+        {
+            var laid = await engine.TranslatePageAsync(page.Select(b => (b.Source, b.Metadata)).ToArray(), new());
+            True(page.Zip(laid).All(p => p.Second.Cells.Trim('\n') == p.First.Braille.Trim('\n'))); // Same body; only blank lines differ.
+            sources.Add(new { orig_page = page.Key, blocks = laid.Select((e, order) => new { order, braille = e.Cells, breaks = e.Breaks, heading_level = page.ElementAt(order).Metadata.HeadingLevel }).ToArray() });
+        }
+        var server = await sidecar.InvokeAsync("build_brf", new { job = new { sources, opts = new { cols = 32, rows = 8, page_row_pages = "none", footer_pages = "none" } } });
+        Equal(server.GetProperty("brf").GetString(), composed.Brf);
+        True(composed.Pages!.SelectMany(p => p.Kinds).Contains("blank"));
+        foreach (var page in composed.Pages!)
+            for (var row = 0; row < page.Kinds.Length; row++)
+                if (page.Kinds[row] == "blank") True(page.Cells[row].Length == 0 && page.Ends[row] is null); // Layout rows never map to block cells.
+        var grid = BrailleGrid.FromComposition(composed, doc.Blocks, doc.Layout);
+        Equal(string.Join("|", composed.Pages.SelectMany(p => p.Lines)), string.Join("|", grid.SelectMany(f => f.Text!)));
+
+        // Consecutive visuals have no blank line between them; a translated block never asks for confirmation.
+        var visuals = new DocumentSession { Layout = new(Columns: 32, Lines: 8, PageNumbers: "출력 안 함", Footer: "출력 안 함") };
+        foreach (var (source, metadata) in new[] { image, image2, text })
+        {
+            var translated = await engine.TranslateElementAsync(source, metadata, new());
+            visuals.Add(new EditorBlock { Id = visuals.Blocks.Count + 1, Page = 1, Source = source, Metadata = metadata, Braille = translated.Cells, Translation = translated with { SourceText = source } });
+        }
+        var visualPage = (await engine.ComposeAsync(SmjFile.Snapshot(visuals).Manifest)).Pages![0];
+        Equal("body,body,blank,body", string.Join(",", visualPage.Kinds.TakeWhile(k => k != "padding")));
+
+        // Retranslating one block keeps the page's blank lines; an edited block keeps its cells, and is asked about
+        // only when blank lines typed into it meet a layout blank line.
+        var single = await engine.TranslateElementAsync(text.Item1, text.Item2, new());
+        doc.Blocks[2].Braille = single.Cells; doc.Blocks[2].Translation = single with { SourceText = text.Item1 };
+        Equal(composed.Brf, (await engine.ComposeAsync(SmjFile.Snapshot(doc).Manifest)).Brf);
+        doc.Blocks[2].EditBraille("⠿⠿");
+        var edited = await engine.ComposeAsync(SmjFile.Snapshot(doc).Manifest);
+        Equal(0, edited.SpacingUnknownBlockIds!.Length); Equal("⠿⠿", doc.Blocks[2].Braille);
+        doc.Blocks[2].EditBraille("\n⠿⠿"); // After a table: the typed line meets the table's blank line.
+        edited = await engine.ComposeAsync(SmjFile.Snapshot(doc).Manifest);
+        Equal("3", string.Join(",", edited.SpacingUnknownBlockIds!)); Equal("\n⠿⠿", doc.Blocks[2].Braille);
+        var lines = (await engine.ReadBrfAsync(edited.Brf)).SelectMany(p => p).ToArray();
+        var at = Array.FindIndex(lines, l => l.Contains("⠿⠿"));
+        True(at > 2 && lines[at - 1].All(c => c == '⠀') && lines[at - 2].All(c => c == '⠀')); // Both kept; nothing is removed from edited braille.
+        var legacy = new DocumentSession();
+        legacy.Add(new EditorBlock { Id = 1, Page = 1, Source = "가", Braille = grade2.Cells, Translation = grade2 });
+        Equal(0, (await engine.ComposeAsync(SmjFile.Snapshot(legacy).Manifest)).SpacingUnknownBlockIds!.Length);
+        Equal(grade2.Cells, legacy.Blocks[0].Braille);
+    }
+
+    private static async Task HeaderAlignment(LocalBrailleEngine engine, BrailleSidecar sidecar)
+    {
+        var cells = (await engine.TranslateElementAsync("가", new(Type: "header_footer"), new())).Cells.Trim('⠀', ' ');
+        foreach (var align in new[] { "left", "center", "right" })
+        {
+            var doc = new DocumentSession { Layout = new(Columns: 16, Lines: 4, PageNumbers: "출력 안 함", Footer: "출력 안 함", ShowSourcePageNumber: false) };
+            doc.Add(new EditorBlock { Id = 1, Page = 1, Source = BrailleTags.InsertHeader("가", align) + "나", Braille = "⠉", HasManualBraille = true });
+            True(BrailleTags.ReadHeader(BrailleTags.InsertHeader("가", align)[6..^7]) == ("가", align));
+            var composed = await engine.ComposeAsync(SmjFile.Snapshot(doc).Manifest);
+            var face = (await engine.ReadBrfAsync(composed.Brf))[0];
+            var pad = align switch { "left" => 0, "right" => 16 - cells.Length, _ => (16 - cells.Length + 1) / 2 };
+            Equal(new string('⠀', pad) + cells, face[0].TrimEnd('⠀'));
+            Equal("⠉", face[1].TrimEnd('⠀')); Equal(0, composed.AlignmentUnknownBlockIds!.Length); // The tag aligns the header, not the block.
+            // The same header_align reaches the engine's own build_brf.
+            var server = await sidecar.InvokeAsync("build_brf", new { job = new { sources = new[] { new { orig_page = 1, blocks = new[] { new { order = 0, braille = "⠉" } } } },
+                header = (await engine.TranslateElementAsync("가", new(Type: "header_footer"), new())).Cells,
+                opts = new { cols = 16, rows = 4, page_row_pages = "none", footer_pages = "none", show_orig_page = false, header_align = align } } });
+            Equal(server.GetProperty("brf").GetString(), composed.Brf);
+        }
+        // An older header tag carries no alignment and stays centered.
+        Equal(("가", "center"), BrailleTags.ReadHeader("가")); Equal("<!머리말>가<!/머리말>", BrailleTags.InsertHeader("가", "center"));
     }
 
     private static async Task<T> Reject<T>(Func<Task> action) where T : Exception

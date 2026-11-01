@@ -67,12 +67,24 @@ internal static class WindowsExportFileChecks
             check(!File.Exists(proposedTxt) && bytes.Length > 0 && bytes[^1] == 12 && bytes.All(b => b < 128)
                 && DocumentExport.BrfPages(System.Text.Encoding.ASCII.GetString(bytes)).Length == 1
                 && System.Text.Encoding.ASCII.GetString(bytes).Split("\r\n").Count(line => line.Trim().Length > 0) >= 2
-                && notices.Any(n => n.Message == "조판 빈 줄을 확인할 수 없는 블록이 있습니다." && n.Labels.SequenceEqual(["내보내기", "취소"]) && !n.Red),
-                "Changing source TXT to BRF writes the selected page with its footer and matching extension after the blank-line notice");
+                && !notices.Any(n => n.Message == "조판 빈 줄을 확인해 주세요."),
+                "Changing source TXT to BRF writes the selected page with its footer and matching extension; edited braille without blank lines is not questioned");
             await Export(proposedTxt, 2, ".brf", rejectOverwrite: true);
             check((await File.ReadAllBytesAsync(braillePath)).SequenceEqual(bytes) && !File.Exists(proposedTxt) && clicked == 1
                 && notices.Any(n => n.Message == "형식 변경으로 선택한 파일이 이미 있습니다." && n.Labels.SequenceEqual(["덮어쓰기", "취소"]) && n.Red),
                 "Pressing 「취소」 in the red overwrite notice after an extension change preserves the existing BRF");
+
+            // A-5: the engine lays out page blank lines (translate_page). Only an edited block whose typed blank line meets one is questioned.
+            var first = reopened.Blocks[0]; first.Metadata = new(Type: "title", HeadingLevel: 2); first.Braille = "⠫⠉⠊\n\n";
+            notices.Clear(); await Export(proposedTxt, 2, ".brf");
+            check(notices.Count(n => n.Message == "조판 빈 줄을 확인해 주세요.") == 1
+                && notices.Single(n => n.Message == "조판 빈 줄을 확인해 주세요.").Labels.SequenceEqual(["내보내기", "취소"]) && !notices.Single(n => n.Message == "조판 빈 줄을 확인해 주세요.").Red
+                && first.Braille == "⠫⠉⠊\n\n" && first.HasManualBraille,
+                "A manually edited title whose typed blank line meets the layout blank line asks once before export and keeps its cells");
+            first.Braille = "⠫⠉⠊"; first.Translation = BrailleTranslation.Plain("⠫⠉⠊") with { SourceText = first.Source }; first.HasManualBraille = false;
+            notices.Clear(); await Export(proposedTxt, 2, ".brf");
+            check(!notices.Any(n => n.Message == "조판 빈 줄을 확인해 주세요.") && File.Exists(braillePath),
+                "An engine-translated block never raises the blank-line notice on export");
         }
         finally { window.PrepareSmokeShutdown(); window.Close(); await window.ReleaseResourcesAsync(); Directory.Delete(folder, true); }
     }

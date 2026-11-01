@@ -13,18 +13,22 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class HeaderInputDialog : CompactDialog
 {
     private readonly TextBox input = new() { MaxLength = 200, Width = 298, Height = 32, MinHeight = 0, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly SegmentedChoice alignment = new("왼쪽", "가운데", "오른쪽") { SelectedIndex = 1 };
     public string Result => input.Text;
+    /// <summary>left, center or right; the engine (3.4.42+) places the header line by it.</summary>
+    public string Alignment => alignment.SelectedIndex switch { 0 => "left", 2 => "right", _ => "center" };
     public HeaderInputDialog(string initial) : base("머리말", 520, 252)
     {
-        input.Text = initial; EditorModalDesign.Input(input); System.Windows.Automation.AutomationProperties.SetName(input, "머리말 내용");
-        var alignment = new SegmentedChoice("왼쪽", "가운데", "오른쪽") { SelectedIndex = 1 }; FooterDesign.StyleAlignment(alignment);
-        alignment.SetAvailable(0, false, "현재 머리말은 가운데 정렬만 지원합니다."); alignment.SetAvailable(2, false, "현재 머리말은 가운데 정렬만 지원합니다.");
+        var (text, align) = BrailleTags.ReadHeader(initial);
+        input.Text = text; EditorModalDesign.Input(input); System.Windows.Automation.AutomationProperties.SetName(input, "머리말 내용");
+        alignment.SelectedIndex = align switch { "left" => 0, "right" => 2, _ => 1 }; FooterDesign.StyleAlignment(alignment);
         System.Windows.Automation.AutomationProperties.SetName(alignment, "머리말 정렬");
         var content = new StackPanel(); FooterDesign.Row(content, "내용", input); FooterDesign.Row(content, "정렬", alignment);
         var card = EditorModalDesign.Card(content, new Thickness(24, 16, 24, 0)); card.Padding = new Thickness(16, 12, 16, 8); card.VerticalAlignment = VerticalAlignment.Top; Body(card);
         Action("취소", () => DialogResult = false); Action("확인", () =>
         {
             if (input.Text.Contains("<!머리말>", StringComparison.Ordinal) || input.Text.Contains("<!/머리말>", StringComparison.Ordinal)) throw new ArgumentException("머리말 안에 머리말 태그를 넣을 수 없습니다.");
+            if (System.Text.RegularExpressions.Regex.IsMatch(input.Text, "<!(왼쪽|가운데|오른쪽)정렬>")) throw new ArgumentException("머리말 정렬은 정렬 단추로 골라 주세요.");
             DialogResult = true;
         }, true);
         EditorModalDesign.Frame(this, Root, Actions);

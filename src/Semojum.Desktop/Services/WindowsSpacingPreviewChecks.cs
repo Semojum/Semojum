@@ -31,7 +31,7 @@ internal static class WindowsSpacingPreviewChecks
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             }
             check(prompts.Count == 3 && prompts.All(p => p.Contains("빈 줄") && p.Contains("7") && p.Contains("12"))
-                && labels.All(l => l == "조판 빈 줄을 확인할 수 없는 블록이 있습니다.|출력,취소"),
+                && labels.All(l => l == "조판 빈 줄을 확인해 주세요.|출력,취소") && prompts.All(p => p.Contains("직접 고친 점자", StringComparison.Ordinal)),
                 "Saving or printing a preview asks about unresolved spacing in the app message window before opening a destination");
             check(dialog.IsVisible && pages[0][0] == "⠁" && pages[0][1] == "⠃", "Declining output retains the preview and its braille cells");
         }

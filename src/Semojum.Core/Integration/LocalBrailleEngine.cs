@@ -4,7 +4,10 @@ using System.Text.RegularExpressions;
 
 namespace Semojum.Core.Integration;
 
-/// <summary>Wire adapter for Semojum/braille v3.4.35, commit 74f76d15f3ac6f87c52d75a25882cc580508e51f.</summary>
+/// <summary>One element of an engine <c>translate_page</c> answer. Rows are the blank lines already merged with the neighbours.</summary>
+public sealed record PageElementBraille(string Cells, int[] Breaks, int PrefixRows, int SuffixRows);
+
+/// <summary>Wire adapter for Semojum/braille v3.4.44, commit 3e7e14c2ca9f4db5c332a2b0a19835eedc78eb70.</summary>
 public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptions>? options = null) : ITranslationEngine
 {
     private static readonly JsonSerializerOptions Json = new()
@@ -12,6 +15,9 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+    // translate_page answers per page request; the engine is deterministic, so only changed pages are asked again.
+    private readonly Dictionary<string, (int Before, int After)[]> pageSpacing = new(StringComparer.Ordinal);
+    private const int ElementLimit = 1000;
     public async Task<string> TranslateAsync(string text, int blockId, CancellationToken cancellationToken) =>
         (await TranslateElementAsync(text, new(), options?.Invoke() ?? new(), cancellationToken)).Cells;
 
@@ -75,7 +81,8 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2,
                 split_choices = settings.ChoiceLayout == "onePerLine", math_page = metadata.MathPage,
                 render_mode = metadata.RenderMode ?? "", tn_text = metadata.TranslatorNote ?? "", box_level = metadata.TableBoxLevel,
-                // Engine 3.4.38+ puts the element's surrounding blank lines into cells by default; the app lays pages out itself (build_brf), so keep bare element cells.
+                // Block braille stays the bare element body so source lines, review marks and cell positions never shift.
+                // The page's layout blank lines come from translate_page when the page is composed (ComposeAsync).
                 blank_lines = false, source_map = true, draft_text = true, line_alignment = true
             }, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
@@ -155,6 +162,63 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         catch (JsonException) { return null; }
     }
 
+    /// <summary>
+    /// Engine 3.4.44 <c>translate_page</c>: every element of one original page in reading order, laid out once like the server.
+    /// Joining the cells in order equals the server composition (merged blank lines, page-head and consecutive-visual rules).
+    /// </summary>
+    public Task<PageElementBraille[]> TranslatePageAsync(IReadOnlyList<(string Text, BlockMetadata Metadata)> elements, BrailleOptions settings,
+        CancellationToken cancellationToken = default) => InvokePageAsync(PageRequest(elements, settings), elements.Count, cancellationToken);
+
+    private async Task<PageElementBraille[]> InvokePageAsync(object request, int count, CancellationToken cancellationToken)
+    {
+        var response = await sidecar.InvokeAsync("translate_page", request, TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
+        if (!response.TryGetProperty("elements", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() != count)
+            throw new SidecarException("쪽 점역 결과의 요소 수가 맞지 않습니다.", "INVALID_RESPONSE");
+        static int Rows(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) && n >= 0 ? n : 0;
+        return items.EnumerateArray().Select(e => new PageElementBraille(e.TryGetProperty("cells", out var c) ? c.GetString() ?? "" : "",
+            ReadArray<int>(e, "breaks"), Rows(e, "prefix_rows"), Rows(e, "suffix_rows"))).ToArray();
+    }
+
+    private static object PageRequest(IReadOnlyList<(string Text, BlockMetadata Metadata)> elements, BrailleOptions settings) => new
+    {
+        elements = elements.Select((e, order) =>
+        {
+            var m = e.Metadata;
+            var table = m.Type == "table" && !e.Text.Contains("<!표>", StringComparison.Ordinal) && m.TableSource is not null;
+            var text = table ? m.TableSource! : m.Type == "formula" && !e.Text.Contains("<!수식>", StringComparison.Ordinal) ? $"<!수식>{e.Text}<!/수식>" : e.Text;
+            // Visual types keep their own names here: blank lines around visuals and the no-gap rule between consecutive ones need them.
+            return new
+            {
+                id = order.ToString(System.Globalization.CultureInfo.InvariantCulture), text,
+                type = table || text.Contains("<!표>", StringComparison.Ordinal) ? "table" : m.Type == "formula" ? "text" : m.Type,
+                heading_level = m.HeadingLevel, render_mode = m.RenderMode ?? "", tn_text = m.TranslatorNote ?? "", box_level = m.TableBoxLevel
+            };
+        }).ToArray(),
+        korean_grade = settings.KoreanGrade1 ? 1 : 2, english_grade = settings.EnglishGrade1 ? 1 : 2,
+        math_page = elements.Any(e => e.Metadata.MathPage), split_choices = settings.ChoiceLayout == "onePerLine"
+    };
+
+    private static bool OverLimit(SmjBlock b)
+    {
+        static bool Over(string text) => Regex.Replace(text, "<!/?[^>]+>", "").Length > ElementLimit;
+        return Over(b.Source) || b.Metadata.Type == "table" && b.Metadata.TableSource is { } table && Over(table);
+    }
+
+    /// <summary>Layout blank rows (before, after) of each block of one page, or null when the engine cannot lay the page out.</summary>
+    private async Task<(int Before, int After)[]?> PageSpacingAsync(SmjBlock[] page, BrailleOptions settings, CancellationToken cancellationToken)
+    {
+        // An element over the engine's 1,000-character limit would refuse the whole page; it joins empty and stays unverified.
+        var request = PageRequest(page.Select(b => OverLimit(b) ? ("", new BlockMetadata()) : (b.Source, b.Metadata)).ToArray(), settings);
+        var key = JsonSerializer.Serialize(request);
+        lock (pageSpacing) if (pageSpacing.TryGetValue(key, out var cached)) return cached;
+        PageElementBraille[] answer;
+        try { answer = await InvokePageAsync(request, page.Length, cancellationToken).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is SidecarException or TimeoutException) { return null; }
+        var rows = answer.Select(e => (e.PrefixRows, e.SuffixRows)).ToArray();
+        lock (pageSpacing) { if (pageSpacing.Count >= 4096) pageSpacing.Clear(); pageSpacing[key] = rows; }
+        return rows;
+    }
+
     public async Task<string> DecodeAsync(string cells, BrailleOptions settings, CancellationToken cancellationToken = default)
     {
         var result = await sidecar.InvokeAsync("decode", new { braille = cells, korean_grade = settings.KoreanGrade1 ? 1 : 2, english = settings.EnglishDocument },
@@ -198,9 +262,11 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         FooterRange.Validate(snapshot.FooterRanges ?? []);
         var footer = layout.Footer == "출력 안 함" || string.IsNullOrEmpty(snapshot.FooterText) ? "" :
             (await TranslateElementAsync(snapshot.FooterText, new(Type: "header_footer"), settings, cancellationToken)).Cells;
-        string header = "";
-        var headers = new Dictionary<int, string>();
-        static bool HasAlignment(SmjBlock b) => Regex.IsMatch(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>");
+        string header = "", headerAlign = "center";
+        var headers = new Dictionary<int, string>(); var headerAligns = new Dictionary<int, string>();
+        // An alignment tag inside a header tag aligns that header, not the block's lines.
+        static string BodyTags(SmjBlock b) => Regex.Replace(b.Source, "<!머리말>.*?<!/머리말>", "", RegexOptions.Singleline);
+        static bool HasAlignment(SmjBlock b) => Regex.IsMatch(BodyTags(b), "<!(왼쪽|가운데|오른쪽)정렬>");
         static BrailleLineAlignment[]? AlignmentFor(SmjBlock b) => !b.HasManualBraille && b.Translation is { } t
             && t.SourceText == b.Source && t.Cells == b.Braille ? ValidateLineAlignment(b.Source, b.Braille, t.LineAlignment) : null;
         static string SingleLineAlignment(SmjBlock b)
@@ -209,9 +275,29 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
             // alignment only when both source and editable braille have exactly one line.
             if (b.Source.IndexOfAny(['\r', '\n']) >= 0 || b.Braille.IndexOfAny(['\r', '\n']) >= 0
                 || b.Braille.Length == 0 || b.Braille.Any(c => c != ' ' && c is < '\u2800' or > '\u28ff')) return "";
-            var tags = Regex.Matches(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>");
-            if (tags.Count != 1 || Regex.Replace(b.Source, "<!(왼쪽|가운데|오른쪽)정렬>", "").Trim().Length == 0) return "";
+            var tags = Regex.Matches(BodyTags(b), "<!(왼쪽|가운데|오른쪽)정렬>");
+            if (tags.Count != 1 || Regex.Replace(BodyTags(b), "<!(왼쪽|가운데|오른쪽)정렬>", "").Trim().Length == 0) return "";
             return tags[0].Groups[1].Value switch { "왼쪽" => "left", "가운데" => "center", "오른쪽" => "right", _ => "" };
+        }
+        // Layout blank lines come from translate_page for each whole original page and stay outside block braille,
+        // so a retranslated block keeps its page's spacing and a manually edited block keeps its cells untouched.
+        var spacing = new Dictionary<int, (int Before, int After)>(); var spacingUnknown = new List<int>();
+        static bool LeadingBlank(string braille) => braille.StartsWith('\n') || braille.StartsWith("\r\n", StringComparison.Ordinal);
+        static bool TrailingBlank(string braille) { var text = braille.Replace("\r\n", "\n", StringComparison.Ordinal); return text.EndsWith("\n\n", StringComparison.Ordinal) || text == "\n"; }
+        foreach (var group in snapshot.Blocks.GroupBy(b => b.Page))
+        {
+            var page = group.ToArray();
+            var rows = await PageSpacingAsync(page, settings, cancellationToken).ConfigureAwait(false);
+            for (var i = 0; i < page.Length; i++)
+            {
+                var b = page[i];
+                if (rows is null) { spacingUnknown.Add(b.Id); continue; }
+                spacing[b.Id] = rows[i];
+                var before = rows[i].Before > 0 || i > 0 && rows[i - 1].After > 0;
+                var after = rows[i].After > 0 || i + 1 < page.Length && rows[i + 1].Before > 0;
+                // Blank lines typed into edited braille can double the layout rows they touch; only those blocks are asked about.
+                if (OverLimit(b) || b.HasManualBraille && (before && LeadingBlank(b.Braille) || after && TrailingBlank(b.Braille))) spacingUnknown.Add(b.Id);
+            }
         }
         object Sources(IEnumerable<SmjBlock> blocks) => blocks.GroupBy(b => b.Page).Select(page => new
         {
@@ -221,6 +307,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 id = b.Id, order, type = b.Metadata.Type, heading_level = b.Metadata.HeadingLevel,
                 braille = !b.HasManualBraille && IsLayoutMarker(b.Source) ? b.Source.Trim() : b.Braille,
                 breaks = b.HasManualBraille ? Array.Empty<int>() : b.Translation?.Breaks ?? [],
+                blank_before = spacing.GetValueOrDefault(b.Id).Before, blank_after = spacing.GetValueOrDefault(b.Id).After,
                 box_borders = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.BoxBorders : null,
                 corrected_text = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.CorrectedText : null,
                 question_lead = !b.HasManualBraille && b.Translation?.Cells == b.Braille ? b.Translation?.Spacing?.QuestionLead : null,
@@ -238,10 +325,10 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 align = range.Alignment });
         Task<JsonElement> Build(object sources, bool pad) => sidecar.InvokeAsync("compose_editor", new { job = new
             {
-                sources, footer, header, headers, footers, footer_aligns = footerAligns, footer_ranges = footerRules,
+                sources, footer, header, headers, footers, footer_aligns = footerAligns, footer_ranges = footerRules, header_aligns = headerAligns,
                 opts = new
                 {
-                    cols = layout.Columns, rows = layout.Lines, pad_to_even = pad,
+                    cols = layout.Columns, rows = layout.Lines, pad_to_even = pad, header_align = headerAlign,
                     page_row_pages = PagePolicy(layout.PageNumbers), footer_pages = PagePolicy(layout.Footer),
                     number_ranges = layout.NumberRanges?.Select(r => new[] { r.Start, r.End ?? int.MaxValue }).ToArray(),
                     show_change_line = layout.ShowChangeLine,
@@ -253,7 +340,7 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 }
             } }, cancellationToken: cancellationToken);
 
-        var changes = new SortedDictionary<int, string>();
+        var changes = new SortedDictionary<int, (string Cells, string Align)>();
         var coverFaces = 0;
         var hasHeaders = snapshot.Blocks.Any(b => b.Source.Contains("<!머리말>", StringComparison.Ordinal));
         if (hasHeaders && layout.CoverPages > 0)
@@ -279,16 +366,16 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
                 var composedPrefix = await Build(Sources(snapshot.Blocks.Take(index).Append(partial)), false).ConfigureAwait(false);
                 var faces = DocumentExport.BrfPages(composedPrefix.GetProperty("brf").GetString() ?? "").Length;
                 var face = checked(layout.StartPage + Math.Max(0, faces - coverFaces - 1));
-                var text = marker.Groups[1].Value;
+                var (text, align) = BrailleTags.ReadHeader(marker.Groups[1].Value);
                 var translated = text.Length == 0 ? "" : (await TranslateElementAsync(text, new(Type: "header_footer"), settings, cancellationToken)).Cells;
-                changes[face] = translated;
+                changes[face] = (translated, align);
                 // The latest value becomes the default for following faces; earlier faces retain their prior values.
-                header = changes.Last().Value; headers.Clear();
-                var ordered = changes.ToArray(); var changeIndex = 0; var current = "";
+                (header, headerAlign) = changes.Last().Value; headers.Clear(); headerAligns.Clear();
+                var ordered = changes.ToArray(); var changeIndex = 0; var current = ("", "center");
                 for (var page = layout.StartPage; page < changes.Last().Key; page++)
                 {
                     while (changeIndex < ordered.Length && ordered[changeIndex].Key <= page) current = ordered[changeIndex++].Value;
-                    headers[page] = current;
+                    headers[page] = current.Item1; headerAligns[page] = current.Item2;
                 }
             }
         }
@@ -303,15 +390,12 @@ public sealed class LocalBrailleEngine(BrailleSidecar sidecar, Func<BrailleOptio
         var kinds = result.GetProperty("kinds").Deserialize<string[][]>() ?? [];
         var numbers = result.GetProperty("numbers").Deserialize<int?[]>() ?? [];
         CellAddress? Address(int[]? value) => value is { Length: 2 } ? new(value[0], value[1]) : null;
-        var spacingUnknown = result.TryGetProperty("spacing_unknown", out var unknown)
-            ? unknown.Deserialize<int[]>() ?? snapshot.Blocks.Select(b => b.Id).ToArray()
-            : snapshot.Blocks.Select(b => b.Id).ToArray();
         var alignmentProtocol = result.TryGetProperty("alignment_protocol", out var protocol) && protocol.TryGetInt32(out var version) && version == 1;
         var alignmentUnknown = !alignmentProtocol ? snapshot.Blocks.Where(b => HasAlignment(b) && SingleLineAlignment(b).Length == 0).Select(b => b.Id).ToArray() : result.TryGetProperty("alignment_unknown", out var unaligned)
             ? unaligned.Deserialize<int[]>() ?? snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null && SingleLineAlignment(b).Length == 0).Select(b => b.Id).ToArray()
             : snapshot.Blocks.Where(b => HasAlignment(b) && AlignmentFor(b) is null && SingleLineAlignment(b).Length == 0).Select(b => b.Id).ToArray();
         return new(brf, replaced, pages.Select((lines, i) => new ComposedPage(numbers[i], lines,
-            maps[i].Select(row => row.Select(Address).ToArray()).ToArray(), ends[i].Select(Address).ToArray(), kinds[i])).ToArray(), spacingUnknown, alignmentUnknown);
+            maps[i].Select(row => row.Select(Address).ToArray()).ToArray(), ends[i].Select(Address).ToArray(), kinds[i])).ToArray(), spacingUnknown.ToArray(), alignmentUnknown);
     }
 
     private static string PagePolicy(string value) => value switch { "모든 페이지" => "every", "짝수 페이지" => "even", "출력 안 함" => "none", _ => "odd" };

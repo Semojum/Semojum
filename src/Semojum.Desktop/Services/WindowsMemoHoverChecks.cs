@@ -147,8 +147,16 @@ internal static class WindowsMemoHoverChecks
             }
             async Task VerifyMarker(string name, Func<bool> enter, UIElement marker, string body)
             {
+                // The real pointer may rest over the marker or where the bubble opens; keep it from re-entering either while the leave is simulated.
+                var hitTest = marker.IsHitTestVisible; marker.IsHitTestVisible = false;
+                try { await VerifyMarkerCore(name, enter, marker, body); }
+                finally { marker.IsHitTestVisible = hitTest; }
+            }
+            async Task VerifyMarkerCore(string name, Func<bool> enter, UIElement marker, string body)
+            {
                 var focused = Keyboard.FocusedElement;
                 var opened = enter(); var bubble = hover.Current;
+                if (bubble is not null) bubble.IsHitTestVisible = false;
                 check(opened && bubble is { IsVisible: true } && bubble.Owner == main && !bubble.ShowActivated && !bubble.IsActive && !bubble.IsKeyboardFocusWithin
                     && !ComponentDispatcher.IsThreadModal && ReferenceEquals(Keyboard.FocusedElement, focused)
                     && bubble.MemoItems.Items.Cast<LineMemo>().Select(m => m.Body).SequenceEqual([body]),

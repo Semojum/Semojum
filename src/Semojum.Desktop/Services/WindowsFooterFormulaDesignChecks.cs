@@ -21,10 +21,17 @@ internal static class WindowsFooterFormulaDesignChecks
         {
             header.UpdateLayout(); var align = Children(header).OfType<SegmentedChoice>().Single();
             check(header.Width == 520 && header.Height == 252 && header.Result == "선택한 내용", "Header dialog preserves selected text and Figma geometry");
-            check(align.SelectedIndex == 1 && !((ListBoxItem)align.Items[0]).IsEnabled && !((ListBoxItem)align.Items[2]).IsEnabled, "Unsupported header alignment choices are not offered as working features");
+            check(align.SelectedIndex == 1 && header.Alignment == "center" && Enumerable.Range(0, 3).All(i => ((ListBoxItem)align.Items[i]).IsEnabled),
+                "Header alignment offers left, center and right like the final Figma, centered by default");
+            align.SelectedIndex = 0; var left = header.Alignment; align.SelectedIndex = 2;
+            check(left == "left" && header.Alignment == "right" && BrailleTags.InsertHeader(header.Result, header.Alignment) == "<!머리말><!오른쪽정렬>선택한 내용<!/머리말>",
+                "The chosen header alignment is written into the header tag for the engine");
             CheckIcons(header, check);
         }
         finally { header.Close(); }
+        var aligned = new HeaderInputDialog("<!왼쪽정렬>Ⅰ 01") { Owner = owner }; aligned.Show();
+        try { check(aligned.Result == "Ⅰ 01" && aligned.Alignment == "left", "Editing an aligned header reopens with its text and alignment"); }
+        finally { aligned.Close(); }
 
         var footer = new FooterInputDialog(3) { Owner = owner }; footer.Show();
         try

@@ -416,8 +416,10 @@ public partial class MainWindow
         if (dialog.ShowDialog() != true) return;
         if (!ReferenceEquals(owner, session) || !ReferenceEquals(document, target.Document) || owner.IsReadOnly || SourceEditor.IsReadOnly || owner.ChangeVersion != version)
         { owner.Status = "머리말 편집 중 문서가 바뀌어 적용하지 않았습니다."; return; }
-        target.Select(start, length); target.SelectedText = BrailleTags.Get("머리말").Insert(dialog.Result);
-        target.Select(start + BrailleTags.Get("머리말").Open.Length, dialog.Result.Length); target.Focus();
+        // The alignment rides inside the tag (center keeps the older plain form) and reaches the engine as header_align.
+        var tag = BrailleTags.InsertHeader(dialog.Result, dialog.Alignment);
+        target.Select(start, length); target.SelectedText = tag;
+        target.Select(start + tag.Length - BrailleTags.Get("머리말").Close.Length - dialog.Result.Length, dialog.Result.Length); target.Focus();
     }
     private async Task EditTableAsync()
     {
