@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using ICSharpCode.AvalonEdit.Editing;
 using ICSharpCode.AvalonEdit.Rendering;
 using Semojum.Core;
+using Semojum.Desktop.Dialogs;
 using SharpVectors.Converters;
 using SharpVectors.Renderers.Wpf;
 
@@ -98,23 +99,27 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
         .Select(m => $"{m.Author ?? "작성자 미상"}\n{m.Body}" + string.Concat((m.Replies ?? []).Select(r => $"\n\n{r.Author ?? "작성자 미상"}\n{r.Body}"))));
         return text.Length == 0 ? "" : "메모\n" + text;
     }
-    /// <summary>Called with the hovered memo line, or -1 when the pointer leaves the memo marker; the owner shows a non-modal memo bubble.</summary>
-    public Action<int>? HoverRequested { get; init; }
-    private int hoveredMemo = -1;
+    /// <summary>Shared non-modal memo bubble shown while the pointer is over a memo marker; without one, the marker shows a tooltip.</summary>
+    public MemoHoverBubble? HoverBubble { get; init; }
+    private bool memoHovered;
+    /// <summary>The pointer is over <paramref name="line"/> at <paramref name="x"/> (line -1: it left the margin); true while that line's memo bubble is shown.</summary>
+    internal bool HoverLine(int line, double x)
+    {
+        if (HoverBubble is { } bubble && line >= 0 && x >= SlotPadding && (int)((x - SlotPadding) / 16) == 0
+            && (ResolveLine?.Invoke(line) ?? (active(), line)) is { Block: { } block } resolved && Preview(resolved).Length > 0
+            && bubble.Enter(this, block, panel, resolved.Line)) return memoHovered = true;
+        if (memoHovered) { memoHovered = false; HoverBubble?.Leave(); }
+        return false;
+    }
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
         if (TextView?.VisualLinesValid != true) return;
         var y = e.GetPosition(this).Y + TextView.VerticalOffset;
         var line = TextView.VisualLines.FirstOrDefault(l => y >= l.VisualTop && y < l.VisualTop + l.Height);
-        var index = line is null ? -1 : line.FirstDocumentLine.LineNumber - 1; var x = e.GetPosition(this).X;
-        if (HoverRequested is not null)
-        {
-            // Over the memo marker: show the memo bubble instead of a tooltip.
-            if (index >= 0 && x >= SlotPadding && (int)((x - SlotPadding) / 16) == 0 && Preview(index).Length > 0)
-            { if (ToolTip is ToolTip shown) shown.IsOpen = false; ToolTip = null; hoveredMemo = index; HoverRequested(index); return; }
-            if (hoveredMemo >= 0) { hoveredMemo = -1; HoverRequested(-1); }
-        }
+        var index = line is null ? -1 : line.FirstDocumentLine.LineNumber - 1;
+        // Over the memo marker the memo bubble replaces the tooltip.
+        if (HoverLine(index, e.GetPosition(this).X)) { if (ToolTip is ToolTip shown) shown.IsOpen = false; ToolTip = null; return; }
         var text = line is null ? "" : string.Join("\n\n", new[] { Preview(index), ReviewPreview(index),
             string.Join("\n", ManualKinds(index).Select(ReviewVisuals.Label)) }.Where(t => t.Length > 0));
         if (ToolTip is ToolTip current && current.Tag as string == text) return;
@@ -125,7 +130,7 @@ public sealed class MemoMargin(Func<EditorBlock?> active, string panel, Action<i
     protected override void OnMouseLeave(MouseEventArgs e)
     {
         if (ToolTip is ToolTip tip) tip.IsOpen = false;
-        if (hoveredMemo >= 0) { hoveredMemo = -1; HoverRequested?.Invoke(-1); }
+        HoverLine(-1, 0);
         base.OnMouseLeave(e);
     }
     protected override Size MeasureOverride(Size availableSize) => new(Math.Max(GutterWidth, markerSlots * 16 + SlotPadding), 0);

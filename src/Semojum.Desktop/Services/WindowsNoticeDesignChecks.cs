@@ -75,6 +75,12 @@ internal static class WindowsNoticeDesignChecks
             notice.UpdateLayout();
             var updateIcon = Descendants(notice).OfType<SvgViewbox>().SingleOrDefault();
             check(notice.ActualWidth == 580 && notice.ActualHeight == 80 && updateIcon is { Width: 28, Height: 28, Drawings.Bounds.IsEmpty: false }, "Verified update notice uses the Figma dimensions and original icon");
+            var noticeTopLeft = notice.PointToScreen(new Point()); var noticeBottomRight = notice.PointToScreen(new Point(notice.ActualWidth, notice.ActualHeight));
+            var noticeEdge = 16 * (noticeBottomRight.X - noticeTopLeft.X) / notice.ActualWidth;
+            var noticeWork = WindowBounds.TryGetWorkArea(window, out var editorWork) ? editorWork : Rect.Empty;
+            check(Descendants(notice).OfType<TextBlock>().Any(t => t.Text == "새 버전이 업데이트되었습니다.") && Descendants(notice).OfType<TextBlock>().Any(t => t.Text == "다시 시작하면 자동으로 업데이트됩니다.")
+                && !noticeWork.IsEmpty && Math.Abs(noticeTopLeft.X - noticeWork.Left - noticeEdge) <= 2 && Math.Abs(noticeWork.Bottom - noticeBottomRight.Y - noticeEdge) <= 2,
+                $"Verified update notice shows the final Figma text at the lower left of the editor's screen (notice={noticeTopLeft.X:F0},{noticeBottomRight.Y:F0}, work={noticeWork})");
             if (Environment.GetEnvironmentVariable("NOTICE_UPDATE_CAPTURE") is { Length: > 0 } updateCapture) await WindowsSmoke.RenderElementAsync(notice, updateCapture);
             var activates = 0; window.UpdateActivateForChecks = (_, _) => { activates++; return Task.FromResult(false); };
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };

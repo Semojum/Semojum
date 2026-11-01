@@ -143,6 +143,59 @@ public sealed class MemoThreadDialog : CompactDialog
     }
 }
 
+/// <summary>
+/// One hover bubble shared by every memo marker (text editors and the braille grid): hovering a marker opens its thread
+/// non-modally beside the pointer without taking focus, and it closes 0.3s after the pointer has left both the marker and the bubble.
+/// </summary>
+public sealed class MemoHoverBubble(Func<EditorBlock, string, int, MemoThreadDialog?> open)
+{
+    internal static readonly TimeSpan CloseDelay = TimeSpan.FromMilliseconds(300);
+    private System.Windows.Threading.DispatcherTimer? closeTimer;
+    private (EditorBlock Block, string Panel, int Line)? anchor;
+    private bool overMarker, overBubble;
+    public MemoThreadDialog? Current { get; private set; }
+    /// <summary>The pointer is over the memo marker of <paramref name="line"/>; false when no bubble can be shown (for example in a read-only document).</summary>
+    public bool Enter(UIElement marker, EditorBlock block, string panel, int line)
+    {
+        if (Current is { IsVisible: true } && anchor == (block, panel, line)) { overMarker = true; closeTimer?.Stop(); return true; }
+        Close();
+        if (open(block, panel, line) is not { } bubble) return false;
+        bubble.ShowActivated = false; bubble.WindowStartupLocation = WindowStartupLocation.Manual;
+        UIElement? reference = PresentationSource.FromVisual(marker) is not null ? marker : bubble.Owner;
+        if (reference is not null && PresentationSource.FromVisual(reference)?.CompositionTarget is { } target)
+        {
+            var pointer = target.TransformFromDevice.Transform(reference.PointToScreen(System.Windows.Input.Mouse.GetPosition(reference)));
+            // Beside the pointer; on its left when the screen has no room on the right, so the bubble never covers the pointer.
+            bubble.Left = pointer.X + 12 + bubble.Width > SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth ? pointer.X - 12 - bubble.Width : pointer.X + 12;
+            bubble.Top = pointer.Y - 8;
+        }
+        bubble.MouseEnter += (_, _) => { if (Current == bubble) { overBubble = true; closeTimer?.Stop(); } };
+        bubble.MouseLeave += (_, _) => { if (Current == bubble) { overBubble = false; ScheduleClose(); } };
+        bubble.Deactivated += (_, _) => { if (Current == bubble) ScheduleClose(); };
+        bubble.Closed += (_, _) => { if (Current == bubble) { Current = null; anchor = null; overMarker = overBubble = false; closeTimer?.Stop(); } };
+        Current = bubble; anchor = (block, panel, line); overMarker = true; overBubble = false;
+        bubble.Show(); return true;
+    }
+    /// <summary>The pointer left the memo marker.</summary>
+    public void Leave() { overMarker = false; ScheduleClose(); }
+    public void Close() { closeTimer?.Stop(); Current?.Close(); }
+    private void ScheduleClose()
+    {
+        if (Current is null) return;
+        if (closeTimer is null)
+        {
+            closeTimer = new() { Interval = CloseDelay };
+            closeTimer.Tick += (_, _) =>
+            {
+                closeTimer.Stop();
+                // Keep a bubble the user is typing in, or one that owns an open memo input.
+                if (Current is { } bubble && !overMarker && !overBubble && !bubble.IsActive && !bubble.OwnedWindows.Cast<Window>().Any(w => w.IsVisible)) bubble.Close();
+            };
+        }
+        closeTimer.Stop(); closeTimer.Start();
+    }
+}
+
 internal sealed class InverseReadOnly : IValueConverter
 {
     internal static readonly InverseReadOnly Instance = new();

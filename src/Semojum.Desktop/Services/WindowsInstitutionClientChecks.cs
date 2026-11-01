@@ -40,6 +40,21 @@ internal static class WindowsInstitutionClientChecks
         try { await client.CreateRequestAsync("CREDIT_ADD", new string('x', 1001)); check(false, "Oversize request must be rejected"); } catch (ArgumentException) { }
         try { await client.AccountJobsAsync("..", null, null); check(false, "Invalid account path must be rejected"); } catch (ArgumentException) { }
         check(fixture.Writes == before, "Invalid request type, size and account path never issue a write");
+        await client.SetReceiptEmailAsync(" account@kblib.or.kr ");
+        using (var receiptBody = JsonDocument.Parse(fixture.LastBody!))
+            check(fixture.LastMethod == HttpMethod.Patch && fixture.LastUri == "/api/org/receipt-email" && receiptBody.RootElement.GetProperty("email").GetString() == "account@kblib.or.kr",
+                "The receipt recipient is changed with PATCH /api/org/receipt-email and a trimmed { email } body");
+        await client.SetReceiptEmailAsync("  ");
+        using (var clearBody = JsonDocument.Parse(fixture.LastBody!))
+            check(fixture.LastMethod == HttpMethod.Patch && clearBody.RootElement.GetProperty("email").ValueKind == JsonValueKind.Null, "A blank receipt recipient is sent as email null, which removes it");
+        before = fixture.Writes;
+        foreach (var bad in new[] { "account@", "account", "회계 <account@kblib.or.kr>" })
+            try { await client.SetReceiptEmailAsync(bad); check(false, $"Malformed receipt address {bad} must be rejected"); } catch (ArgumentException) { }
+        check(fixture.Writes == before, "A malformed receipt address is rejected before any write");
+        fixture.ForbidReceipt = true;
+        try { await client.SetReceiptEmailAsync("account@kblib.or.kr"); check(false, "A server 403 on the receipt recipient must surface"); }
+        catch (SemojumApiException ex) { check(ex.Code == "COMMON4003" && api.Account is not null, "A 403 COMMON4003 receipt change surfaces the server error without clearing the session"); }
+        fixture.ForbidReceipt = false;
         fixture.Malformed = true;
         try { await client.AccountsAsync(); check(false, "Malformed account response must be rejected"); } catch (InvalidDataException) { check(true, "Malformed required institution account fields are rejected rather than invented"); }
         fixture.Malformed = false; fixture.BadReceipt = true;
@@ -65,6 +80,16 @@ internal static class WindowsInstitutionClientChecks
             catch (SemojumApiException ex) when (ex.Code == "AUTH_DESKTOP_ROLE")
             { check(tokenOnlyFixture.RequestPostCount == 1 && tokenOnlyApi.Account is null, "Token-only refresh clears the institution session and never replays the write"); }
         }
+        var receiptRefreshFixture = new Handler { RejectReceiptOnce = true };
+        using (var receiptRefreshHttp = new HttpClient(receiptRefreshFixture))
+        {
+            var receiptRefreshApi = new SemojumApiClient(receiptRefreshHttp);
+            receiptRefreshApi.RefreshedIdentityAllowed = next => AutomaticLogin.IsSameDesktopArea(receiptRefreshApi.Account, next);
+            await receiptRefreshApi.LoginAsync("org_admin", "fixture");
+            await new InstitutionClient(receiptRefreshApi).SetReceiptEmailAsync("account@kblib.or.kr");
+            check(receiptRefreshFixture.ReceiptPatchCount == 2 && receiptRefreshFixture.LastBody?.Contains("account@kblib.or.kr") == true && receiptRefreshApi.Account is not null,
+                "An expired token on the receipt change refreshes the same administrator and sends the change once more");
+        }
         fixture.Role = "ROLE_USER";
         using var otherHttp = new HttpClient(fixture); var otherApi = new SemojumApiClient(otherHttp); await otherApi.LoginAsync("member", "fixture");
         var other = new InstitutionClient(otherApi); var reads = fixture.Reads;
@@ -73,7 +98,7 @@ internal static class WindowsInstitutionClientChecks
     private sealed class Handler : HttpMessageHandler
     {
         internal string Role = "ROLE_ORG_ADMIN"; internal int Writes, Reads; internal string? LastUri, LastBody; internal HttpMethod? LastMethod;
-        internal bool Malformed, BadReceipt, RejectOnce, TokenOnly; internal string RefreshRole = "ROLE_ORG_ADMIN"; internal int RequestPostCount;
+        internal bool Malformed, BadReceipt, RejectOnce, TokenOnly, ForbidReceipt, RejectReceiptOnce; internal string RefreshRole = "ROLE_ORG_ADMIN"; internal int RequestPostCount, ReceiptPatchCount;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri!.AbsolutePath;
@@ -83,6 +108,12 @@ internal static class WindowsInstitutionClientChecks
             {
                 RequestPostCount++;
                 if (RejectOnce) { RejectOnce = false; return new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"AUTH4003\"}", Encoding.UTF8, "application/json") }; }
+            }
+            if (path == "/api/org/receipt-email" && request.Method == HttpMethod.Patch)
+            {
+                ReceiptPatchCount++;
+                if (RejectReceiptOnce) { RejectReceiptOnce = false; return new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"AUTH4003\"}", Encoding.UTF8, "application/json") }; }
+                if (ForbidReceipt) return new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"COMMON4003\",\"message\":\"권한이 없습니다.\",\"result\":null}", Encoding.UTF8, "application/json") };
             }
             LastMethod = request.Method; LastUri = request.RequestUri.PathAndQuery;
             if (request.Method == HttpMethod.Get) Reads++; else Writes++;

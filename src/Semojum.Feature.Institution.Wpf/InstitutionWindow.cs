@@ -31,7 +31,8 @@ public sealed partial class InstitutionWindow : CompactDialog
     internal DataGrid Orders { get; }
     internal DataGrid Notices { get; }
     internal TextBlock PendingRequests { get; } = new() { Foreground = FigmaDialogElements.Brush("#5F5F5F"), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
-    internal TextBlock ReceiptAddress { get; } = new() { Foreground = FigmaDialogElements.Brush("#5F5F5F") };
+    internal TextBox ReceiptAddress { get; } = new() { Width = 220, Padding = new(11, 0, 11, 0), MaxLength = 254, IsEnabled = false, Background = Brushes.White, BorderBrush = FigmaDialogElements.Brush("#D1D1D1"), HorizontalAlignment = HorizontalAlignment.Left };
+    internal TextBlock ReceiptHint { get; } = new() { Text = "이메일 주소 형식을 확인해 주세요. 예: account@kblib.or.kr", Foreground = FigmaDialogElements.Brush("#C42B1C"), Margin = new(0, 4, 0, 0), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
     internal TextBlock SessionIdentity { get; } = new() { Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(0, 0, 20, 0), VerticalAlignment = VerticalAlignment.Center };
     internal TextBlock StatusSummary { get; } = new() { Text = "기관 정보 없음", Margin = new(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     internal StackPanel Chart { get; } = new() { Orientation = Orientation.Horizontal };
@@ -157,7 +158,20 @@ public sealed partial class InstitutionWindow : CompactDialog
         noReceipt.SetBinding(VisibilityProperty, new Binding("ReceiptFileName") { Converter = new InstitutionReceiptVisibilityConverter(), ConverterParameter = "missing" }); receiptCell.AppendChild(noReceipt);
         Orders.Columns.Add(new DataGridTemplateColumn { Header = "증빙", Width = 94, CanUserSort = false, CellTemplate = new DataTemplate { VisualTree = receiptCell } });
         OpenOnClick<InstitutionOrder>(Orders, OpenOrderAsync);
-        var orderCard = Card("주문 내역", Orders, ReceiptAddress); orderCard.MinHeight = 202; content.Children.Add(orderCard);
+        // 증빙 받는 사람 is a label and a 220px field with no save button: Enter or leaving the field saves, Esc restores, an empty field removes it.
+        var receiptLine = new Grid { Margin = new(0, 12, 0, 0) }; receiptLine.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); receiptLine.ColumnDefinitions.Add(new());
+        receiptLine.RowDefinitions.Add(new() { Height = GridLength.Auto }); receiptLine.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        receiptLine.Children.Add(new TextBlock { Text = "증빙 받는 사람", Foreground = FigmaDialogElements.Brush("#5F5F5F"), VerticalAlignment = VerticalAlignment.Center, Margin = new(0, 0, 12, 0) });
+        AutomationProperties.SetName(ReceiptAddress, "증빙 받는 사람"); Grid.SetColumn(ReceiptAddress, 1); receiptLine.Children.Add(ReceiptAddress);
+        Grid.SetColumn(ReceiptHint, 1); Grid.SetRow(ReceiptHint, 1); receiptLine.Children.Add(ReceiptHint);
+        ReceiptAddress.TextChanged += (_, _) => ReceiptHint.Visibility = Visibility.Collapsed;
+        ReceiptAddress.PreviewKeyDown += async (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Escape) { e.Handled = true; ReceiptAddress.Text = receiptEmail ?? ""; }
+            else if (e.Key == System.Windows.Input.Key.Enter) { e.Handled = true; await SaveReceiptEmailAsync(); }
+        };
+        ReceiptAddress.LostKeyboardFocus += async (_, _) => await SaveReceiptEmailAsync();
+        var orderCard = Card("주문 내역", Orders, receiptLine); orderCard.MinHeight = 202; content.Children.Add(orderCard);
         Root.Loaded += async (_, _) => await RefreshAsync();
     }
 

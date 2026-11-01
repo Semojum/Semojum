@@ -344,27 +344,17 @@ public partial class MainWindow
         session.ActiveBlock = block; translatedRevisions[block] = block.SourceRevision;
         owner.Status = decision == ManualEditDecision.Keep ? "수식 원문을 바꾸고 기존 점자를 유지했습니다. 점자를 확인해 주세요." : "수식을 바꾸고 블록 전체를 다시 점역했습니다.";
     }
-    private MemoThreadDialog? memoBubble;
-    private (EditorBlock Block, string Panel, int Line)? memoBubbleAnchor;
-    private bool memoBubbleHovered;
-    // Hovering a memo marker opens the thread as a non-modal bubble beside the pointer; clicking still opens the modal thread.
-    private void ShowMemoBubble(EditorBlock block, SearchPanel panel, int line)
+    private MemoHoverBubble? memoHover;
+    // The text editors' margins and the braille grids share one hover bubble; clicking a marker still opens the modal thread.
+    internal MemoHoverBubble MemoHover => memoHover ??= new(OpenMemoBubble);
+    private MemoThreadDialog? OpenMemoBubble(EditorBlock block, string code, int line)
     {
-        if (session.IsReadOnly) return;
-        var code = panel == SearchPanel.Text ? "TEXT" : "BRAILLE"; memoBubbleHovered = true;
-        if (memoBubble is { IsVisible: true } && memoBubbleAnchor == (block, code, line)) return;
-        memoBubble?.Close();
+        if (session.IsReadOnly) return null;
+        var panel = code == "TEXT" ? SearchPanel.Text : SearchPanel.Braille;
         var text = (panel == SearchPanel.Text ? block.Source : block.Braille).Split('\n').ElementAtOrDefault(line) ?? "";
-        var bubble = new MemoThreadDialog(block, code, line, text, EditStructure, session, author: api.Account?.DisplayName)
-            { Owner = this, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual };
-        var pointer = PointToScreen(Mouse.GetPosition(this));
-        if (PresentationSource.FromVisual(this)?.CompositionTarget is { } target) pointer = target.TransformFromDevice.Transform(pointer);
-        bubble.Left = pointer.X + 12; bubble.Top = pointer.Y - 8;
-        bubble.MouseEnter += (_, _) => memoBubbleHovered = true;
-        bubble.MouseLeave += (_, _) => HideMemoBubble(); bubble.Deactivated += (_, _) => HideMemoBubble();
+        var bubble = new MemoThreadDialog(block, code, line, text, EditStructure, session, author: api.Account?.DisplayName) { Owner = this };
         bubble.Closed += async (_, _) =>
         {
-            if (memoBubble == bubble) { memoBubble = null; memoBubbleAnchor = null; }
             foreach (var margin in SearchEditor(panel).TextArea.LeftMargins.Concat(PageEditor.Editor.TextArea.LeftMargins).OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
             if (bubble.Destination is { } destination)
             {
@@ -372,19 +362,11 @@ public partial class MainWindow
                 catch (Exception ex) { ShowError(ex); }
             }
         };
-        memoBubble = bubble; memoBubbleAnchor = (block, code, line); bubble.Show();
-    }
-    private void HideMemoBubble()
-    {
-        memoBubbleHovered = false;
-        if (memoBubble is not { } bubble) return;
-        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
-        timer.Tick += (_, _) => { timer.Stop(); if (memoBubble == bubble && !memoBubbleHovered && !bubble.IsActive && !bubble.OwnedWindows.Cast<Window>().Any(w => w.IsVisible)) bubble.Close(); };
-        timer.Start();
+        return bubble;
     }
     private async void ShowLineMemos(SearchPanel panel, int? requestedLine = null, bool showResolved = false)
     {
-        memoBubble?.Close();
+        memoHover?.Close();
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
         var editor = SearchEditor(panel);
         var resolved = panel == SearchPanel.Text && lastEditor == PageEditor.Editor

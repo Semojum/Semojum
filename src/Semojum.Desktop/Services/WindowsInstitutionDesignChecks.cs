@@ -134,7 +134,7 @@ internal static class WindowsInstitutionDesignChecks
                 && RowId(issueRow) is { Foreground: SolidColorBrush { Color: var pendingColor } } && pendingColor == Color.FromRgb(0x5F, 0x5F, 0x5F),
                 "Account IDs are 14px bold blue and the pending request line is gray");
             foreach (var scroll in Descendants(window).OfType<ScrollViewer>().Where(s => s.Content is StackPanel)) scroll.ScrollToTop();
-            check(window.AccountRequest.IsEnabled && window.CreditRequest.IsEnabled && window.ReceiptAddress.Text.Contains("billing@example.test"),
+            check(window.AccountRequest.IsEnabled && window.CreditRequest.IsEnabled && window.ReceiptAddress is { Text: "billing@example.test", IsEnabled: true },
                 "Available request actions and receipt recipient reflect the current institution response");
             check(window.CreditRequest.Background is SolidColorBrush { Color: var orange } && orange == Color.FromRgb(232, 115, 12)
                 && window.Accounts.RowHeight == 40 && window.Accounts.GridLinesVisibility == DataGridGridLinesVisibility.Horizontal
@@ -157,6 +157,42 @@ internal static class WindowsInstitutionDesignChecks
                     "At the 1440px Figma window size the real order list is visible without scrolling");
                 await WindowsSmoke.RenderElementAsync(window, fullCapture); window.Width = 960; window.Height = 650; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             }
+            // 증빙 받는 사람 (F-AC-8): the Figma label and 220×32 field with no save button; Enter or leaving the field saves.
+            window.UpdateLayout();
+            Rect Bounds(FrameworkElement element) => element.TransformToAncestor(window).TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+            var receiptLabel = Descendants(window).OfType<TextBlock>().SingleOrDefault(t => t.Text == "증빙 받는 사람");
+            var receiptField = window.ReceiptAddress; var fieldBounds = Bounds(receiptField);
+            check(receiptLabel is { IsVisible: true, FontSize: 12, Foreground: SolidColorBrush { Color: var receiptLabelColor } } && receiptLabelColor == Color.FromRgb(0x5F, 0x5F, 0x5F)
+                && receiptField is { IsVisible: true, FontSize: 12, Text: "billing@example.test" } && Math.Abs(receiptField.ActualWidth - 220) < .5 && Math.Abs(receiptField.ActualHeight - 32) < .5
+                && Bounds(receiptLabel) is var labelBounds && Math.Abs(fieldBounds.Left - labelBounds.Right - 12) < 1 && Math.Abs((labelBounds.Top + labelBounds.Bottom) / 2 - (fieldBounds.Top + fieldBounds.Bottom) / 2) < 1
+                && System.Windows.Automation.AutomationProperties.GetName(receiptField) == "증빙 받는 사람"
+                && !Descendants(window).OfType<TextBlock>().Any(t => t.Text.StartsWith("증빙 받는 사람:", StringComparison.Ordinal) || t.Text == "증빙 받는 사람 정보 없음")
+                && !Descendants(window).OfType<Button>().Any(b => Equals(b.Content, "저장")),
+                "The receipt recipient is a 12px gray label and a 220x32 field holding the server address, 12px apart, with no save button");
+            void PressReceipt(Key key) => receiptField.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(receiptField)!, Environment.TickCount, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            static string? SentEmail(string body) { using var json = System.Text.Json.JsonDocument.Parse(body); return json.RootElement.GetProperty("email").GetString(); }
+            var receiptSent = handler.ReceiptBodies.Count;
+            receiptField.Text = "account@kblib.or.kr"; PressReceipt(Key.Enter); await WaitFor(() => !window.SavingReceipt);
+            check(handler.ReceiptBodies.Count == receiptSent + 1 && SentEmail(handler.ReceiptBodies[^1]) == "account@kblib.or.kr" && receiptField.Text == "account@kblib.or.kr" && !receiptField.IsReadOnly,
+                "Enter in the receipt field sends PATCH /api/org/receipt-email with { email } and keeps the saved address");
+            handler.FailReceipt = true; receiptSent = handler.ReceiptBodies.Count;
+            receiptField.Text = "other@example.test"; PressReceipt(Key.Enter); await WaitFor(() => !window.SavingReceipt);
+            check(handler.ReceiptBodies.Count == receiptSent + 1 && receiptField.Text == "account@kblib.or.kr"
+                && window.ErrorText.Text.StartsWith("증빙 받는 사람을 바꾸지 못했습니다.", StringComparison.Ordinal) && window.ErrorText.Text.Contains("권한이 없습니다."),
+                "A rejected receipt change (403 COMMON4003) restores the saved address and reports the server message in the window's error line");
+            handler.FailReceipt = false; receiptSent = handler.ReceiptBodies.Count;
+            receiptField.Text = "account@"; PressReceipt(Key.Enter); window.UpdateLayout();
+            check(handler.ReceiptBodies.Count == receiptSent && receiptField.Text == "account@" && window.ReceiptHint is { IsVisible: true } && window.ReceiptHint.Text.Contains("형식")
+                && Bounds(window.ReceiptHint) is var hintBounds && hintBounds.Top >= fieldBounds.Bottom - .5 && Math.Abs(hintBounds.Left - fieldBounds.Left) < .5,
+                "A malformed receipt address is not sent, stays in the field and shows a format hint under it");
+            PressReceipt(Key.Escape); PressReceipt(Key.Enter); window.UpdateLayout();
+            check(handler.ReceiptBodies.Count == receiptSent && receiptField.Text == "account@kblib.or.kr" && !window.ReceiptHint.IsVisible,
+                "Esc restores the saved receipt address and Enter on an unchanged address sends nothing");
+            receiptField.Text = "";
+            receiptField.RaiseEvent(new KeyboardFocusChangedEventArgs(Keyboard.PrimaryDevice, Environment.TickCount, receiptField, window.Orders) { RoutedEvent = Keyboard.LostKeyboardFocusEvent });
+            await WaitFor(() => !window.SavingReceipt);
+            check(handler.ReceiptBodies.Count == receiptSent + 1 && SentEmail(handler.ReceiptBodies[^1]) is null && handler.ReceiptBodies[^1].Contains("\"email\":null") && receiptField.Text == "" && window.ErrorText.Text == "",
+                "Leaving an emptied receipt field removes the recipient with email null and clears the earlier failure");
             check(!Descendants(window).OfType<Button>().Any(b => b.Content is string text && text.StartsWith("선택한 ", StringComparison.Ordinal)),
                 "Institution tables open rows directly and show no separate selected-row buttons");
             bool OpensOrder(Action act)
@@ -209,7 +245,7 @@ internal static class WindowsInstitutionDesignChecks
             handler.FailAccountsOnRefresh = true;
             PressF5(); await WaitFor(() => !window.Refreshing && api.Account is null);
             check(api.Account is null && window.Identity.Text == "정보 없음" && window.Balance.Text == "—" && window.Accounts.Items.Count == 0 && window.Orders.Items.Count == 0
-                && !window.AccountRequest.IsEnabled && !window.CreditRequest.IsEnabled && window.PendingRequests.Text == ""
+                && !window.AccountRequest.IsEnabled && !window.CreditRequest.IsEnabled && window.PendingRequests.Text == "" && window.ReceiptAddress is { IsEnabled: false, Text: "" }
                 && window.SessionIdentity.Text == "로그인 정보 없음" && StatusLine() == "기관 정보 없음" && window.ErrorText.Text.Contains("다시 로그인"),
                 "A role-unverified refresh clears previously loaded institution data and disables changes");
             allowLogout = true; window.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(30);
@@ -279,7 +315,8 @@ internal static class WindowsInstitutionDesignChecks
         internal bool FailAccountsOnRefresh;
         internal bool FailDashboard;
         internal string? LastReceiptPath;
-        internal bool HoldReceipt, RefreshProbe, ProbeRejected;
+        internal bool HoldReceipt, RefreshProbe, ProbeRejected, FailReceipt;
+        internal readonly List<string> ReceiptBodies = [];
         internal TaskCompletionSource<HttpResponseMessage>? HeldReceipt;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -297,6 +334,7 @@ internal static class WindowsInstitutionDesignChecks
                 if (HoldReceipt) { HeldReceipt = new(TaskCreationOptions.RunContinuationsAsynchronously); return HeldReceipt.Task; }
                 return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"fileName\":\"receipt.pdf\",\"url\":\"http://example.invalid/receipt\"}}");
             }
+            if (path == "/api/org/receipt-email" && request.Method == HttpMethod.Patch) return ReceiptEmail(request, cancellationToken);
             var result = path switch
             {
                 "/api/org/dashboard" => "{\"orgName\":\"테스트 기관\",\"orgCode\":\"O1\",\"contractType\":\"ANNUAL\",\"contractStartedAt\":\"2026-01-01\",\"contractExpiresAt\":\"2026-12-31\",\"creditAllocated\":1000,\"creditUsed\":300,\"creditRemaining\":700,\"monthlyUsage\":[{\"month\":\"2026-10\",\"credits\":300}]}",
@@ -309,6 +347,12 @@ internal static class WindowsInstitutionDesignChecks
                 _ => "{}"
             };
             return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":" + result + "}");
+        }
+        private async Task<HttpResponseMessage> ReceiptEmail(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            ReceiptBodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+            return await (FailReceipt ? Json(HttpStatusCode.Forbidden, "{\"isSuccess\":false,\"code\":\"COMMON4003\",\"message\":\"권한이 없습니다.\",\"result\":null}")
+                : Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"code\":\"COMMON2000\",\"message\":\"성공입니다.\",\"result\":null}"));
         }
         private static Task<HttpResponseMessage> Json(HttpStatusCode status, string json) => Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") });
     }

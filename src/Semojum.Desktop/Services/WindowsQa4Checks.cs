@@ -295,9 +295,9 @@ internal static class WindowsQa4Checks
         await Capture(memoInput, "46-memo-input-populated.png", () => check(Children(memoInput).OfType<SharpVectors.Converters.SvgViewbox>().All(i => i.Drawings is { Bounds.IsEmpty: false }), "Memo author avatar renders the downloaded Figma SVG resource"));
         var board = new BoardClient(api);
         await Capture(new BoardDialog(board, "로컬 화면 검증용"), "47-board-list.png");
-        await Capture(new PostEditorDialog(board, null, "로컬 화면 검증용"), "48-board-write.png");
+        await Capture(BoardDialog.Writing(board, "로컬 화면 검증용"), "48-board-write.png");
         var samplePost = new BoardPost(126, "크레딧 추가 요청드립니다", "이번 달 분량이 모자랍니다. 300쪽 추가 부탁드립니다.\n세금계산서는 기관 명의로 발행해 주시면 됩니다.", "test***", true, true, false, "2026. 10. 06. 14:21", "", 4, [new(1, "사업자등록증.pdf", 204800, "https://example.invalid/qa-attachment.pdf")], [new(1, "300쪽 반영했습니다. 마이페이지에서 남은 쪽 확인해 주세요.\n세금계산서는 담당자가 따로 연락드립니다.", false, "2026. 10. 06. 17:40", "")]);
-        await Capture(new PostDialog(board, samplePost, "로컬 화면 검증용"), "49-board-post.png");
+        await Capture(BoardDialog.Reading(board, samplePost, "로컬 화면 검증용"), "49-board-post.png");
         await Capture(new NotificationsDialog(board, "로컬 화면 검증용"), "50-notifications.png");
         await Capture(new SaveAsDialog("2026_수능특강_사회문화.smj", null), "53-save-as.png");
         await Capture(new DeleteFormDialog("중학 수학 (28줄)"), "54-form-delete.png");
@@ -318,7 +318,7 @@ internal static class WindowsQa4Checks
         await Capture(FileNotices.Disconnected(47), "81-disconnected.png");
         await Capture(FileNotices.Offline("로컬 화면 검증용 연결 실패"), "82-offline.png");
         await Capture(FileNotices.NoCredits(), "83-no-credits.png");
-        await Capture(new MergeBlocksDialog(), "84-merge-blocks.png");
+        await Capture(new MergeBlocksDialog(2), "84-merge-blocks.png");
         var unreadableModel = new DocumentSession();
         unreadableModel.Add(new EditorBlock { Id = 1, Page = 3, Source = "첫 줄 ■ 둘째", Metadata = new(IsBlocked: true) });
         unreadableModel.Add(new EditorBlock { Id = 2, Page = 4, Source = "읽은 글 ■ 와 ■ 자리" });
@@ -327,12 +327,15 @@ internal static class WindowsQa4Checks
         var unreadable = FileNotices.UnreadableCharacters(2);
         await Capture(unreadable, "86-unreadable-characters.png", () => check(unreadable.ActionButtons[0].IsDefault && Math.Abs(unreadable.ActionButtons[0].ActualWidth - unreadable.ActionButtons[1].ActualWidth) <= 2,
             "Unreadable-character notice defaults to the location action with equal Figma button widths"));
-        var cancelMerge = new MergeBlocksDialog();
-        check(Modal(cancelMerge, () => Key(cancelMerge, cancelMerge, System.Windows.Input.Key.Escape)) != true && cancelMerge.Decision == ManualEditDecision.Cancel,
-            "Merge confirmation Escape cancels without authorizing manual-braille replacement");
-        var keepMerge = new MergeBlocksDialog();
-        check(Modal(keepMerge, () => keepMerge.ActionButtons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))) == true && keepMerge.Decision == ManualEditDecision.Keep,
-            "Merge confirmation retains the existing keep-manual-braille option");
+        var cancelMerge = new MergeBlocksDialog(1);
+        check(cancelMerge.DetailText == "직접 고친 점자 1군데가 사라집니다."
+            && Modal(cancelMerge, () => Key(cancelMerge, cancelMerge, System.Windows.Input.Key.Escape)) != true && cancelMerge.Decision == ManualEditDecision.Cancel,
+            "Merge confirmation names the one manual-braille spot, and Escape cancels without authorizing its replacement");
+        var finalMerge = new MergeBlocksDialog(2);
+        check(finalMerge.ActionButtons.Select(b => b.Content as string).SequenceEqual(["합치기", "취소"]) && finalMerge.DetailText == "직접 고친 점자 2군데가 사라집니다."
+            && finalMerge.ActionButtons[0].Background is SolidColorBrush { Color: var mergeRed } && mergeRed == Color.FromRgb(196, 43, 28)
+            && Modal(finalMerge, () => finalMerge.ActionButtons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))) == true && finalMerge.Decision == ManualEditDecision.Overwrite,
+            "Merge confirmation counts both manually edited blocks in the Figma wording, offers only a red 「합치기」 and 「취소」, and merging re-translates");
         var partialNotice = FileNotices.PartialConversion(128, 125, [12, 47, 98]);
         check(partialNotice.ActionButtons[0].IsEnabled && partialNotice.ActionButtons[0].IsDefault &&
             Modal(partialNotice, () => partialNotice.ActionButtons[1].RaiseEvent(new RoutedEventArgs(Button.ClickEvent))) == true && partialNotice.Choice == 1,

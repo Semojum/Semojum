@@ -19,8 +19,8 @@ public sealed class UpdateReadyDialog : CompactDialog
         var icon = new SvgViewbox { Source = new Uri("pack://application:,,,/Semojum.Feature.Shell.Wpf;component/Assets/Figma/update-ready-recon.svg"), Width = 28, Height = 28, Stretch = Stretch.None, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(icon, 1); layout.Children.Add(icon);
         var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        labels.Children.Add(new TextBlock { Text = "새 버전을 준비했습니다.", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = Brush("#1A1A1A"), TextTrimming = TextTrimming.CharacterEllipsis });
-        labels.Children.Add(new TextBlock { Text = "문서를 저장하고 다시 시작하면 업데이트됩니다.", FontSize = 12, Foreground = Brush("#5F5F5F"), TextTrimming = TextTrimming.CharacterEllipsis });
+        labels.Children.Add(new TextBlock { Text = "새 버전이 업데이트되었습니다.", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = Brush("#1A1A1A"), TextTrimming = TextTrimming.CharacterEllipsis });
+        labels.Children.Add(new TextBlock { Text = "다시 시작하면 자동으로 업데이트됩니다.", FontSize = 12, Foreground = Brush("#5F5F5F"), TextTrimming = TextTrimming.CharacterEllipsis });
         Grid.SetColumn(labels, 2); layout.Children.Add(labels);
         RestartButton = new Button { Content = "다시 시작", Width = 87, Height = 32, MinHeight = 32, Padding = new(0), Background = Brush("#005FB8"), BorderBrush = Brush("#005FB8"), Foreground = Brushes.White, IsDefault = true };
         DismissButton = new Button { Content = "취소", Width = 84, Height = 32, MinHeight = 32, Padding = new(0), IsCancel = true };
@@ -34,6 +34,17 @@ public sealed class UpdateReadyDialog : CompactDialog
             finally { RestartButton.IsEnabled = DismissButton.IsEnabled = true; }
         };
         Body(layout);
+        // Figma A4: the notice sits at the lower left of the screen (the editor's monitor work area), not over the editor.
+        // Restarting still asks about unsaved documents before anything closes.
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        SourceInitialized += (_, _) =>
+        {
+            if (!Services.WindowBounds.TryGetWorkArea(Owner ?? this, out var work) || PresentationSource.FromVisual(this)?.CompositionTarget is not { } target) return;
+            var area = new Rect(target.TransformFromDevice.Transform(work.TopLeft), target.TransformFromDevice.Transform(work.BottomRight));
+            Left = area.Left + ScreenEdge; Top = area.Bottom - Height - ScreenEdge;
+        };
     }
+    // Figma gives only the corner; 16 is the design-system spacing step kept between the notice and the screen edge.
+    private const double ScreenEdge = 16;
     private static SolidColorBrush Brush(string value) => (SolidColorBrush)new BrushConverter().ConvertFromString(value)!;
 }

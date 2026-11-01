@@ -107,6 +107,15 @@ public sealed class InstitutionClient(SemojumApiClient api)
         return new(OptionalText(r,"receiptEmail"), Array(Field(r,"items")).Select(x => new InstitutionOrder(Id(x,"id"), Text(x,"orderDate"), Text(x,"description"),
             Number(x,"amountKrw"), OptionalLong(x,"creditAmount"), OptionalText(x,"paidAt"), Text(x,"invoiceStatus"), OptionalText(x,"receiptFileName") is { } receipt ? DisplayFileName.Normalize(receipt) : null)).ToArray());
     }
+    /// <summary>A bare address such as account@kblib.or.kr; display names (「이름 &lt;a@b&gt;」) are not accepted.</summary>
+    public static bool IsReceiptEmail(string email) => email.Length <= 254 && System.Net.Mail.MailAddress.TryCreate(email, out var address) && address.Address == email;
+    /// <summary>Sets the invoice recipient; null or blank removes it.</summary>
+    public async Task SetReceiptEmailAsync(string? email, CancellationToken ct = default)
+    {
+        email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();
+        if (email is not null && !IsReceiptEmail(email)) throw new ArgumentException("이메일 주소 형식을 확인해 주세요.", nameof(email));
+        _ = await Send(HttpMethod.Patch,"/api/org/receipt-email",new { email },ct);
+    }
     public async Task<InstitutionReceipt> ReceiptAsync(Guid id, CancellationToken ct = default)
     {
         var r = await Send(HttpMethod.Get,"/api/org/orders/" + IdPath(id) + "/receipt",null,ct);

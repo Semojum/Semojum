@@ -5,7 +5,9 @@ using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Semojum.Core;
+using Semojum.Desktop.Controls;
 using Semojum.Desktop.Dialogs;
 
 namespace Semojum.Desktop.Services;
@@ -110,5 +112,99 @@ internal static class WindowsMemoHoverChecks
             finally { dialog.Close(); }
         }
         finally { window.Close(); }
+        await VerifyBubbleAsync(check);
+    }
+
+    // Final Figma 「메모 표시에 마우스 올림」: every memo marker opens one shared non-modal bubble without taking focus,
+    // and it closes 0.3s after the pointer has left both the marker and the bubble.
+    private static async Task VerifyBubbleAsync(Action<bool, string> check)
+    {
+        var main = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { Width = 960, Height = 600 };
+        main.Show(); Window? gridWindow = null;
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); main.UpdateLayout();
+            var block = main.Session.ActiveBlock!; block.Source = "첫 줄"; block.Braille = "⠁";
+            block.Memos.Add(new("text-hover", null, "TEXT", 0, "첫 줄", "원문 메모", DateTimeOffset.Now, Author: "검수자"));
+            block.Memos.Add(new("braille-hover", null, "BRAILLE", 0, "⠁", "점자 메모", DateTimeOffset.Now, Author: "검수자"));
+            main.PageEditor.Refresh(); await Task.Delay(150); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); main.UpdateLayout();
+            var hover = main.MemoHover;
+            var page = main.PageEditor.Editor.TextArea.LeftMargins.OfType<MemoMargin>().Single();
+            var source = main.SourceEditor.TextArea.LeftMargins.OfType<MemoMargin>().Single();
+            var braille = main.Braille.Editor.TextArea.LeftMargins.OfType<MemoMargin>().Single();
+            main.ToggleDetached();
+            var detached = main.DetachedPane!;
+            check(new object?[] { page.HoverBubble, source.HoverBubble, braille.HoverBubble, main.Braille.GridView.HoverBubble,
+                detached.Editor.TextArea.LeftMargins.OfType<MemoMargin>().Single().HoverBubble, detached.GridView.HoverBubble }.All(b => ReferenceEquals(b, hover)),
+                "The text editor, the auxiliary source and braille editors and both braille grids share one memo hover bubble");
+            main.ToggleDetached();
+            static void Raise(UIElement element, RoutedEvent routed) => element.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = routed });
+            static async Task<long> ClosesAfterAsync(Window bubble)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                while (bubble.IsVisible && watch.ElapsedMilliseconds < 3000) await Task.Delay(10);
+                return bubble.IsVisible ? -1 : watch.ElapsedMilliseconds;
+            }
+            async Task VerifyMarker(string name, Func<bool> enter, UIElement marker, string body)
+            {
+                var focused = Keyboard.FocusedElement;
+                var opened = enter(); var bubble = hover.Current;
+                check(opened && bubble is { IsVisible: true } && bubble.Owner == main && !bubble.ShowActivated && !bubble.IsActive && !bubble.IsKeyboardFocusWithin
+                    && !ComponentDispatcher.IsThreadModal && ReferenceEquals(Keyboard.FocusedElement, focused)
+                    && bubble.MemoItems.Items.Cast<LineMemo>().Select(m => m.Body).SequenceEqual([body]),
+                    $"Hovering the {name} memo marker opens its thread as a non-modal bubble without taking focus");
+                if (bubble is null) return;
+                Raise(marker, Mouse.MouseLeaveEvent);
+                var closed = await ClosesAfterAsync(bubble);
+                check(closed >= 250 && hover.Current is null, $"The {name} memo bubble closes 0.3s after the pointer leaves the marker (closed after {closed}ms)");
+            }
+            await VerifyMarker("text editor", () => page.HoverLine(0, page.SlotPadding + 8), page, "원문 메모");
+            await VerifyMarker("auxiliary source editor", () => source.HoverLine(0, source.SlotPadding + 8), source, "원문 메모");
+            await VerifyMarker("auxiliary braille editor", () => braille.HoverLine(0, braille.SlotPadding + 8), braille, "점자 메모");
+            var face = new BrailleGridFace(1, [[new GridCell(block, 0, '⠁')]]);
+            var grid = new BrailleGridView { Blocks = [block], ItemsSource = new[] { face }, HoverBubble = hover };
+            gridWindow = new Window { Width = 320, Height = 160, Content = grid, ShowInTaskbar = false }; gridWindow.Show();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); gridWindow.UpdateLayout();
+            var faceVisual = Descendants(grid).OfType<FrameworkElement>().First(e => e.GetType().Name == "Face");
+            await VerifyMarker("braille grid", () => grid.HoverMarker(face, 0, BrailleGridView.MarkerStart + 8), faceVisual, "점자 메모");
+            check(!grid.HoverMarker(face, 0, BrailleGridView.MarkerStart + BrailleGridView.MarkerSize + 4) && !page.HoverLine(0, page.SlotPadding + 24) && hover.Current is null,
+                "Only the memo slot opens the bubble; other marker slots keep their tooltips");
+
+            check(page.HoverLine(0, page.SlotPadding + 8) && hover.Current is not null, "The memo bubble reopens on the next hover");
+            var reentered = hover.Current!;
+            Raise(page, Mouse.MouseLeaveEvent); Raise(reentered, Mouse.MouseEnterEvent); await Task.Delay(600);
+            check(reentered.IsVisible && hover.Current == reentered, "Moving the pointer from the marker into the bubble keeps it open");
+            Raise(reentered, Mouse.MouseLeaveEvent);
+            var bubbleLeft = await ClosesAfterAsync(reentered);
+            check(bubbleLeft >= 250 && hover.Current is null, $"Leaving the bubble closes it 0.3s later (closed after {bubbleLeft}ms)");
+
+            check(page.HoverLine(0, page.SlotPadding + 8) && hover.Current is not null, "The memo bubble opens before the marker is clicked");
+            var hovered = hover.Current!; MemoThreadDialog? modal = null; var modalShown = false; var bubbleClosed = false;
+            var closer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
+            closer.Tick += (_, _) =>
+            {
+                if (Application.Current.Windows.OfType<MemoThreadDialog>().FirstOrDefault(d => d.IsVisible && d.Owner == main && d != hovered) is not { } shown) return;
+                modal = shown; modalShown = ComponentDispatcher.IsThreadModal; bubbleClosed = !hovered.IsVisible; closer.Stop(); shown.Close();
+            };
+            closer.Start();
+            try { page.ActivateLine(0, page.SlotPadding + 8); var deadline = DateTime.UtcNow.AddSeconds(4); while (modal is null && DateTime.UtcNow < deadline) await Task.Delay(10); }
+            finally { closer.Stop(); }
+            check(modal is not null && modalShown && bubbleClosed && hover.Current is null, "Clicking the memo marker closes the bubble and opens the modal memo thread");
+
+            // Switching to read-only queues a page refresh; until it runs no line resolves, so wait or the bubble check below proves nothing.
+            main.Session.IsReadOnly = true; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(main.PageEditor.ResolveLine(0).Block == block && page.Preview(0).Contains("원문 메모"),
+                $"A read-only memo marker keeps its tooltip text (preview length={page.Preview(0).Length}, resolved={main.PageEditor.ResolveLine(0).Block is not null})");
+            check(!page.HoverLine(0, page.SlotPadding + 8), "A read-only memo marker does not open the bubble");
+            check(hover.Current is null, "A read-only memo marker leaves no bubble open");
+            main.Session.IsReadOnly = false;
+        }
+        finally { main.MemoHover.Close(); gridWindow?.Close(); await main.ReleaseResourcesAsync(); main.PrepareSmokeShutdown(); main.Close(); }
+    }
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        yield return root;
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+            foreach (var child in Descendants(System.Windows.Media.VisualTreeHelper.GetChild(root, i))) yield return child;
     }
 }

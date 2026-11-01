@@ -28,5 +28,30 @@ internal static class FeatureBoardChecks
         try { await model.LoadAsync(1, false, "TITLE", "next"); throw new Exception("Expected cancellation."); }
         catch (OperationCanceledException) { }
         if (!ReferenceEquals(model.Rows, previousRows) || model.Page != 2 || !model.Mine || model.IsLoading) throw new Exception("Board state changed after cancellation.");
+
+        var lists = new ListsSource(); var board = new BoardListViewModel(lists);
+        await board.LoadAsync(1, BoardListKind.Notices, "TITLE_CONTENT", "");
+        if (board.Kind != BoardListKind.Notices || board.Mine || board.TotalCount != 2 || !board.Rows.All(r => r.Number == "공지")
+            || !lists.Requests.SequenceEqual([(1, "", false)])) throw new Exception("The notice list did not show the notices of the unsearched first page.");
+        await board.LoadAsync(1, BoardListKind.Notices, "AUTHOR", "관리");
+        if (board.Rows.Single().Title != "기관 공지" || lists.Requests[^1] != (1, "", false)) throw new Exception("Searching notices did not filter the pinned notices locally.");
+        lists.Requests.Clear();
+        await board.LoadAsync(2, BoardListKind.Answered, "TITLE_CONTENT", "");
+        if (board.Kind != BoardListKind.Answered || board.TotalCount != 13 || board.TotalPages != 2 || board.Rows.Count != 3 || board.Rows.Any(r => r.AnswerCount == 0)
+            || !lists.Requests.SequenceEqual([(1, "", true), (2, "", true), (3, "", true)])) throw new Exception("Answered posts did not come from every page of my posts.");
+    }
+
+    // 25 of my posts over three pages, every second one answered; two pinned notices on the unsearched full list.
+    private sealed class ListsSource : IBoardListSource
+    {
+        internal List<(int Page, string Keyword, bool Mine)> Requests { get; } = [];
+        public Task<BoardPage> ListAsync(int page, string field, string keyword, bool mine, CancellationToken ct = default)
+        {
+            Requests.Add((page, keyword, mine));
+            BoardRow[] notices = mine || keyword.Length > 0 ? [] : [new(0, "점검 안내", 0, "운영자", false, "", 0, "n1"), new(0, "기관 공지", 0, "기관 관리자", false, "", 0, "n2")];
+            var items = Enumerable.Range(0, Math.Clamp(25 - (page - 1) * 10, 0, 10)).Select(i => 25 - (page - 1) * 10 - i)
+                .Select(id => new BoardRow(id, $"글 {id}", id % 2, "fixture", false, "", 0)).ToArray();
+            return Task.FromResult(new BoardPage(page, mine ? 25 : 40, notices, mine ? items : []));
+        }
     }
 }

@@ -44,14 +44,14 @@ internal static class BoardDesign
         DockPanel.SetDock(navigation, Dock.Left); shell.Children.Add(navigation);
         var content = new DockPanel { Margin = new(24, 20, 24, 20) }; shell.Children.Add(content); return content;
     }
-    internal static Button Navigation(string label, bool selected, Action? action = null)
+    internal static Button Navigation(string label, bool selected, Action action)
     {
         var button = new Button { Content = label, Height = 32, MinHeight = 0, BorderThickness = new(0), Background = Brush(selected ? "#EFF6FC" : "#F9F9F9"), HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new(16, 0, 0, 0), FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal };
         var surface = new FrameworkElementFactory(typeof(Border)); surface.SetBinding(Border.BackgroundProperty, new Binding(nameof(Control.Background)) { RelativeSource = RelativeSource.TemplatedParent });
         var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left); content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); content.SetValue(FrameworkElement.MarginProperty, new Thickness(16, 0, 0, 0)); surface.AppendChild(content);
         button.Template = new ControlTemplate(typeof(Button)) { VisualTree = surface };
         SetNavigationSelected(button, selected);
-        if (action is null) { button.IsEnabled = false; button.ToolTip = "현재 서버에서 이 목록을 제공하지 않습니다."; ToolTipService.SetShowOnDisabled(button, true); } else button.Click += (_, _) => action(); return button;
+        button.Click += (_, _) => action(); return button;
     }
     internal static void SetNavigationSelected(Button button, bool selected)
     {
@@ -92,12 +92,28 @@ internal static class BoardDesign
 
 public sealed class BoardDialog : CompactDialog
 {
-    public BoardDialog(BoardClient client, string workInfo, bool initiallyMine = false) : base("게시판 - 누리닷", 1440, 1000, editor: true, editorActions: true)
+    // A post or the editor takes only the board body's place (Figma D8 §8-2, D8-2 §8-3); the title bar 「게시판 - 누리닷」,
+    // menu, four sidebar items and status bar stay. Each open body remembers what it covered so leaving shows that again.
+    private sealed record OpenBody(BoardBodyView View, UIElement[] Covered, Func<bool, Task> Returned);
+    private readonly List<OpenBody> bodies = [];
+    // Sidebar order and list headings (Figma D8 §8-1).
+    private static readonly (string Label, BoardListKind Kind)[] Lists =
+        [("전체 글", BoardListKind.All), ("공지", BoardListKind.Notices), ("내 글", BoardListKind.Mine), ("답변 받은 글", BoardListKind.Answered)];
+    private readonly DockPanel body;
+    private readonly BoardListView grid;
+    /// <summary>True once a post was saved or deleted in this window.</summary>
+    public bool Changed { get; private set; }
+    public BoardDialog(BoardClient client, string workInfo, bool initiallyMine = false) : this(client, workInfo, initiallyMine, null) { }
+    /// <summary>Opens the board at one post; 「목록」 then shows the list in the same window.</summary>
+    public static BoardDialog Reading(BoardClient client, BoardPost post, string workInfo, bool initiallyMine = false) => new(client, workInfo, initiallyMine, board => new PostView(board, client, post, workInfo));
+    /// <summary>Opens the board at 글쓰기; 「등록」 or 「취소」 then shows the list in the same window.</summary>
+    public static BoardDialog Writing(BoardClient client, string workInfo, bool initiallyMine = false) => new(client, workInfo, initiallyMine, board => new PostEditorView(board, client, null, workInfo));
+    private BoardDialog(BoardClient client, string workInfo, bool initiallyMine, Func<BoardDialog, BoardBodyView>? start) : base("게시판 - 누리닷", 1440, 1000, editor: true, editorActions: true)
     {
         Background = Brushes.White;
-        var grid = new BoardListView((Style)FindResource("BoardListGrid"));
+        grid = new BoardListView((Style)FindResource("BoardListGrid"));
         var previousFooter = (Border)Actions.Parent; previousFooter.Child = null; previousFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId);
+        var root = body = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId);
         var heading = new DockPanel { Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
         var headerButtons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(headerButtons, Dock.Right); heading.Children.Add(headerButtons);
         var count = new TextBlock { Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Foreground = (Brush)FindResource("Muted") };
@@ -120,15 +136,16 @@ public sealed class BoardDialog : CompactDialog
         // A delayed list request must not trap the user in the dialog. Other
         // operations keep the shared busy guard to protect pending edits.
         Closing += (_, e) => { if (list.IsLoading) { e.Cancel = false; Lifetime.Cancel(); } };
-        async Task LoadAsync(int? targetPage = null, bool? targetMine = null)
+        Closing += (_, e) => { if (!e.Cancel && !ConfirmLeaveBodies()) e.Cancel = true; };
+        async Task LoadAsync(int? targetPage = null, BoardListKind? targetKind = null)
         {
             var field = fields.SelectedIndex switch { 1 => "TITLE", 2 => "CONTENT", 3 => "AUTHOR", _ => "TITLE_CONTENT" };
-            await list.LoadAsync(targetPage ?? list.Page, targetMine ?? list.Mine, field, query.Text, Lifetime.Token);
+            await list.LoadAsync(targetPage ?? list.Page, targetKind ?? list.Kind, field, query.Text, Lifetime.Token);
             if (Lifetime.IsCancellationRequested) return;
             grid.ItemsSource = list.Rows;
             count.Text = $"{list.TotalCount}건";
-            ((TextBlock)title.Children[0]).Text = list.Mine ? "내 글" : "전체 글";
-            if (sidebar.Children.Count >= 3) { BoardDesign.SetNavigationSelected((Button)sidebar.Children[0], !list.Mine); BoardDesign.SetNavigationSelected((Button)sidebar.Children[2], list.Mine); }
+            ((TextBlock)title.Children[0]).Text = Lists.Single(l => l.Kind == list.Kind).Label;
+            for (var i = 0; i < sidebar.Children.Count; i++) BoardDesign.SetNavigationSelected((Button)sidebar.Children[i], Lists[i].Kind == list.Kind);
             RenderPages();
         }
         async Task GoPageAsync(int target)
@@ -137,9 +154,9 @@ public sealed class BoardDialog : CompactDialog
             try { await LoadAsync(target); }
             catch { RenderPages(); throw; }
         }
-        async Task SwitchListAsync(bool targetMine)
+        async Task SwitchListAsync(BoardListKind targetKind)
         {
-            try { await LoadAsync(1, targetMine); }
+            try { await LoadAsync(1, targetKind); }
             catch { RenderPages(); throw; }
         }
         void RenderPages()
@@ -168,20 +185,19 @@ public sealed class BoardDialog : CompactDialog
                 // 길이를 알 수 없는 공지 본문은 8줄 높이로 열고, 넘치면 메시지창 본문이 스크롤됩니다.
                 var n = await client.NoticeAsync(notice, Lifetime.Token);
                 NoticeDialog.Choose(this, n.GetProperty("title").GetString() ?? "공지", n.GetProperty("body").GetString() ?? "", ["확인"], height: 316);
+                await LoadAsync();
             }
-            else new PostDialog(client, await client.ReadAsync(row.PostId, Lifetime.Token), workInfo) { Owner = this }.ShowDialog();
-            await LoadAsync();
+            else ShowBody(new PostView(this, client, await client.ReadAsync(row.PostId, Lifetime.Token), workInfo), _ => LoadAsync());
         }
         grid.MouseDoubleClick += async (_, _) => await RunAsync(OpenAsync);
         Action("검색", async () => await GoPageAsync(1));
         var notifications = Action("알림", () => new NotificationsDialog(client, workInfo) { Owner = this }.ShowDialog());
         notifications.Margin = new(0);
-        var write = Action("글쓰기", async () => { var d = new PostEditorDialog(client, null, workInfo) { Owner = this }; if (d.ShowDialog() == true) await GoPageAsync(1); }, true); write.Margin = new(16, 0, 0, 0);
+        var write = Action("글쓰기", () => ShowBody(new PostEditorView(this, client, null, workInfo), saved => saved ? GoPageAsync(1) : Task.CompletedTask), true); write.Margin = new(16, 0, 0, 0);
         foreach (var button in new[] { notifications, write }) { Actions.Children.Remove(button); PublicDialogDesign.StyleAction(button, button == write); button.IsDefault = false; headerButtons.Children.Add(button); }
-        sidebar.Children.Add(BoardDesign.Navigation("전체 글", !initiallyMine, async () => await RunAsync(() => SwitchListAsync(false))));
-        sidebar.Children.Add(BoardDesign.Navigation("공지", false));
-        sidebar.Children.Add(BoardDesign.Navigation("내 글", initiallyMine, async () => await RunAsync(() => SwitchListAsync(true))));
-        sidebar.Children.Add(BoardDesign.Navigation("답변 받은 글", false));
+        // The sidebar stays usable over a post or the editor; choosing a list leaves those views first.
+        foreach (var (label, kind) in Lists)
+            sidebar.Children.Add(BoardDesign.Navigation(label, kind == list.Kind, async () => { if (LeaveBodies()) await RunAsync(() => SwitchListAsync(kind)); }));
         // Paging and notifications remain accessible when the window is resized.
         var navigation = new StackPanel { Orientation = Orientation.Horizontal }; var pageMenu = new ContextMenu(); pageMenu.Items.Add(new MenuItem { Header = navigation, StaysOpenOnClick = true }); grid.ContextMenu = pageMenu;
         count.ToolTip = "이전·다음 쪽: 목록에서 마우스 오른쪽 단추 또는 PageUp·PageDown";
@@ -217,28 +233,93 @@ public sealed class BoardDialog : CompactDialog
             else if (e.Key is System.Windows.Input.Key.PageDown or System.Windows.Input.Key.PageUp)
             { e.Handled = true; await RunAsync(async () => { if (e.Key == System.Windows.Input.Key.PageDown && list.Page < TotalPages()) await GoPageAsync(list.Page + 1); else if (e.Key == System.Windows.Input.Key.PageUp && list.Page > 1) await GoPageAsync(list.Page - 1); }); }
         };
-        OnLoad(() => LoadAsync());
+        // Opened at a post or 글쓰기, the list loads when that view is left.
+        if (start is not null) ShowBody(start(this), _ => LoadAsync());
+        OnLoad(() => bodies.Count == 0 ? LoadAsync() : Task.CompletedTask);
+    }
+    internal Task RunBodyAsync(Func<Task> action) => RunAsync(action);
+    internal CancellationToken Token => Lifetime.Token;
+    internal void Report(string message) => Status.Text = message;
+    internal void ShowBody(BoardBodyView view, Func<bool, Task> returned)
+    {
+        var covered = body.Children.Cast<UIElement>().Where(c => c.Visibility == Visibility.Visible).ToArray();
+        foreach (var element in covered) element.Visibility = Visibility.Collapsed;
+        bodies.Add(new(view, covered, returned)); body.Children.Add(view);
+        RoutedEventHandler? shown = null; shown = (_, _) => { view.Loaded -= shown; FocusBody(); }; view.Loaded += shown;
+    }
+    internal async Task LeaveBodyAsync(BoardBodyView view, bool changed)
+    {
+        if (bodies.Count == 0 || bodies[^1].View != view) return;
+        var left = bodies[^1]; CloseTopBody(); Changed |= changed;
+        try { await left.Returned(changed); }
+        finally { FocusBody(); }
+    }
+    private void CloseTopBody()
+    {
+        var top = bodies[^1]; bodies.RemoveAt(bodies.Count - 1); body.Children.Remove(top.View);
+        foreach (var element in top.Covered) element.Visibility = Visibility.Visible;
+    }
+    // The sidebar and closing the window ask each open view, newest first, before typed content is lost.
+    private bool ConfirmLeaveBodies()
+    {
+        for (var i = bodies.Count - 1; i >= 0; i--) if (!bodies[i].View.ConfirmLeave()) return false;
+        return true;
+    }
+    private bool LeaveBodies()
+    {
+        if (bodies.Count == 0) return true;
+        if (!ConfirmLeaveBodies()) return false;
+        while (bodies.Count > 0) CloseTopBody();
+        FocusBody(); return true;
+    }
+    // Keyboard focus moves to the visible view, or back to the list, once a running action has enabled the window again.
+    private void FocusBody()
+    {
+        if (Root.IsEnabled)
+        {
+            Dispatcher.InvokeAsync(() => { if (!Root.IsEnabled) FocusBody(); else if (bodies.Count > 0) bodies[^1].View.FocusFirst(); else grid.Focus(); },
+                System.Windows.Threading.DispatcherPriority.Input);
+            return;
+        }
+        DependencyPropertyChangedEventHandler? enabled = null;
+        enabled = (_, _) => { if (!Root.IsEnabled) return; Root.IsEnabledChanged -= enabled; FocusBody(); };
+        Root.IsEnabledChanged += enabled;
     }
 }
 
-public sealed class PostEditorDialog : CompactDialog
+/// <summary>A board screen that takes the board body's place; leaving it shows what it covered again.</summary>
+internal abstract class BoardBodyView : DockPanel
+{
+    protected BoardBodyView(BoardDialog board) => Board = board;
+    protected BoardDialog Board { get; }
+    /// <summary>False keeps this view open, for example when the user keeps writing.</summary>
+    internal virtual bool ConfirmLeave() => true;
+    internal abstract void FocusFirst();
+    // Runs under the board's busy guard and reports failures in its status line, like the list's own actions.
+    protected Button Action(Panel actions, string label, Func<Task> action, bool primary = false)
+    { var button = CompactDialog.Button(label, () => Board.RunBodyAsync(action), primary); actions.Children.Add(button); return button; }
+}
+
+/// <summary>Figma D8 §8-2 글쓰기 (and 글 수정) in the board body.</summary>
+internal sealed class PostEditorView : BoardBodyView
 {
     private sealed record AttachmentChoice(string Name, long? ExistingId, string? LocalPath) { public override string ToString() => Name; }
+    private readonly TextBox title;
+    private readonly Func<bool> drafted;
     public BoardPost? SavedPost { get; private set; }
     public long SavedId { get; private set; }
-    public PostEditorDialog(BoardClient client, BoardPost? post, string workInfo) : base(post is null ? "게시판 — 글쓰기 - 누리닷" : "게시판 — 글 수정 - 누리닷", 1440, 1000, editor: true, editorActions: true)
+    internal PostEditorView(BoardDialog board, BoardClient client, BoardPost? post, string workInfo) : base(board)
     {
-        Background = Brushes.White; var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
-        var heading = new TextBlock { Text = post is null ? "글쓰기" : "글 수정", FontSize = 20, FontWeight = FontWeights.Bold, Height = 40 }; DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
-        var card = new DockPanel(); Actions.HorizontalAlignment = HorizontalAlignment.Right; Actions.Margin = new(0, 16, 0, 0); DockPanel.SetDock(Actions, Dock.Bottom); card.Children.Add(Actions);
-        var panel = new StackPanel(); card.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); root.Children.Add(BoardDesign.Card(card, new(19, 15, 19, 19)));
+        var name = post is null ? "글쓰기" : "글 수정"; AutomationProperties.SetName(this, name);
+        var heading = new TextBlock { Text = name, FontSize = 20, FontWeight = FontWeights.Bold, Height = 40 }; DockPanel.SetDock(heading, Dock.Top); Children.Add(heading);
+        var card = new DockPanel(); var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 0, 0) }; DockPanel.SetDock(actions, Dock.Bottom); card.Children.Add(actions);
+        var panel = new StackPanel(); card.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); Children.Add(BoardDesign.Card(card, new(19, 15, 19, 19)));
         panel.Children.Add(new TextBlock { Text = "분류", Height = 16, Foreground = (Brush)FindResource("Muted") });
-        var category = Choices(["지원하지 않음"], "지원하지 않음"); category.Width = 220; category.Height = 32; category.MinHeight = 32; category.HorizontalAlignment = HorizontalAlignment.Left;
+        var category = CompactDialog.Choices(["지원하지 않음"], "지원하지 않음"); category.Width = 220; category.Height = 32; category.MinHeight = 32; category.HorizontalAlignment = HorizontalAlignment.Left;
         category.Margin = new(0, 2, 0, 10); category.IsEnabled = false; category.ToolTip = "현재 서버는 게시글 분류를 제공하지 않습니다.";
         ToolTipService.SetShowOnDisabled(category, true); System.Windows.Automation.AutomationProperties.SetName(category, "게시글 분류");
         System.Windows.Automation.AutomationProperties.SetHelpText(category, "현재 서버는 게시글 분류를 제공하지 않습니다."); panel.Children.Add(category);
-        var title = new TextBox { Text = post?.Title ?? "", MaxLength = 100, Height = 32 }; panel.Children.Add(new TextBlock { Text = "제목", Height = 16, Foreground = (Brush)FindResource("Muted") });
+        title = new TextBox { Text = post?.Title ?? "", MaxLength = 100, Height = 32 }; panel.Children.Add(new TextBlock { Text = "제목", Height = 16, Foreground = (Brush)FindResource("Muted") });
         panel.Children.Add(BoardDesign.InputWithHint(title, "한 줄로 무엇이 문제인지 적는다", "게시글 제목", "BoardTitlePlaceholder", new Thickness(0, 6, 0, 0)));
         var content = new TextBox { Text = post?.Content ?? "", MaxLength = 10000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 220, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         panel.Children.Add(new TextBlock { Text = "본문", Height = 16, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 12, 0, 0) });
@@ -252,14 +333,14 @@ public sealed class PostEditorDialog : CompactDialog
         attachments.CollectionChanged += (_, _) => list.Visibility = attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         panel.Children.Add(new TextBlock { Text = "첨부", Height = 16, Margin = new(0, 10, 0, 2), Foreground = (Brush)FindResource("Muted") });
         var fileActions = new StackPanel { Orientation = Orientation.Horizontal }; panel.Children.Add(fileActions);
-        fileActions.Children.Add(Button("파일 고르기", () =>
+        fileActions.Children.Add(CompactDialog.Button("파일 고르기", () =>
         {
             var picker = new OpenFileDialog { Multiselect = true, Filter = "문서·이미지|*.jpg;*.jpeg;*.png;*.gif;*.pdf;*.hwp;*.hwpx;*.txt;*.doc;*.docx;*.xls;*.xlsx;*.brf;*.zip" };
-            if (picker.ShowDialog(this) == true)
+            if (picker.ShowDialog(Board) == true)
             {
-                if (attachments.Count + picker.FileNames.Length + (info.IsChecked == true ? 1 : 0) > 5) { Status.Text = "작업 정보 포함 최대 5개까지 첨부할 수 있습니다."; return Task.CompletedTask; }
+                if (attachments.Count + picker.FileNames.Length + (info.IsChecked == true ? 1 : 0) > 5) { Board.Report("작업 정보 포함 최대 5개까지 첨부할 수 있습니다."); return Task.CompletedTask; }
                 foreach (var path in picker.FileNames)
-                { if (new FileInfo(path).Length > 10 * 1024 * 1024) { Status.Text = "한 파일은 10 MB까지입니다: " + Path.GetFileName(path); continue; } attachments.Add(new(Path.GetFileName(path), null, path)); }
+                { if (new FileInfo(path).Length > 10 * 1024 * 1024) { Board.Report("한 파일은 10 MB까지입니다: " + Path.GetFileName(path)); continue; } attachments.Add(new(Path.GetFileName(path), null, path)); }
             }
             return Task.CompletedTask;
         }));
@@ -270,33 +351,38 @@ public sealed class PostEditorDialog : CompactDialog
         remove.Click += (_, _) => { if (list.SelectedItem is AttachmentChoice a) attachments.Remove(a); };
         list.PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Delete && list.SelectedItem is AttachmentChoice a) { attachments.Remove(a); e.Handled = true; } };
         var infoMenu = new ContextMenu(); var infoPreview = new MenuItem { Header = "첨부할 작업 정보 보기" }; infoMenu.Items.Add(infoPreview); info.ContextMenu = infoMenu;
-        infoPreview.Click += (_, _) => NoticeDialog.Choose(this, "첨부할 작업 정보입니다.", workInfo, ["확인"], height: 316);
-        Action(post is null ? "등록" : "저장", async () =>
+        infoPreview.Click += (_, _) => NoticeDialog.Choose(Board, "첨부할 작업 정보입니다.", workInfo, ["확인"], height: 316);
+        drafted = () => title.Text != (post?.Title ?? "") || content.Text != (post?.Content ?? "") || (secret.IsChecked == true) != (post?.Secret == true)
+            || attachments.Count != (post?.Attachments ?? []).Length || attachments.Any(a => a.LocalPath is not null);
+        actions.Children.Add(CompactDialog.Button("취소", async () => { if (ConfirmLeave()) await Board.RunBodyAsync(() => Board.LeaveBodyAsync(this, false)); }));
+        Action(actions, post is null ? "등록" : "저장", async () =>
         {
             var files = new List<UploadFile>();
             foreach (var a in attachments.Where(a => a.LocalPath is not null))
-            { if (new FileInfo(a.LocalPath!).Length > 10 * 1024 * 1024) throw new InvalidDataException("첨부 파일이 10 MB를 초과했습니다."); files.Add(new(a.Name, await File.ReadAllBytesAsync(a.LocalPath!, Lifetime.Token))); }
+            { if (new FileInfo(a.LocalPath!).Length > 10 * 1024 * 1024) throw new InvalidDataException("첨부 파일이 10 MB를 초과했습니다."); files.Add(new(a.Name, await File.ReadAllBytesAsync(a.LocalPath!, Board.Token))); }
             if (info.IsChecked == true) files.Add(new($"작업정보_{DateTime.Now:yyyy-MM-dd}.txt", Encoding.UTF8.GetBytes(workInfo)));
-            var saved = await client.SaveAsync(post?.PostId, title.Text, content.Text, secret.IsChecked == true, attachments.Where(a => a.ExistingId.HasValue).Select(a => a.ExistingId!.Value).ToArray(), files.ToArray(), Lifetime.Token);
-            SavedId = saved.Id; SavedPost = saved.Post; DialogResult = true;
+            var saved = await client.SaveAsync(post?.PostId, title.Text, content.Text, secret.IsChecked == true, attachments.Where(a => a.ExistingId.HasValue).Select(a => a.ExistingId!.Value).ToArray(), files.ToArray(), Board.Token);
+            SavedId = saved.Id; SavedPost = saved.Post; await Board.LeaveBodyAsync(this, true);
         }, true);
-        var cancel = Action("취소", () => DialogResult = false); Actions.Children.Remove(cancel); Actions.Children.Insert(0, cancel);
-        foreach (Button button in Actions.Children) { PublicDialogDesign.StyleAction(button, button.IsDefault); button.Width = 84; }
+        foreach (Button button in actions.Children) { PublicDialogDesign.StyleAction(button, button.IsDefault); button.Width = 84; }
     }
+    // Same wording as the public inquiry draft guard (PublicDialogs.cs).
+    internal override bool ConfirmLeave() => !drafted() || NoticeDialog.Choose(Board, "작성 중인 글을 닫으시겠습니까?", "계속 작성하면 입력한 내용을 유지합니다.", ["계속 작성", "닫기"], width: 440) == 1;
+    internal override void FocusFirst() => title.Focus();
 }
 
-public sealed class PostDialog : CompactDialog
+/// <summary>Figma D8-2 §8-3 글 누름 in the board body.</summary>
+internal sealed class PostView : BoardBodyView
 {
-    public PostDialog(BoardClient client, BoardPost post, string workInfo) : base("게시판 — " + post.Title + " - 누리닷", 1440, 1000, editor: true)
+    private readonly Button list;
+    internal PostView(BoardDialog board, BoardClient client, BoardPost post, string workInfo) : base(board)
     {
-        Background = Brushes.White; var panel = new StackPanel();
-        var oldFooter = (Border)Actions.Parent; oldFooter.Child = null; oldFooter.Visibility = Visibility.Collapsed;
-        var root = BoardDesign.Shell(this, Root, out var sidebar, client.CurrentLoginId); sidebar.Children.Add(new TextBlock { Text = "전체 글", Height = 32, Background = BoardDesign.Brush("#EFF6FC"), FontWeight = FontWeights.SemiBold, Padding = new(16, 0, 0, 0) });
-        Actions.Margin = new(0, 0, 0, 8); Actions.HorizontalAlignment = HorizontalAlignment.Right; DockPanel.SetDock(Actions, Dock.Top); root.Children.Add(Actions);
-        root.Children.Add(BoardDesign.Card(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, new(19, 15, 19, 15)));
+        var panel = new StackPanel();
+        var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, 0, 8) }; DockPanel.SetDock(actions, Dock.Top); Children.Add(actions);
+        Children.Add(BoardDesign.Card(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, new(19, 15, 19, 15)));
         void Render()
         {
-            panel.Children.Clear();
+            panel.Children.Clear(); AutomationProperties.SetName(this, post.Title);
             var heading = new DockPanel { MinHeight = 28 };
             if (post.Secret) heading.Children.Add(new Border { BorderBrush = (Brush)FindResource("Line"), BorderThickness = new(1), Width = 34, Height = 18, Margin = new(0, 0, 8, 0), Child = new TextBlock { Text = "비밀", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Center } });
             heading.Children.Add(new TextBlock { Text = post.Title, FontSize = 20, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap }); panel.Children.Add(heading);
@@ -305,7 +391,7 @@ public sealed class PostDialog : CompactDialog
             panel.Children.Add(new TextBlock { Text = post.Content, TextWrapping = TextWrapping.Wrap, FontSize = 14, LineHeight = 22 });
             foreach (var a in post.Attachments)
             {
-                var download = Button("", async () => await RunAsync(() => DownloadAsync(a)));
+                var download = CompactDialog.Button("", () => Board.RunBodyAsync(() => DownloadAsync(a)));
                 download.MinWidth = 0; download.MaxWidth = 268; download.Height = download.MinHeight = 32; download.HorizontalAlignment = HorizontalAlignment.Stretch;
                 download.Margin = new(0, 10, 0, 0); download.Padding = new(8, 0, 8, 0);
                 download.HorizontalContentAlignment = HorizontalAlignment.Stretch;
@@ -327,32 +413,38 @@ public sealed class PostDialog : CompactDialog
             }
         }
         Render();
-        Action("목록", Close);
+        list = Action(actions, "목록", () => Board.LeaveBodyAsync(this, false));
         if (post.Mine)
         {
-            Action("수정", () => { var d = new PostEditorDialog(client, post, workInfo) { Owner = this }; if (d.ShowDialog() == true && d.SavedPost is { } changed) { post = changed; Title = "게시판 — " + post.Title; Render(); } });
-            Action("삭제", async () => { if (NoticeDialog.Choose(this, "이 글을 삭제하시겠습니까?", post.Title, ["삭제", "취소"], width: 440) != 0) return; await client.DeleteAsync(post.PostId, Lifetime.Token); DialogResult = true; });
+            Action(actions, "수정", () =>
+            {
+                var editor = new PostEditorView(Board, client, post, workInfo);
+                Board.ShowBody(editor, saved => { if (saved && editor.SavedPost is { } changed) { post = changed; Render(); } return Task.CompletedTask; });
+                return Task.CompletedTask;
+            });
+            Action(actions, "삭제", async () => { if (NoticeDialog.Choose(Board, "이 글을 삭제하시겠습니까?", post.Title, ["삭제", "취소"], width: 440) != 0) return; await client.DeleteAsync(post.PostId, Board.Token); await Board.LeaveBodyAsync(this, true); });
         }
-        foreach (Button button in Actions.Children) { PublicDialogDesign.StyleAction(button); button.Width = 56; }
+        foreach (Button button in actions.Children) { PublicDialogDesign.StyleAction(button); button.Width = 56; }
     }
+    internal override void FocusFirst() => list.Focus();
     private async Task DownloadAsync(BoardAttachment attachment)
     {
         if (!Uri.TryCreate(attachment.Url, UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new InvalidDataException("첨부 주소가 올바르지 않습니다.");
         var picker = new SaveFileDialog { FileName = Path.GetFileName(attachment.FileName) };
-        if (picker.ShowDialog(this) != true) return;
+        if (picker.ShowDialog(Board) != true) return;
         using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false });
-        using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, Lifetime.Token); response.EnsureSuccessStatusCode();
+        using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, Board.Token); response.EnsureSuccessStatusCode();
         var temp = picker.FileName + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
             await using (var target = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                await using var source = await response.Content.ReadAsStreamAsync(Lifetime.Token);
+                await using var source = await response.Content.ReadAsStreamAsync(Board.Token);
                 var buffer = new byte[81920]; int n; long total = 0;
-                while ((n = await source.ReadAsync(buffer, Lifetime.Token)) != 0)
-                { total += n; if (total > 10 * 1024 * 1024) throw new InvalidDataException("첨부 크기 제한을 초과했습니다."); await target.WriteAsync(buffer.AsMemory(0, n), Lifetime.Token); }
+                while ((n = await source.ReadAsync(buffer, Board.Token)) != 0)
+                { total += n; if (total > 10 * 1024 * 1024) throw new InvalidDataException("첨부 크기 제한을 초과했습니다."); await target.WriteAsync(buffer.AsMemory(0, n), Board.Token); }
             }
-            File.Move(temp, picker.FileName, true); Status.Text = "첨부를 저장했습니다.";
+            File.Move(temp, picker.FileName, true); Board.Report("첨부를 저장했습니다.");
         }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
@@ -386,7 +478,7 @@ public sealed class NotificationsDialog : CompactDialog
             finally { loadingList = false; }
         }
         var readAll = Button("모두 읽음", () => RunAsync(async () => { await client.ReadAllAsync(Lifetime.Token); await LoadAsync(); })); PublicDialogDesign.StyleAction(readAll); readAll.Width = 96; actions.Children.Add(readAll);
-        var open = Button("열기", () => RunAsync(async () => { if (list.SelectedItem is BoardNotification n) { new PostDialog(client, await client.ReadAsync(n.PostId, Lifetime.Token), workInfo) { Owner = this }.ShowDialog(); await LoadAsync(); } }), true); PublicDialogDesign.StyleAction(open, true); actions.Children.Add(open);
+        var open = Button("열기", () => RunAsync(async () => { if (list.SelectedItem is BoardNotification n) { var reading = BoardDialog.Reading(client, await client.ReadAsync(n.PostId, Lifetime.Token), workInfo); reading.Owner = this; reading.ShowDialog(); await LoadAsync(); } }), true); PublicDialogDesign.StyleAction(open, true); actions.Children.Add(open);
         OnLoad(LoadAsync);
     }
 }

@@ -17,7 +17,7 @@ public sealed partial class InstitutionWindow
         AccountRequest.IsEnabled = CreditRequest.IsEnabled = false;
         Identity.Text = "정보 없음"; Allocated.Text = Balance.Text = Contract.Text = "—"; CreditDetail.Text = "사용량 정보 없음"; UsagePercent.Text = "정보 없음";
         ContractDetail.Text = "계약 정보 없음"; ContractRemaining.Text = "정보 없음"; StatusSummary.Text = "기관 정보 없음"; UsageBar.Value = 0; UsageBar.Visibility = Visibility.Collapsed;
-        RenderMonthlyUsage([]); Accounts.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; PendingRequests.Text = ""; receiptEmail = null; ReceiptAddress.Text = "증빙 받는 사람 정보 없음";
+        RenderMonthlyUsage([]); Accounts.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; PendingRequests.Text = ""; ReceiptAddress.IsEnabled = false; receiptEmail = null; ReceiptAddress.Text = ""; ReceiptHint.Visibility = Visibility.Collapsed;
         SessionIdentity.Text = api.Account?.LoginId ?? "로그인 정보 없음";
     }
     private async Task RefreshAsync()
@@ -68,7 +68,7 @@ public sealed partial class InstitutionWindow
             await Load("주문 내역", async () =>
             {
                 var orders = await Client.OrdersAsync(Lifetime.Token); Orders.ItemsSource = orders.Items; receiptEmail = orders.ReceiptEmail;
-                ReceiptAddress.Text = orders.ReceiptEmail is { Length: > 0 } email ? "증빙 받는 사람: " + email : "증빙 받는 사람 정보 없음";
+                ReceiptAddress.Text = receiptEmail ?? ""; ReceiptAddress.IsEnabled = true;
             });
             if (api.Account?.Role != "ROLE_ORG_ADMIN")
             {
@@ -176,6 +176,27 @@ public sealed partial class InstitutionWindow
     {
         var dialog = new InstitutionNoticeDialog(notice, CreditRequest.IsEnabled) { Owner = ModalOwner };
         if (dialog.ShowDialog() == true && dialog.CreditRequested) await RequestCreditAsync();
+    }
+    private const string ReceiptSaveFailed = "증빙 받는 사람을 바꾸지 못했습니다. ";
+    private bool savingReceipt;
+    internal bool SavingReceipt => savingReceipt;
+    /// <summary>Saves the field when it differs from the server value; a malformed address stays in the field with a hint and is never sent.</summary>
+    internal async Task SaveReceiptEmailAsync()
+    {
+        if (savingReceipt || refreshing || !ReceiptAddress.IsEnabled || Lifetime.IsCancellationRequested) return;
+        var email = ReceiptAddress.Text.Trim();
+        if (email == (receiptEmail ?? "")) { ReceiptAddress.Text = email; return; }
+        if (email.Length > 0 && !InstitutionClient.IsReceiptEmail(email)) { ReceiptHint.Visibility = Visibility.Visible; return; }
+        savingReceipt = true; ReceiptAddress.IsReadOnly = true;
+        try
+        {
+            await Client.SetReceiptEmailAsync(email, Lifetime.Token);
+            receiptEmail = email.Length == 0 ? null : email; ReceiptAddress.Text = email;
+            if (ErrorText.Text.StartsWith(ReceiptSaveFailed, StringComparison.Ordinal)) ErrorText.Text = "";
+        }
+        catch (OperationCanceledException) when (Lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { ReceiptAddress.Text = receiptEmail ?? ""; ErrorText.Text = ReceiptSaveFailed + ex.Message; }
+        finally { savingReceipt = false; ReceiptAddress.IsReadOnly = false; }
     }
     private Task OpenOrderAsync(InstitutionOrder order)
     {

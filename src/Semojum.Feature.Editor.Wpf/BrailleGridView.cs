@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Semojum.Core;
+using Semojum.Desktop.Dialogs;
 
 namespace Semojum.Desktop.Controls;
 
@@ -34,6 +35,17 @@ public sealed partial class BrailleGridView : ListBox
     public Action<EditorBlock, int>? MemoRequested { get; set; }
     public Action<EditorBlock>? ReviewRequested { get; set; }
     public Action? ManualReviewRequested { get; set; }
+    /// <summary>Shared non-modal memo bubble shown while the pointer is over a memo marker; without one, the marker shows a tooltip.</summary>
+    public MemoHoverBubble? HoverBubble { get; set; }
+    private bool memoHovered;
+    /// <summary>The pointer is over <paramref name="row"/> at <paramref name="x"/> (row -1: it left the face); true while that row's memo bubble is shown.</summary>
+    internal bool HoverMarker(BrailleGridFace face, int row, double x)
+    {
+        if (HoverBubble is { } bubble && row >= 0 && row < face.Rows.Length && x >= MarkerStart && x < MarkerStart + MarkerSize
+            && MarkersFor(face).TryGetValue(row, out var marker) && marker.Memo && bubble.Enter(this, marker.Block, "BRAILLE", marker.Line)) return memoHovered = true;
+        if (memoHovered) { memoHovered = false; HoverBubble?.Leave(); }
+        return false;
+    }
     internal sealed record RowMarker(EditorBlock Block, int Line, bool Memo, bool Review, string Description);
     private Dictionary<BrailleGridFace, Dictionary<int, RowMarker>>? markerCache;
     private sealed record ManualFaceReviews(ReviewKind[][] Kinds, Dictionary<GridCell, ReviewMark> LastByCell);
@@ -346,7 +358,10 @@ public sealed partial class BrailleGridView : ListBox
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            UpdateMarkerToolTip(e.GetPosition(this));
+            var point = e.GetPosition(this);
+            // Over the memo marker the memo bubble replaces the tooltip.
+            if (Owner is { } markerOwner && Data is { } markerFace && markerOwner.HoverMarker(markerFace, (int)Math.Floor(point.Y / CellHeight), point.X)) ToolTip = null;
+            else UpdateMarkerToolTip(point);
             if (dragBlock is not null && e.LeftButton == MouseButtonState.Pressed && (e.GetPosition(this) - dragStart).Length > 6)
             {
                 var block = dragBlock; dragBlock = null;
@@ -355,6 +370,11 @@ public sealed partial class BrailleGridView : ListBox
             }
             if (Owner is not { } owner || e.LeftButton != MouseButtonState.Pressed || !owner.dragSelecting) return;
             if (Hit(e.GetPosition(this)) is { } cell) owner.Point(cell, true);
+        }
+        protected override void OnMouseLeave(MouseEventArgs e)
+        {
+            if (Owner is { } owner && Data is { } face) owner.HoverMarker(face, -1, 0);
+            base.OnMouseLeave(e);
         }
         protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
         {

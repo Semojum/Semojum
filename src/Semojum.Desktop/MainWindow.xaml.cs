@@ -84,8 +84,8 @@ public partial class MainWindow : Window
         }
         StyleSeparators(ApplicationMenu);
         InitializeContinuousEditor();
-        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)) { ManualReviewRequested = ShowReviewList });
-        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { ManualReviewRequested = ShowReviewList });
+        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)) { ManualReviewRequested = ShowReviewList, HoverBubble = MemoHover });
+        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { ManualReviewRequested = ShowReviewList, HoverBubble = MemoHover });
         SourceEditor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Text), () => ReviewToggle.IsChecked, () => (SourceEditor.SelectionStart, SourceEditor.SelectionLength)));
         Braille.Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Braille), () => ReviewToggle.IsChecked, () => (Braille.Editor.SelectionStart, Braille.Editor.SelectionLength)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
@@ -523,7 +523,7 @@ public partial class MainWindow : Window
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
         detachedPane = new BraillePane(); ConnectGrid(detachedPane); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
         InstallEditorMenu(detachedPane.Editor);
-        detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
+        detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { HoverBubble = MemoHover });
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
         detachedPane.HideRequested += (_, _) => detachedWindow?.Close();

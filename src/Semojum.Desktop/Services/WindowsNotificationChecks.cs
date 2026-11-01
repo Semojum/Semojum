@@ -175,10 +175,11 @@ internal static class WindowsNotificationChecks
 
         fixture.HoldNotifications = false; fixture.Populated = true;
         var listWindow = new NotificationsDialog(new BoardClient(api), ""); listWindow.Show();
-        var closePost = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        var closePost = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) }; var openedInBoard = false;
         closePost.Tick += (_, _) =>
         {
-            foreach (var post in Application.Current.Windows.OfType<PostDialog>().Where(p => p.Owner == listWindow && p.IsVisible).ToArray()) post.Close();
+            foreach (var post in Application.Current.Windows.OfType<BoardDialog>().Where(p => p.Owner == listWindow && p.IsVisible).ToArray())
+            { openedInBoard |= post.Title == "게시판 - 누리닷" && Descendants(post).OfType<PostView>().Any(v => v.IsVisible); post.Close(); }
         };
         closePost.Start();
         try
@@ -195,6 +196,7 @@ internal static class WindowsNotificationChecks
             await WaitAsync(() => fixture.PostRequests == 2 && list.Items.Count == 2 && list.Items[0] is BoardNotification { Read: true });
             check(list.Items[0] is BoardNotification { Read: true } && list.Items[1] is BoardNotification { Read: false },
                 "Opening a permitted post refreshes only its server-confirmed read status");
+            check(openedInBoard, "A notification opens its post in the body of a 「게시판 - 누리닷」 window");
             var readAll = Descendants(listWindow).OfType<Button>().Single(b => Equals(b.Content, "모두 읽음"));
             fixture.DenyReadAll = true; readAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitAsync(() => fixture.ReadAllRequests == 1);
