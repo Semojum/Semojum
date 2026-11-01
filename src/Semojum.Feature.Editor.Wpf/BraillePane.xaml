@@ -17,7 +17,7 @@
       <DockPanel Margin="8,4" Visibility="Collapsed"><CheckBox x:Name="GridToggle" Content="모눈 보기" IsChecked="True" Click="GridToggle_Click"/>
         <TextBlock Text="  드래그·Shift 선택 · 6점 입력 · Ctrl+Z" FontSize="11" Foreground="Gray" ToolTip="BRF와 동일한 판면입니다. 본문을 직접 편집합니다. 회색 조판 영역은 자동 생성됩니다."/></DockPanel>
       <local:BrailleGridView x:Name="GridView" Grid.Row="1"/>
-      <ae:TextEditor x:Name="Editor" Grid.Row="3" Visibility="Collapsed" FontFamily="Segoe UI Symbol" FontSize="22" Padding="8,4" ShowLineNumbers="True" WordWrap="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="점자 편집 모델"/>
+      <ae:TextEditor x:Name="Editor" Grid.Row="3" Visibility="Collapsed" FontFamily="{StaticResource BrailleFont}" FontSize="22" Padding="8,4" ShowLineNumbers="True" WordWrap="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="점자 편집 모델"/>
     </Grid>
   </DockPanel>
 </UserControl>

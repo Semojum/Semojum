@@ -13,7 +13,7 @@ public sealed class RangeSelectionDialog : CompactDialog
         : base("여러 줄·블록 구간 선택", 850, 650)
     {
         var editor = new TextEditor { IsReadOnly = true, ShowLineNumbers = true, WordWrap = true,
-            FontFamily = new(panel == SearchPanel.Text ? "Malgun Gothic" : "Segoe UI Symbol"), FontSize = panel == SearchPanel.Text ? 16 : 22, Padding = new(12) };
+            FontFamily = panel == SearchPanel.Text ? new("Malgun Gothic") : (FontFamily)FindResource("BrailleFont"), FontSize = panel == SearchPanel.Text ? 16 : 22, Padding = new(12) };
         editor.Text = BlockRange.Text(blocks(), panel);
         var hint = new TextBlock { Text = "드래그 또는 Shift+클릭으로 블록의 일부부터 다음 블록까지 선택하세요. 복사·잘라내기·붙여넣기·삭제를 적용하며, 창을 닫은 뒤 Ctrl+Z로 되돌릴 수 있습니다.", TextWrapping = TextWrapping.Wrap, Margin = new(16, 8, 16, 8) };
         DockPanel.SetDock(hint, Dock.Top); Root.Children.Add(hint); Body(editor);

@@ -204,6 +204,7 @@ public sealed class FindDialog : CompactDialog
             toggle.BorderBrush = EditorModalDesign.Color(on ? "#005FB8" : "#EAEAEA"); toggle.Background = EditorModalDesign.Color(on ? "#EFF6FC" : "#FBFBFB");
             toggle.ToolTip = on ? "점자 입력 켬" : "점자 입력 끔"; sixDot.Reset();
             hint.Text = on ? "점자로 바꿀 말" : "바꿀 말을 적는다"; query.FontSize = replacement.FontSize = on ? 16 : 12;
+            foreach (var box in new[] { query, replacement }) if (on) box.FontFamily = (FontFamily)FindResource("BrailleFont"); else box.ClearValue(FontFamilyProperty);
         }
         toggle.Checked += (_, _) => UpdateToggle(); toggle.Unchecked += (_, _) => UpdateToggle(); UpdateToggle();
         SearchPanel Target() => toggle.IsChecked == true ? SearchPanel.Braille : SearchPanel.Text;

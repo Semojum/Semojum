@@ -437,8 +437,8 @@ public partial class MainWindow
 
     private void ShowCreditInquiry(NoticeDialog notice)
     {
-        if (notice.Choice is 0 or 1)
-            new PublicInquiryDialog(api, notice.Choice == 0 ? "크레딧 구매 문의" : null) { Owner = this }.ShowDialog();
+        if (notice.Choice == 0) new PublicInquiryDialog(api, "크레딧 구매 문의", PublicInquiryCategory.CreditPayment) { Owner = this }.ShowDialog();
+        else if (notice.Choice == 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
     }
 
     private async void ReviewPendingServerPages_Click(object sender, RoutedEventArgs e)

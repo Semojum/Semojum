@@ -28,6 +28,7 @@ internal static class WindowsQa4Checks
         await WindowsUsageDesignChecks.RunAsync(check);
         await WindowsUsageFeedbackChecks.RunAsync(check);
         await WindowsCommonDesignChecks.RunAsync(directory, check);
+        await WindowsBrailleFontChecks.RunAsync(check);
         await WindowsIndividualControlStatesChecks.RunAsync(directory, check);
         await WindowsOwnedModalChecks.RunAsync(check);
         await WindowsReviewMarginChecks.RunAsync(check);
@@ -398,7 +399,10 @@ internal static class WindowsQa4Checks
             editor.SourcePanel.Width = editor.SourcePanel.Height = double.NaN; editor.SourcePanel.HorizontalAlignment = HorizontalAlignment.Stretch; editor.SourcePanel.VerticalAlignment = VerticalAlignment.Stretch;
             tagsBlock.Source = "2026학년도 수능 안내\n시험장은 오전 8시 10분까지 들어가야 한다.\n수험표와 신분증을 반드시 가져온다.\n점심 도시락은 각자 준비한다.\n(안내문 끝)";
             tagsBlock.Braille = "⠼⠃⠚⠃⠋⠚⠁⠈⠘⠉⠀⠠⠍⠙⠻⠀⠣⠒⠎\n⠠⠎⠢⠀⠕⠿⠀⠫⠙⠔⠲";
-            editor.Session.Title = "안내문.txt"; editor.Session.IsTextJob = true; editor.HidePanel("hideOriginal"); editor.LinePreviewToggle.IsChecked = false; editor.LineStrip.Visibility = Visibility.Collapsed;
+            var stripBefore = editor.LineStrip.Visibility;
+            editor.Session.Title = "안내문.txt"; editor.Session.IsTextJob = true; editor.HidePanel("hideOriginal");
+            check(stripBefore == Visibility.Visible && !editor.LinePreviewToggle.IsChecked && editor.LineStrip.Visibility == Visibility.Collapsed,
+                "Hiding the original panel removes the line-translation strip as in Figma's two-panel screen");
             editor.PageEditor.Refresh(); editor.PageEditor.FollowActive(tagsBlock.Source.IndexOf("수험표"), 0); editor.PageEditor.Editor.Focus();
             await render(editor, Path.Combine(directory, "68-text-file.png"));
             var sourceWidth = editor.SourcePanel.ActualWidth; var brailleWidth = editor.Braille.ActualWidth;
@@ -473,7 +477,10 @@ internal static class WindowsQa4Checks
             var reader = Children(help).OfType<FlowDocumentScrollViewer>().Single();
             var links = reader.Document.Blocks.OfType<System.Windows.Documents.Paragraph>().SelectMany(p => p.Inlines.OfType<System.Windows.Documents.Hyperlink>()).ToArray();
             links[0].RaiseEvent(new RoutedEventArgs(System.Windows.Documents.Hyperlink.ClickEvent));
-            check(links.Length == 27 && invoked == "sixDotMode", "Help additional tools retain executable access to actions removed from main menus");
+            check(links.Length == 25 && invoked == "sixDotMode", "Help additional tools retain executable access to actions removed from main menus");
+            var actions = links.Select(link => { link.RaiseEvent(new RoutedEventArgs(System.Windows.Documents.Hyperlink.ClickEvent)); return invoked; }).ToArray();
+            check(actions.Contains("composition") && !actions.Any(a => a is "optimize" or "translationOptions"),
+                "Help additional tools no longer open the removed translation and output settings windows but keep the braille preview");
             var tree = Children(help).OfType<TreeView>().Single();
             var branch = tree.Items.OfType<TreeViewItem>().First(b => b.Header.ToString() == "메뉴별 기능");
             branch.IsExpanded = true;

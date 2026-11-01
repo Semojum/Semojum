@@ -77,8 +77,9 @@ internal static class WindowsPublicInquiryFieldsChecks
                 if (fixture.Bodies.Count > 0)
                 {
                     using var json = JsonDocument.Parse(fixture.Bodies[0]); var data = json.RootElement;
-                    check(data.GetProperty("name").GetString() == "" && data.GetProperty("message").GetString() == "기관명: 기관 A\n제목: 문의 제목\n\n본문",
-                        "The optional legacy sender name is sent empty and organization and title reach the server in the message");
+                    check(data.GetProperty("name").GetString() == "" && data.GetProperty("type").GetString() == "ONBOARDING"
+                        && data.GetProperty("message").GetString() == "[계정 · 발급] 기관명: 기관 A\n제목: 문의 제목\n\n본문",
+                        "The optional legacy sender name is sent empty and the category, organization and title reach the server in the message");
                 }
                 else check(false, "Inquiry request reaches the mock server");
                 check(organization.Text == "기관 A" && title.Text == "문의 제목" && message.Text == "본문" && dialog.IsVisible,
@@ -141,24 +142,28 @@ internal static class WindowsPublicInquiryFieldsChecks
         };
         try
         {
-            type.SelectedIndex = 0;
+            type.SelectedIndex = 1;
             confirmation.Start(); cancelOnly.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             if (choiceTimedOut) throw new TimeoutException("Inquiry type discard confirmation did not finish within 5 seconds");
-            check(choiceOnly.IsVisible && type.SelectedIndex == 0 && fixture.Bodies.Count == 1,
+            check(choiceOnly.IsVisible && type.SelectedIndex == 1 && fixture.Bodies.Count == 1,
                 "Continuing after cancel preserves a changed inquiry type even when other fields are empty");
         }
-        finally { confirmation.Stop(); if (choiceOnly.IsVisible) { type.SelectedIndex = 2; choiceOnly.Close(); } }
+        finally { confirmation.Stop(); if (choiceOnly.IsVisible) { type.SelectedIndex = 0; choiceOnly.Close(); } }
         var untouched = new PublicInquiryDialog(api); untouched.Show(); untouched.Close();
         check(!untouched.IsVisible && fixture.Bodies.Count == 1, "An untouched inquiry closes without confirmation or a request");
-        var untouchedPurchase = new PublicInquiryDialog(api, "크레딧 구매 문의"); untouchedPurchase.Show();
+        var untouchedPurchase = new PublicInquiryDialog(api, "크레딧 구매 문의", PublicInquiryCategory.CreditPayment); untouchedPurchase.Show();
+        await untouchedPurchase.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); untouchedPurchase.UpdateLayout();
         var initialPurchaseTitle = Descendants(untouchedPurchase).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "제목");
-        check(initialPurchaseTitle.Text == "크레딧 구매 문의", "A purchase inquiry starts with an editable, explicit inquiry title");
+        var initialPurchaseCategory = Descendants(untouchedPurchase).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "분류");
+        check(initialPurchaseTitle.Text == "크레딧 구매 문의" && Equals(initialPurchaseCategory.SelectedItem, "크레딧 · 결제"),
+            "A purchase inquiry starts with an editable, explicit inquiry title and the 「크레딧 · 결제」 category");
         untouchedPurchase.Close();
         check(!untouchedPurchase.IsVisible && fixture.Bodies.Count == 1, "Closing an untouched purchase inquiry requires no confirmation or request");
 
-        var purchase = new PublicInquiryDialog(api, "크레딧 구매 문의"); purchase.Show();
+        var purchase = new PublicInquiryDialog(api, "크레딧 구매 문의", PublicInquiryCategory.CreditPayment); purchase.Show();
         try
         {
+            await purchase.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             purchase.Width = 400; purchase.UpdateLayout();
             var fields = Descendants(purchase).OfType<TextBox>().ToArray();
             var purchaseTitle = fields.Single(t => AutomationProperties.GetName(t) == "제목");
@@ -173,15 +178,18 @@ internal static class WindowsPublicInquiryFieldsChecks
             var purchaseDeadline = DateTime.UtcNow.AddSeconds(5);
             while (fixture.Bodies.Count < 2 && DateTime.UtcNow < purchaseDeadline) await Task.Delay(25);
             await Task.Delay(100);
-            var purchaseBodyIncludesTitle = false;
+            var purchaseBodyIncludesTitle = false; string? purchaseType = null, purchaseText = null;
             if (fixture.Bodies.Count == 2)
             {
                 using var sent = JsonDocument.Parse(fixture.Bodies[1]);
-                purchaseBodyIncludesTitle = sent.RootElement.GetProperty("message").GetString()?.Contains("제목: 크레딧 구매 문의", StringComparison.Ordinal) == true;
+                purchaseType = sent.RootElement.GetProperty("type").GetString(); purchaseText = sent.RootElement.GetProperty("message").GetString();
+                purchaseBodyIncludesTitle = purchaseText?.Contains("제목: 크레딧 구매 문의", StringComparison.Ordinal) == true;
             }
             check(fixture.Bodies.Count == 2 && purchase.IsVisible && purchaseMessage.Text.Contains("충전 방법", StringComparison.Ordinal)
                 && purchaseBodyIncludesTitle,
                 "Only an explicitly submitted purchase inquiry includes its title and retains input on server failure");
+            check(purchaseType == "ETC" && purchaseText == "[크레딧 · 결제] 제목: 크레딧 구매 문의\n\n크레딧 충전 방법을 알려 주세요.",
+                $"A purchase inquiry sent as opened uses type ETC and the 「[크레딧 · 결제] 」 prefix (type={purchaseType})");
             purchaseEmail.Clear(); purchaseMessage.Clear();
         }
         finally { if (purchase.IsVisible) purchase.Close(); }
@@ -216,6 +224,53 @@ internal static class WindowsPublicInquiryFieldsChecks
         receiptTimer.Start(); try { acceptedResult = accepted.ShowDialog(); } finally { receiptTimer.Stop(); }
         check(!receiptTimedOut && acceptedResult == true && fixture.Bodies.Count == 3 && receipt == "문의를 접수했습니다." && receiptLabels.SequenceEqual(["확인"]),
             "A received inquiry is confirmed in the app message window, not a Windows message box, and its 「확인」 closes the inquiry");
+
+        // Each Figma category sends the server type it maps to and prefixes its label to the message; the prefix counts toward the 2,000-character limit.
+        fixture.Accept = false; var sentBefore = fixture.Bodies.Count;
+        var categorized = new PublicInquiryDialog(api); categorized.Show();
+        await categorized.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); categorized.UpdateLayout();
+        var categoryBox = Descendants(categorized).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "분류");
+        var categoryFields = Descendants(categorized).OfType<TextBox>().ToArray();
+        var categoryMessage = categoryFields.Single(t => t.AcceptsReturn);
+        var categorySend = Descendants(categorized).OfType<Button>().Single(b => Equals(b.Content, "보내기"));
+        try
+        {
+            categoryFields.Single(t => t.MaxLength == 100).Text = "fixture@example.test";
+            Descendants(categorized).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent").IsChecked = true;
+            (string Label, string Type)[] expected = [("계정 · 발급", "ONBOARDING"), ("점역 결과", "ERROR_REPORT"), ("크레딧 · 결제", "ETC"), ("사용법", "ETC")];
+            check(categoryBox.Items.Cast<string>().SequenceEqual(expected.Select(e => e.Label)) && categoryBox.SelectedIndex == 0, "The inquiry offers the four Figma categories in order, starting at the first");
+            var sent = new List<string>();
+            for (var i = 0; i < expected.Length; i++)
+            {
+                categoryBox.SelectedIndex = i; categoryMessage.Text = "분류 확인";
+                categorySend.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var categoryDeadline = DateTime.UtcNow.AddSeconds(5);
+                while ((fixture.Bodies.Count < sentBefore + i + 1 || !categorySend.IsEnabled) && DateTime.UtcNow < categoryDeadline) await Task.Delay(25);
+                if (fixture.Bodies.Count < sentBefore + i + 1) break;
+                using var json = JsonDocument.Parse(fixture.Bodies[sentBefore + i]);
+                sent.Add(json.RootElement.GetProperty("type").GetString() + "|" + json.RootElement.GetProperty("message").GetString());
+            }
+            check(sent.SequenceEqual(expected.Select(e => $"{e.Type}|[{e.Label}] 분류 확인")),
+                "Each inquiry category sends its mapped server type and prefixes its label to the message (" + string.Join(", ", sent) + ")");
+            categoryBox.SelectedIndex = 0; var beforeLimit = fixture.Bodies.Count; var prefix = "[계정 · 발급] ".Length;
+            categoryMessage.Text = new string('가', 2000 - prefix + 1);
+            categorySend.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(100);
+            check(fixture.Bodies.Count == beforeLimit && categoryMessage.Text.Length == 2000 - prefix + 1
+                && Descendants(categorized).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("2,000자", StringComparison.Ordinal)),
+                "The category prefix counts toward the server's 2,000-character message limit");
+            categoryMessage.Text = new string('가', 2000 - prefix);
+            categorySend.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var limitDeadline = DateTime.UtcNow.AddSeconds(5);
+            while ((fixture.Bodies.Count == beforeLimit || !categorySend.IsEnabled) && DateTime.UtcNow < limitDeadline) await Task.Delay(25);
+            var sentLength = -1;
+            if (fixture.Bodies.Count == beforeLimit + 1) { using var json = JsonDocument.Parse(fixture.Bodies[^1]); sentLength = json.RootElement.GetProperty("message").GetString()?.Length ?? -1; }
+            check(sentLength == 2000, $"A message reaching exactly 2,000 characters with its category prefix is sent (length={sentLength})");
+        }
+        finally
+        {
+            foreach (var input in categoryFields) input.Clear();
+            categoryBox.SelectedIndex = 0; if (categorized.IsVisible) categorized.Close();
+        }
     }
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();

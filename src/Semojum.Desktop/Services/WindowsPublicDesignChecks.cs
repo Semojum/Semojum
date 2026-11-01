@@ -61,6 +61,11 @@ internal static class WindowsPublicDesignChecks
                 "Inquiry category and attachment slots use the matching Figma 16px icons");
             check(Descendants(inquiry).OfType<TextBox>().Any(b => AutomationProperties.GetName(b) == "기관명")
                 && Descendants(inquiry).OfType<TextBox>().Any(b => AutomationProperties.GetName(b) == "제목"), "Organization and title fields remain available");
+            var category = Descendants(inquiry).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "분류");
+            check(category.Items.Cast<string>().SequenceEqual(["계정 · 발급", "점역 결과", "크레딧 · 결제", "사용법"]) && Equals(category.SelectedItem, "계정 · 발급"),
+                "Inquiry categories follow the final Figma list and start at 「계정 · 발급」");
+            check(!Descendants(inquiry).OfType<TextBlock>().Any(t => t.Text.Contains("전달됩니다", StringComparison.Ordinal) || t.Text.Contains("문의 이메일", StringComparison.Ordinal)),
+                "The inquiry form has no delivery-scope or contact-mail lines that the final Figma does not show");
             check(Descendants(inquiry).OfType<CheckBox>().Any(c => Equals(c.Content, "개인정보 수집·이용에 동의합니다 (답변 목적 · 1년 보관)"))
                 && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("1년 보관", StringComparison.Ordinal)),
                 "The inquiry consent states the final purpose and one-year retention period");

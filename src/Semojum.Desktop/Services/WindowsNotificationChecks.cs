@@ -139,8 +139,8 @@ internal static class WindowsNotificationChecks
             check(fixture.InquiryWasAnonymous && message.Text == "작성한 문의" && organization.Text == "테스트 기관" && title.Text == "문의 제목"
                 && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("접근할 수 없습니다")),
                 "A failed anonymous inquiry reports its error and retains all typed fields");
-            check(fixture.InquiryMessage == "기관명: 테스트 기관\n제목: 문의 제목\n\n작성한 문의" && fixture.InquiryName == "",
-                "Organization and title reach the existing anonymous message contract without replacing the sender name");
+            check(fixture.InquiryMessage == "[계정 · 발급] 기관명: 테스트 기관\n제목: 문의 제목\n\n작성한 문의" && fixture.InquiryName == "" && fixture.InquiryType == "ONBOARDING",
+                "The default category, organization and title reach the existing anonymous message contract without replacing the sender name");
             message.Text = new string('가', 1990);
             submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(50);
             check(fixture.InquiryPosts == 1 && message.Text.Length == 1990
@@ -260,6 +260,7 @@ internal static class WindowsNotificationChecks
         public bool InquiryWasAnonymous { get; private set; }
         public string? InquiryMessage { get; private set; }
         public string? InquiryName { get; private set; }
+        public string? InquiryType { get; private set; }
         public bool HoldNotifications { get; set; }
         public bool HoldPublic { get; set; }
         public bool DenyPublic { get; set; }
@@ -332,6 +333,7 @@ internal static class WindowsNotificationChecks
             using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
             InquiryMessage = payload.RootElement.GetProperty("message").GetString();
             InquiryName = payload.RootElement.GetProperty("name").GetString();
+            InquiryType = payload.RootElement.GetProperty("type").GetString();
             return Error();
         }
         private static HttpResponseMessage Error() => new(HttpStatusCode.Forbidden)

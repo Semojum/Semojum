@@ -37,8 +37,30 @@ public partial class MainWindow
         RefreshEditorStatus();
     }
 
+    // Figma 263:7469 「입력 한글」 is the keyboard's 한/영 state; an element with its IME off takes English input.
+    private void InitializeInputStatus()
+    {
+        // The 한/영 key, another input language or another focused control can each change it.
+        InputMethodStateChangedEventHandler imeChanged = (_, _) => RefreshInputStatus();
+        InputLanguageEventHandler languageChanged = (_, _) => RefreshInputStatus();
+        InputMethod.Current.StateChanged += imeChanged; InputLanguageManager.Current.InputLanguageChanged += languageChanged;
+        AddHandler(Keyboard.GotKeyboardFocusEvent, new KeyboardFocusChangedEventHandler((_, _) => RefreshInputStatus()), true);
+        // An IMM32 IME changes its mode without TSF notifications.
+        PreviewKeyUp += (_, e) => { if (e.Key is Key.ImeProcessed or Key.HangulMode || e.ImeProcessedKey == Key.HangulMode) RefreshInputStatus(); };
+        Closed += (_, _) => { InputMethod.Current.StateChanged -= imeChanged; InputLanguageManager.Current.InputLanguageChanged -= languageChanged; };
+    }
+    private void RefreshInputStatus()
+    {
+        if (StatusInput is null) return;
+        var ime = Keyboard.FocusedElement is not DependencyObject focused || InputMethod.GetIsInputMethodEnabled(focused);
+        StatusInput.Text = InputStatusText(InputLanguageManager.Current.CurrentInputLanguage, ime ? InputMethod.Current.ImeConversionMode : ImeConversionModeValues.Alphanumeric);
+    }
+    internal static string InputStatusText(System.Globalization.CultureInfo? language, ImeConversionModeValues mode) =>
+        language?.TwoLetterISOLanguageName == "ko" && mode.HasFlag(ImeConversionModeValues.Native) ? "입력 한글" : "입력 영문";
+
     private void RefreshEditorStatus()
     {
+        RefreshInputStatus();
         if (session?.ActiveBlock is not { } block || CaretStatus is null)
         {
             if (OriginalPosition is not null) OriginalPosition.Text = "";
@@ -46,26 +68,21 @@ public partial class MainWindow
             return;
         }
         var editor = lastEditor ?? SourceEditor;
-        var braille = editor != SourceEditor && editor != PageEditor.Editor;
-        var input = braille ? (Braille.SixDotEnabled ? "점형" : "점자") : "텍스트";
         OptionsLabel.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
         StatusOptions.Text = $"옵션 2024 · {(session.Options.KoreanGrade1 ? "1급" : "2급")} · {session.Layout.Columns}×{session.Layout.Lines}";
-        StatusInput.Text = $"입력 {input}";
         var hasOriginal = session.IsTextJob != true && session.OriginalPages.ContainsKey(block.Page);
         var confirmedTotal = session.IsTextJob != true && session.TotalOriginalPages is { } known && block.Page <= known ? known : (int?)null;
         StatusPage.Text = confirmedTotal is { } pageTotal ? $"쪽 {block.Page} / {pageTotal}" : $"쪽 {block.Page}";
         StatusPage.ToolTip = session.IsTextJob == true ? $"텍스트 {block.Page}쪽"
             : hasOriginal ? confirmedTotal is { } t ? $"원본 {block.Page}쪽 (총 {t}쪽)" : $"원본 {block.Page}쪽 (전체 쪽수 미확인)"
             : confirmedTotal is { } pendingTotal ? $"작업 {block.Page}쪽 (총 {pendingTotal}쪽 · 원본 미수신)" : $"작업 {block.Page}쪽 (원본 없음)";
-        CaretStatus.Text = $"줄 {editor.TextArea.Caret.Line}";
-        StatusCell.Text = $"칸 {editor.TextArea.Caret.Column} / {session.Layout.Columns}";
+        CaretStatus.Text = $"줄 {editor.TextArea.Caret.Line} · 칸 {editor.TextArea.Caret.Column} / {session.Layout.Columns}";
         if (lastGrid is not null)
         {
             var position = lastGrid.CaretCoordinates;
-            StatusPage.Text = position is { } p ? $"점자 {p.Face} / {lastGrid.Items.Count}면" : $"총 {lastGrid.Items.Count}면";
+            StatusPage.Text = position is { } p ? $"면 {p.Face} / {lastGrid.Items.Count}" : $"총 {lastGrid.Items.Count}면";
             StatusPage.ToolTip = lastGrid.DescribeCaret();
-            CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"}";
-            StatusCell.Text = $"칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";
+            CaretStatus.Text = $"줄 {position?.Line.ToString() ?? "—"} · 칸 {position?.Cell.ToString() ?? "—"} / {session.Layout.Columns}";
         }
         OriginalPosition.Text = session.IsTextJob == true || !session.OriginalPages.ContainsKey(block.Page) ? ""
             : session.TotalOriginalPages is { } total && block.Page <= total ? $"{block.Page} / {total}쪽" : $"{block.Page}쪽";

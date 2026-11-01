@@ -80,6 +80,7 @@ internal static class WindowsFocusedChecks
                 case "appearance":
                     await WindowsAppearanceDefaultChecks.RunAsync(Check);
                     await WindowsCommonDesignChecks.RunAsync(directory, Check);
+                    await WindowsBrailleFontChecks.RunAsync(Check);
                     await WindowsIndividualControlStatesChecks.RunAsync(directory, Check);
                     break;
             }

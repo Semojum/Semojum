@@ -124,6 +124,7 @@ public partial class MainWindow : Window
         BindCommonKeys(this);
         InitializeDraftAvailability();
         InitializeMathPreview();
+        InitializeInputStatus();
         UpdatePanelLayout(); RefreshEditorStatus();
         Closed += (_, _) => _ = ReleaseResourcesAsync();
     }
@@ -274,7 +275,7 @@ public partial class MainWindow : Window
         try
         {
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }
-            if (session.IsReadOnly && (action.StartsWith("tag:") || new[] { "undo", "redo", "cut", "paste", "replace", "addBlock", "deleteBlock", "moveBlockUp", "moveBlockDown", "indent", "unindent", "clearLine", "clearBlock", "table", "memo", "memos", "drafts", "symbol", "math", "footer", "layout", "translationOptions", "translate", "translateAll" }.Contains(action)))
+            if (session.IsReadOnly && (action.StartsWith("tag:") || new[] { "undo", "redo", "cut", "paste", "replace", "addBlock", "deleteBlock", "moveBlockUp", "moveBlockDown", "indent", "unindent", "clearLine", "clearBlock", "table", "memo", "memos", "drafts", "symbol", "math", "footer", "layout", "translate", "translateAll" }.Contains(action)))
                 throw new InvalidOperationException("읽기 전용 문서입니다. 다른 이름으로 저장한 뒤 편집해 주세요.");
             if (action is "copy" or "cut" or "paste")
             {
@@ -330,7 +331,6 @@ public partial class MainWindow : Window
                 case "lastFolder": await OpenWorkFolderAsync(false); break;
                 case "save": await SaveAsync(false); break;
                 case "saveAs": await SaveAsync(true); break;
-                case "optimize": await OptimizeDocumentAsync(); break;
                 case "composition": await ShowCompositionAsync(); break;
                 case "export": await ExportAsync(); break;
                 case "version": await CheckVersionAsync(); break;
@@ -432,10 +432,6 @@ public partial class MainWindow : Window
                         accountPreferences = accountPreferences with { SixDotKeys = sixDotKeys, SpaceEnabled = sixdot.Space, EnterEnabled = sixdot.Enter };
                         await PersistAccountPreferencesAsync();
                     }
-                    break;
-                case "translationOptions":
-                    var options = new TranslationOptionsDialog(autoTranslate, session.Options) { Owner = this };
-                    if (options.ShowDialog() == true) { autoTranslate = options.AutoTranslate; session.Options = options.Result; }
                     break;
                 case "visualDescriptions":
                     if (await EnsureAccountAsync())

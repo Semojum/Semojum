@@ -9,8 +9,8 @@ public sealed record EditorAppearance(string TextColor = "#1F1F1F", string Backg
     double LineSpacing = 1.3, double CursorWidth = 2, bool HighContrast = false, bool SpeakDots = false, int SpeechRate = 0,
     string SelectionTextColor = "#1F1F1F", string BrailleColor = "#1F1F1F", string MarkerColor = "#808080",
     string LineNumberColor = "#5F646D", string LineNumberBackground = "#FAFAFA", string TagColor = "#5F5F5F",
-    string OutlineColor = "#F25D5D", double OutlineWidth = 1, bool Bold = false, bool ShowLineNumbers = true,
-    bool ShowFormattingMarks = false, int RecentCount = 10, bool ShowToolbar = true);
+    string OutlineColor = "#C42B1C", double OutlineWidth = 1, bool Bold = false, bool ShowLineNumbers = true,
+    bool ShowFormattingMarks = true, int RecentCount = 10, bool ShowToolbar = true);
 public sealed record OutputPreferences(PageLayout? Layout = null, string LineBreakUnit = "syllable", bool Duplex = true);
 public sealed record AccountPreferences(string SixDotKeys = "F D S J K L", bool SpaceEnabled = true, bool EnterEnabled = true,
     string[]? TextSnippets = null, string[]? BrailleSnippets = null, EditorAppearance? Appearance = null, OutputPreferences? Output = null);

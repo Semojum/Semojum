@@ -25,7 +25,7 @@ public sealed class HelpWindow : Window
         new("마이페이지와 크레딧", "사용량과 작업 이력", "정보 → 마이페이지에서 내 사용량, 기관 잔여 쪽수와 작업 이력을 확인합니다. 작업 이력에서 선택한 작업을 다시 열 수 있습니다. 새 문서와 TXT는 차감되지 않습니다."),
         new("문제 해결", "저장·점역 실패", "점역 오류가 나면 원문을 보존한 상태로 문제 블록을 확인하세요. 엔진 응답 지연 시 점자 입력만 잠기며 원문 편집과 로컬 저장은 가능합니다. 서버 저장 미완료 표시는 완료로 처리하지 않습니다. 새 블록과 첫 점자도 서버에 저장합니다. 부분 실패 시 실패한 쪽만 다시 저장할 수 있습니다. 받은 작업 파일을 저장하면 내 계정의 사본으로 이어집니다. .smj 파일을 보관하세요."),
         new("문제 해결", "문의하기", "정보 → 게시판에서 질문을 작성합니다. 비밀글은 작성자와 운영자만 열 수 있습니다. 첨부는 5개, 각각 10 MB까지이며 현재 작업 정보는 체크한 경우에만 전송합니다. 문의 이메일: contact@nuridot.com"),
-        new("단축키 한눈에", "단축키 목록", "Ctrl+N 새 문서 / Ctrl+O 열기 / Ctrl+S 저장 / Ctrl+W 문서 닫기\nCtrl+F 찾기 / F3 다음 찾기 / Ctrl+H 바꾸기 / Ctrl+G 이동\nCtrl+Z 되돌리기 / Ctrl+Y 다시 실행 / Ctrl+Enter 쪽바꿈\nAlt+G 기본 점역 옵션 / Alt+K 6점키 설정 / Alt+Y 편집 판면 / Alt+P 출력 설정 / Alt+S 문단 모양 / F4 기호\nCtrl+0–9 텍스트 상용구 / Alt+0–9 점자 상용구 / F1 도움말"),
+        new("단축키 한눈에", "단축키 목록", "Ctrl+N 새 문서 / Ctrl+O 열기 / Ctrl+S 저장 / Ctrl+W 문서 닫기\nCtrl+F 찾기 / F3 다음 찾기 / Ctrl+H 바꾸기 / Ctrl+G 이동\nCtrl+Z 되돌리기 / Ctrl+Y 다시 실행 / Ctrl+Enter 쪽바꿈\nAlt+G 기본 점역 옵션 / Alt+K 6점키 설정 / Alt+Y 편집 판면 / Alt+S 문단 모양 / F4 기호\nCtrl+0–9 텍스트 상용구 / Alt+0–9 점자 상용구 / F1 도움말"),
         new("단축키 한눈에", "추가 도구", "주 메뉴와 도구 모음에 표시하지 않는 기능입니다. 아래 항목을 선택하면 현재 문서에서 실행합니다. 6점 입력은 F6으로 켜고 끕니다.")
     ];
     public HelpWindow(string context, Func<string, Task>? runCommand = null)
@@ -104,8 +104,8 @@ public sealed class HelpWindow : Window
                     ("쪽별 변환 상태", "pageStatus"), ("메모 목록", "memos"), ("현재 줄 메모", "memo"), ("대체 초안", "drafts"), ("표 구조 편집", "table"), ("점자 규정", "rules"),
                     ("묵자쪽번호 삽입", "tag:묵자쪽번호"), ("점자면번호 삽입", "tag:점자면번호"), ("문서 닫기 (Ctrl+W)", "closeDocument"), ("알림", "notifications"),
                     ("로그인", "login"), ("로그아웃", "logout"), ("버전 확인", "version"), ("작업 폴더 선택", "workFolder"), ("마지막 작업 폴더", "lastFolder"),
-                    ("서버 작업 열기", "serverOpen"), ("출력 설정 (Alt+P)", "optimize"), ("점자 면 미리보기·인쇄", "composition"), ("문단 모양 (Alt+S)", "appearance"),
-                    ("편집창 색상 (Alt+C)", "colors"), ("상용구", "snippets"), ("작업 점역 옵션", "translationOptions"), ("문서 전체 재점역", "translateAll") })
+                    ("서버 작업 열기", "serverOpen"), ("점자 면 미리보기·인쇄", "composition"), ("문단 모양 (Alt+S)", "appearance"),
+                    ("편집창 색상 (Alt+C)", "colors"), ("상용구", "snippets"), ("문서 전체 재점역", "translateAll") })
                 {
                     var link = new Hyperlink(new Run(label)) { IsEnabled = command is not null };
                     link.Click += async (_, _) => { if (command is not null) await command(action); };

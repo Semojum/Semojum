@@ -27,14 +27,6 @@
             <Separator/>
             <MenuItem Header="찾기 · 바꾸기" InputGestureText="Ctrl+F" Tag="find" Click="Action_Click"/>
             <MenuItem Header="이동" InputGestureText="Ctrl+G" Tag="goto" Click="Action_Click"/>
-            <Separator/>
-            <MenuItem Header="검토 표시">
-              <MenuItem Header="고침 제안" Tag="reviewCorrection" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
-              <MenuItem Header="지울 제안" Tag="reviewDeletion" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
-              <MenuItem Header="사람이 확인함" Tag="reviewConfirmed" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
-              <MenuItem Header="선택과 겹친 표시 지우기" Tag="reviewRemove" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
-              <MenuItem Header="검토 표시 목록" Tag="reviewList" Click="Action_Click" Style="{StaticResource FinalDesktopNestedItem}"/>
-            </MenuItem>
           </MenuItem>
           <MenuItem Header="보기(_V)" Width="64">
             <MenuItem Header="글자 크기">
@@ -167,12 +159,16 @@
           <TextBlock x:Name="ZoomPercent" Width="40" Margin="8,0,0,0" Text="100%" FontSize="12" Foreground="#5F5F5F" VerticalAlignment="Center"/>
         </StackPanel>
         <TextBlock x:Name="AccountLabel" Visibility="Collapsed" Text="로그인 안 됨"/>
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" TextElement.FontSize="12">
-          <Border Width="88" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="8,0"><TextBlock x:Name="StatusInput"/></Border>
-          <Border Width="97" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="StatusPage" TextTrimming="CharacterEllipsis"/></Border>
-          <Border Width="51" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="CaretStatus"/></Border>
-          <Border Width="90" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="StatusCell"/></Border>
-          <Border Width="174" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0" Padding="12,0"><TextBlock x:Name="StatusOptions" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}"/></Border>
+        <!-- Figma 263:7467: text at x 20·100·197·332, 1×14 dividers at 87·184·319·493. -->
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="20,0,0,0" TextElement.FontSize="12" TextElement.Foreground="#5F5F5F">
+          <TextBlock x:Name="StatusInput" Width="67" TextTrimming="CharacterEllipsis"/>
+          <Border Width="1" Height="14" Background="#EAEAEA"/>
+          <TextBlock x:Name="StatusPage" Width="84" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"/>
+          <Border Width="1" Height="14" Background="#EAEAEA"/>
+          <TextBlock x:Name="CaretStatus" Width="122" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"/>
+          <Border Width="1" Height="14" Background="#EAEAEA"/>
+          <TextBlock x:Name="StatusOptions" Width="161" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding Status}"/>
+          <Border Width="1" Height="14" Background="#EAEAEA"/>
         </StackPanel>
         <Border/>
       </DockPanel>
@@ -288,7 +284,7 @@
               <DockPanel><TextBlock DockPanel.Dock="Top" Text="묵자" FontFamily="Malgun Gothic" FontSize="12" Foreground="#5F5F5F"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock x:Name="DraftTextPreview" FontFamily="Malgun Gothic" FontSize="12" LineHeight="20" TextWrapping="Wrap" VerticalAlignment="Top" Margin="0,2,0,0" AutomationProperties.Name="선택한 초안 묵자 미리보기"/></ScrollViewer></DockPanel>
             </Border>
             <Border Grid.Column="1" Padding="15,8,8,4">
-              <DockPanel><TextBlock DockPanel.Dock="Top" Text="점자" FontFamily="Malgun Gothic" FontSize="12" Foreground="#5F5F5F"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock x:Name="DraftBraillePreview" FontFamily="Segoe UI Symbol" FontSize="22" LineHeight="28" TextWrapping="Wrap" VerticalAlignment="Top" AutomationProperties.Name="선택한 초안 점자 미리보기"/></ScrollViewer></DockPanel>
+              <DockPanel><TextBlock DockPanel.Dock="Top" Text="점자" FontFamily="Malgun Gothic" FontSize="12" Foreground="#5F5F5F"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock x:Name="DraftBraillePreview" FontFamily="{StaticResource BrailleFont}" FontSize="22" LineHeight="28" TextWrapping="Wrap" VerticalAlignment="Top" AutomationProperties.Name="선택한 초안 점자 미리보기"/></ScrollViewer></DockPanel>
             </Border>
           </Grid>
         </Grid>

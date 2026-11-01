@@ -27,7 +27,8 @@ public sealed class RuleDialog : CompactDialog
         var root = new DockPanel { Margin = new(16, 16, 16, 12) }; Grid.SetRow(root, 1); layout.Children.Add(root);
         if (initialQuery is null && (selectedSource.Length > 0 || selectedBraille.Length > 0))
         {
-            var excerpt = new TextBlock { Text = $"묵자: {selectedSource}\n점자: {selectedBraille}", TextWrapping = TextWrapping.Wrap, MaxHeight = 64, Margin = new(0, 0, 0, 10) };
+            var excerpt = new TextBlock { TextWrapping = TextWrapping.Wrap, MaxHeight = 64, Margin = new(0, 0, 0, 10) };
+            excerpt.Inlines.Add(new System.Windows.Documents.Run($"묵자: {selectedSource}\n점자: ")); excerpt.Inlines.Add(new System.Windows.Documents.Run(selectedBraille) { FontFamily = (FontFamily)FindResource("BrailleFont") });
             DockPanel.SetDock(excerpt, Dock.Top); root.Children.Add(excerpt);
         }
         var filters = new StackPanel { Margin = new(0, 0, 0, 16) }; DockPanel.SetDock(filters, Dock.Top); root.Children.Add(filters);

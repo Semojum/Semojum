@@ -71,7 +71,7 @@ internal static class WindowsCreditRecoveryChecks
             for (var choice = 0; choice < 3; choice++)
             {
                 var selected = choice; var ticks = 0; var openedNotice = false; var openedInquiry = false;
-                string? inquiryTitle = null; Exception? error = null;
+                string? inquiryTitle = null, inquiryCategory = null; Exception? error = null;
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
                 timer.Tick += (_, _) =>
                 {
@@ -89,6 +89,8 @@ internal static class WindowsCreditRecoveryChecks
                             openedInquiry = true;
                             inquiryTitle = Descendants(inquiry).OfType<TextBox>().Single(t =>
                                 System.Windows.Automation.AutomationProperties.GetName(t) == "제목").Text;
+                            inquiryCategory = Descendants(inquiry).OfType<ComboBox>().Single(c =>
+                                System.Windows.Automation.AutomationProperties.GetName(c) == "분류").SelectedItem as string;
                             inquiry.Close();
                         }
                         if (++ticks >= 400) throw new TimeoutException("Credit inquiry route did not close");
@@ -103,7 +105,8 @@ internal static class WindowsCreditRecoveryChecks
                 try { await window.ShowJobOutcomeAsync(window.Session, new JobStatus("fixture", 1, 0, "FAILED", new() { [1] = "BLOCKED" }, true)); }
                 finally { timer.Stop(); }
                 check(error is null && openedNotice && openedInquiry == (choice != 2)
-                    && (choice == 0 ? inquiryTitle == "크레딧 구매 문의" : choice == 1 ? inquiryTitle == "" : inquiryTitle is null),
+                    && (choice == 0 ? inquiryTitle == "크레딧 구매 문의" && inquiryCategory == "크레딧 · 결제"
+                        : choice == 1 ? inquiryTitle == "" && inquiryCategory == "계정 · 발급" : inquiryTitle is null),
                     $"Credit notice action {choice} opens its intended inquiry or closes without sending");
             }
             check(fixture.InquiryRequests == 0, "Opening or cancelling credit inquiry actions never submits a message");

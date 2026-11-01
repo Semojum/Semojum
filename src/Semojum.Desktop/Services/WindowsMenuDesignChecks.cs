@@ -26,6 +26,10 @@ internal static class WindowsMenuDesignChecks
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout();
             var menus = window.ApplicationMenu.Items.OfType<MenuItem>().ToArray();
             check(menus.Length == 6 && menus.Select(m => m.Header?.ToString()).SequenceEqual(["파일(_F)", "편집(_E)", "보기(_V)", "삽입(_I)", "설정(_M)", "정보(_A)"]), "Main menu preserves the six final Figma categories");
+            check(menus[1].Items.Cast<object>().Select(i => i is MenuItem m ? m.Header?.ToString() : "-").SequenceEqual(["되돌리기", "다시 실행", "-", "잘라내기", "복사", "붙여넣기", "전체 선택", "-", "찾기 · 바꾸기", "이동"])
+                && !menus[1].Items.OfType<MenuItem>().Any(m => m.HasItems), "The edit menu has the eight final Figma items without the review submenu");
+            check(!window.InputBindings.OfType<KeyBinding>().Any(b => b.Gesture is KeyGesture { Key: Key.P, Modifiers: ModifierKeys.Alt } or KeyGesture { Key: Key.O, Modifiers: ModifierKeys.Control | ModifierKeys.Shift }),
+                "Alt+P and Ctrl+Shift+O no longer open the removed translation and output settings windows");
             check(!window.AllTagsMenu.Items.OfType<MenuItem>().Any(m => Equals(m.Header, "빈칸")), "The insert menu no longer includes the blank submenu");
             var tagMenus = window.AllTagsMenu.Items.OfType<MenuItem>().ToArray();
             var tags = tagMenus.SelectMany(m => new[] { m }.Concat(m.Items.OfType<MenuItem>()))

@@ -11,7 +11,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class MathDialog : CompactDialog
 {
     internal TextBox Input { get; } = new() { FontFamily = new("Consolas"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 80, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-    internal TextBox BrailleInput { get; } = new() { FontFamily = new("Segoe UI Symbol"), FontSize = 22, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    internal TextBox BrailleInput { get; } = new() { FontSize = 22, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     internal WrapPanel SymbolButtons { get; } = new();
     public string Latex => Input.Text.Trim();
     public BrailleTranslation? Translation { get; private set; }
@@ -24,7 +24,7 @@ public sealed class MathDialog : CompactDialog
     public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 510)
     {
         this.translate = translate; this.inlinePreview = inlinePreview;
-        Input.FontFamily = (FontFamily)FindResource("MonoFont");
+        Input.FontFamily = (FontFamily)FindResource("MonoFont"); BrailleInput.FontFamily = (FontFamily)FindResource("BrailleFont");
         var body = new DockPanel { Margin = new(8, 8, 8, 0) }; Body(body);
         var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(249, 249, 249)), BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
         DockPanel.SetDock(toolbox, Dock.Top); body.Children.Add(toolbox);

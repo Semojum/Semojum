@@ -15,7 +15,7 @@ internal static class DesktopWindowServices
         AccountScreenServices.Configure(new DesktopAccountScreenHost());
     }
 
-    private static bool UsesBackdrop(Window dialog) => dialog is NoticeDialog or OpenDocumentDialog or TranslationOptionsDialog or SaveAsDialog or ExportRangeDialog or
+    private static bool UsesBackdrop(Window dialog) => dialog is NoticeDialog or OpenDocumentDialog or SaveAsDialog or ExportRangeDialog or
         GoToDialog or FindDialog or DefaultsDialog or LayoutDialog or SixDotDialog or FormDialog or FormEditDialog or DeleteFormDialog or
         HeaderInputDialog or FooterInputDialog or FooterDialog or VisualDescriptionDialog or MathDialog or AppliedRulesDialog or RuleDialog or
         NotificationsDialog or AboutDialog or PublicNoticesDialog or PublicInquiryDialog;

@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Rendering;
 using Microsoft.Win32;
 using Semojum.Core;
 using Semojum.Desktop.Services;
@@ -13,7 +15,7 @@ namespace Semojum.Desktop.Dialogs;
 
 public sealed class BraillePreviewDialog : CompactDialog
 {
-    private readonly TextEditor editor = new() { IsReadOnly = true, ShowLineNumbers = true, FontFamily = new("Segoe UI Symbol"), FontSize = 22, WordWrap = false, Padding = new(12), Background = Brushes.White };
+    private readonly TextEditor editor = new() { IsReadOnly = true, ShowLineNumbers = true, FontFamily = (FontFamily)Application.Current.FindResource("BrailleFont"), FontSize = 22, WordWrap = false, Padding = new(12), Background = Brushes.White };
     private readonly TextBox number = new() { Width = 72, Text = "1", VerticalContentAlignment = VerticalAlignment.Center };
     private readonly TextBlock caption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new(12, 0, 12, 0) };
     public int Page { get; private set; }
@@ -58,8 +60,7 @@ public sealed class BraillePreviewDialog : CompactDialog
             var warning = new TextBlock { Text = spacingMessage, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new(16, 0, 16, 8) };
             DockPanel.SetDock(warning, Dock.Top); Root.Children.Add(warning);
         }
-        editor.Options.ShowColumnRuler = true; editor.Options.ColumnRulerPosition = layout.Columns;
-        editor.TextArea.TextView.ColumnRulerPen = new Pen(Brushes.Gray, 1);
+        editor.TextArea.TextView.BackgroundRenderers.Add(new CellRuler(editor, layout.Columns));
         var paper = new Border { Margin = new(24, 8, 24, 20), BorderBrush = Brushes.Gray, BorderThickness = new(1), Child = editor };
         Body(paper);
         async Task Save(bool txt)
@@ -84,5 +85,17 @@ public sealed class BraillePreviewDialog : CompactDialog
             await RawBraillePrinter.PrintAsync(this, DocumentExport.SelectBraille(brf, range.Result), title);
         });
         Action("닫기", Close, true); Show(initial);
+    }
+    /// <summary>AvalonEdit's own ruler sits at columns × the width of "x"; the page edge belongs after the last braille cell.</summary>
+    internal sealed class CellRuler(TextEditor editor, int columns) : IBackgroundRenderer
+    {
+        public KnownLayer Layer => KnownLayer.Background;
+        internal double Offset => new FormattedText(new string('⠿', columns), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(editor.FontFamily, editor.FontStyle, editor.FontWeight, editor.FontStretch), editor.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(editor).PixelsPerDip).WidthIncludingTrailingWhitespace;
+        public void Draw(TextView textView, DrawingContext drawingContext)
+        {
+            var x = Math.Round(Offset - textView.ScrollOffset.X) + .5;
+            drawingContext.DrawLine(new Pen(Brushes.Gray, 1), new(x, 0), new(x, Math.Max(textView.DocumentHeight - textView.VerticalOffset, textView.ActualHeight)));
+        }
     }
 }

@@ -23,6 +23,7 @@ internal static class WindowsTabPanelChecks
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             check(window.OriginalToggle.IsChecked && window.OriginalUpload.IsVisible, "The empty start screen offers the original file upload area");
+            check(window.LinePreviewToggle.IsChecked && window.LineStrip.Visibility == Visibility.Visible, "The three-panel start screen keeps the line-translation strip of Figma 263:7031");
             var pickerOpened = false;
             window.FilePicker = _ => { pickerOpened = true; return null; };
             window.OriginalUpload.UploadArea.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
@@ -62,6 +63,8 @@ internal static class WindowsTabPanelChecks
             check(!window.OriginalToggle.IsChecked && window.SourceToggle.IsChecked && window.BrailleToggle.IsChecked,
                 "A new blank document starts with only the text and braille panels");
             check(!window.OriginalUpload.IsVisible, "A new blank document does not display the original upload area");
+            check(window.LineStrip.Visibility == Visibility.Collapsed && !window.LinePreviewToggle.IsChecked,
+                "A two-panel document has no line-translation strip, as in Figma 263:7061");
             var typed = window.Session;
             typed.ActiveBlock!.Source = "새 문서에서 저장하지 않은 원문";
             await Dispatcher.Yield(DispatcherPriority.DataBind);
@@ -85,6 +88,14 @@ internal static class WindowsTabPanelChecks
             check(!window.OriginalToggle.IsChecked, "Switching back to a TXT document restores its two panels");
             check(typed.IsDirty && typedLabel.Text == typed.Title && (typedTab.ToolTip as string)?.Contains("저장되지 않음", StringComparison.Ordinal) == true,
                 "An inactive unsaved tab keeps the Figma filename and exposes its unsaved state on hover");
+            void LinePreviewMenu(bool value)
+            { window.LinePreviewToggle.IsChecked = value; window.LinePreviewToggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.MenuItem.ClickEvent)); }
+            LinePreviewMenu(true);
+            check(window.LineStrip.Visibility == Visibility.Visible, "View › 줄번역 still opens the strip in a two-panel document");
+            LinePreviewMenu(false);
+            await window.ExecuteAsync("restorePanels");
+            check(window.OriginalToggle.IsChecked && window.LinePreviewToggle.IsChecked && window.LineStrip.Visibility == Visibility.Visible,
+                "Returning to three panels restores the three-panel line-translation strip");
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
 

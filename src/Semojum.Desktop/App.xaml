@@ -16,6 +16,7 @@
     <common:FigmaButtonSurfaceOpacity x:Key="ButtonSurfaceOpacity"/>
     <common:FigmaInputFocusBrush x:Key="InputFocusBrush"/>
     <x:Static x:Key="MonoFont" Member="controls:BundledFonts.Mono"/>
+    <x:Static x:Key="BrailleFont" Member="controls:BundledFonts.Braille"/>
     <Style TargetType="Window"><Setter Property="FontFamily" Value="{StaticResource UiFont}"/><Setter Property="FontSize" Value="12"/><Setter Property="Language" Value="ko-KR"/><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="Background" Value="#F3F3F3"/></Style>
     <Style TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="LineStackingStrategy" Value="BlockLineHeight"/><Setter Property="LineHeight" Value="{Binding FontSize, RelativeSource={RelativeSource Self}, Converter={StaticResource InterfaceLineHeight}}"/></Style>
     <Style TargetType="Button">

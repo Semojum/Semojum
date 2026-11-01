@@ -15,6 +15,9 @@ public sealed partial class BrailleGridView : ListBox
     public EditorBlock? ActiveBlock { get; set; }
     public int CaretOffset { get; set; }
     public bool ShowOutlines { get; set; } = true;
+    // Figma 263:7003 and 263:7321 draw the 32-cell boundary in #C42B1C; the appearance outline setting can replace it.
+    public Brush OutlineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(196, 43, 28));
+    public double OutlineWidth { get; set; } = 1;
     public bool HighContrast { get; set; }
     public Brush CurrentLineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(242, 246, 251));
     public Brush SelectionHighlightBrush { get; set; } = new SolidColorBrush(Color.FromRgb(204, 228, 247));
@@ -241,7 +244,8 @@ public sealed partial class BrailleGridView : ListBox
             if (Data is not { } face) return;
             var owner = Owner; if (owner is not null) owner.drawSelection = owner.Selection; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length; var textLeft = TextLeft;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : Brushes.White, null, new Rect(RenderSize));
-            void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
+            var braille = new Typeface((FontFamily)Application.Current.FindResource("BrailleFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+            void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, braille, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
             var gutterEdge = GutterEdge;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : owner?.LineNumberBackground ?? Brushes.WhiteSmoke, null, new Rect(0, 0, gutterEdge + 1, RenderSize.Height));
             dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : new SolidColorBrush(Color.FromRgb(234, 234, 234)), 1), new(gutterEdge + .5, 0), new(gutterEdge + .5, RenderSize.Height));
@@ -321,7 +325,7 @@ public sealed partial class BrailleGridView : ListBox
             }
             if (owner?.ShowOutlines == true)
             {
-                dc.DrawLine(new Pen(owner.HighContrast ? Brushes.White : new SolidColorBrush(Color.FromRgb(242, 93, 93)), 1), new(TextLeft + cols * cw, 0), new(TextLeft + cols * cw, face.Rows.Length * ch));
+                dc.DrawLine(new Pen(owner.HighContrast ? Brushes.White : owner.OutlineBrush, owner.OutlineWidth), new(TextLeft + cols * cw, 0), new(TextLeft + cols * cw, face.Rows.Length * ch));
                 dc.DrawLine(new Pen(Brushes.LightGray, 1), new(gutterEdge, face.Rows.Length * ch), new(RenderSize.Width, face.Rows.Length * ch));
             }
         }

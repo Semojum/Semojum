@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
 using Semojum.Core;
 
 namespace Semojum.Desktop.Dialogs;
@@ -12,7 +14,8 @@ public sealed class SymbolDialog : CompactDialog
         var panel = new DockPanel { Margin = new(16) }; Body(panel);
         var group = Choices(new[] { "전체" }.Concat(symbols.Select(s => s.Group).Distinct()), "전체"); DockPanel.SetDock(group, Dock.Top); panel.Children.Add(group);
         var list = new ListBox { Margin = new(0, 8, 0, 0), FontSize = 18 }; panel.Children.Add(list);
-        void Filter() { list.ItemsSource = symbols.Where(s => group.SelectedIndex == 0 || s.Group == group.SelectedItem.ToString()).Select(s => new ListBoxItem { Content = $"{s.Char}    {s.Cells}    {s.Group}", Tag = s }).ToArray(); }
+        var braille = (FontFamily)FindResource("BrailleFont");
+        void Filter() { list.ItemsSource = symbols.Where(s => group.SelectedIndex == 0 || s.Group == group.SelectedItem.ToString()).Select(s => new ListBoxItem { Content = new TextBlock { Inlines = { new Run($"{s.Char}    "), new Run(s.Cells) { FontFamily = braille }, new Run($"    {s.Group}") } }, Tag = s }).ToArray(); }
         group.SelectionChanged += (_, _) => Filter(); Filter();
         void Accept() { if (list.SelectedItem is ListBoxItem { Tag: BrailleSymbol symbol }) { Selected = symbol; DialogResult = true; } }
         list.MouseDoubleClick += (_, _) => Accept(); Action("넣기", Accept, true); Action("취소", () => DialogResult = false);
@@ -29,6 +32,7 @@ public sealed class SnippetDialog : CompactDialog
         foreach (var (label, prefix, slots) in new[] { ("텍스트", "Ctrl", current.TextSnippets), ("점자", "Alt", current.BrailleSnippets) })
         {
             var panel = new StackPanel(); inputs[label] = Enumerable.Range(0, 10).Select(i => new TextBox { Text = slots?[i] ?? "", MaxLength = 10000, AcceptsReturn = true, MinHeight = 40, MaxHeight = 110, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }).ToArray();
+            if (label == "점자") foreach (var box in inputs[label]) box.FontFamily = (FontFamily)FindResource("BrailleFont");
             for (var i = 0; i < 10; i++) Row(panel, $"{prefix}+{i}", inputs[label][i], 85);
             tabs.Items.Add(new TabItem { Header = label, Content = new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
         }

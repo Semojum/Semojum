@@ -1,6 +1,9 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 
@@ -21,6 +24,7 @@ internal static class WindowsStatusZoomChecks
             var plus = buttons.Single(b => AutomationProperties.GetName(b) == "확대");
             check(window.StatusBar.ActualHeight == 28 && window.ZoomSlider.Value == 50 && window.ZoomPercent.Text == "100%" && window.ZoomSlider.ActualWidth == 106,
                 "Status zoom starts at the Figma 100-percent midpoint with a 106-pixel track");
+            await CheckStatusCellsAsync(window, check);
             plus.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(window.SourceEditor.FontSize == 16 && Math.Abs(window.Braille.GridView.FontSize - 16 * 22.0 / 14) < 0.001 && window.ZoomPercent.Text == "114%",
                 "Zoom-in updates the source, braille grid, and displayed percentage together");
@@ -51,6 +55,70 @@ internal static class WindowsStatusZoomChecks
                 await WindowsSmoke.RenderElementAsync(window.StatusBar, capture);
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
+    }
+
+    // Figma 263:7467: 「입력 한글 │ 쪽 12 / 128 │ 줄 7 · 칸 18 / 32 │ 옵션 2024 · 2급 · 32×25」 with 1×14 #EAEAEA dividers.
+    private static async Task CheckStatusCellsAsync(MainWindow window, Action<bool, string> check)
+    {
+        var parts = ((StackPanel)window.StatusInput.Parent).Children.OfType<FrameworkElement>().ToArray();
+        var texts = parts.OfType<TextBlock>().ToArray(); var dividers = parts.OfType<Border>().ToArray();
+        double Left(FrameworkElement element) => element.TranslatePoint(new Point(), window.StatusBar).X;
+        static bool Near(IEnumerable<double> actual, double[] expected) => actual.Count() == expected.Length && actual.Zip(expected).All(p => Math.Abs(p.First - p.Second) < 0.75);
+        check(texts.SequenceEqual(new[] { window.StatusInput, window.StatusPage, window.CaretStatus, window.StatusOptions })
+            && Near(texts.Select(Left), [20, 100, 197, 332]) && Near(dividers.Select(Left), [87, 184, 319, 493])
+            && dividers.All(d => Math.Abs(d.ActualWidth - 1) < 0.5 && Math.Abs(d.ActualHeight - 14) < 0.5 && d.Background is SolidColorBrush { Color: var line } && line == Color.FromRgb(234, 234, 234))
+            && texts.All(t => t.FontSize == 12 && t.Foreground is SolidColorBrush { Color: var ink } && ink == Color.FromRgb(95, 95, 95)),
+            $"The status bar has the four Figma cells and 1x14 dividers (text {string.Join(",", texts.Select(t => Left(t).ToString("0.#")))}; dividers {string.Join(",", dividers.Select(d => Left(d).ToString("0.#")))})");
+        check(Regex.IsMatch(window.CaretStatus.Text, @"^줄 \d+ · 칸 \d+ / \d+$") && window.StatusPage.Text.StartsWith("쪽 ", StringComparison.Ordinal)
+            && window.StatusOptions.Text.StartsWith("옵션 2024 · ", StringComparison.Ordinal),
+            $"The status bar merges line and cell into one cell and keeps the page and options cells (actual {window.StatusPage.Text} | {window.CaretStatus.Text} | {window.StatusOptions.Text})");
+
+        // The first cell is the keyboard's 한/영 state rather than the focused panel.
+        var korean = new CultureInfo("ko-KR");
+        check(MainWindow.InputStatusText(korean, ImeConversionModeValues.Native | ImeConversionModeValues.FullShape) == "입력 한글"
+            && MainWindow.InputStatusText(korean, ImeConversionModeValues.Alphanumeric) == "입력 영문"
+            && MainWindow.InputStatusText(new CultureInfo("en-US"), ImeConversionModeValues.Native) == "입력 영문",
+            "Hangul conversion on a Korean keyboard reads 입력 한글 and every other input reads 입력 영문");
+        var languages = InputLanguageManager.Current;
+        var previousLanguage = languages.CurrentInputLanguage; var previousMode = InputMethod.Current.ImeConversionMode;
+        var installed = languages.AvailableInputLanguages?.OfType<CultureInfo>().FirstOrDefault(c => c.TwoLetterISOLanguageName == "ko");
+        try
+        {
+            window.PageEditor.Editor.Focus();
+            if (installed is null)
+            {
+                check(window.StatusInput.Text == "입력 영문", $"Without a Korean keyboard the status bar reports English input (actual {window.StatusInput.Text})");
+                return;
+            }
+            languages.CurrentInputLanguage = installed;
+            InputMethod.Current.ImeConversionMode = ImeConversionModeValues.Native;
+            await WaitUntilAsync(() => window.StatusInput.Text == "입력 한글");
+            check(window.StatusInput.Text == "입력 한글", $"Switching the Korean keyboard to Hangul updates the status bar (actual {window.StatusInput.Text}, mode {InputMethod.Current.ImeConversionMode})");
+            InputMethod.Current.ImeConversionMode = ImeConversionModeValues.Alphanumeric;
+            await WaitUntilAsync(() => window.StatusInput.Text == "입력 영문");
+            check(window.StatusInput.Text == "입력 영문", $"Switching back to English with 한/영 updates the status bar (actual {window.StatusInput.Text})");
+            InputMethod.Current.ImeConversionMode = ImeConversionModeValues.Native;
+            await WaitUntilAsync(() => window.StatusInput.Text == "입력 한글");
+            InputMethod.SetIsInputMethodEnabled(window.RuleSearch, false);
+            check(window.RuleSearch.Focus(), "The rule search box takes keyboard focus");
+            await WaitUntilAsync(() => window.StatusInput.Text == "입력 영문");
+            check(window.StatusInput.Text == "입력 영문", $"Moving focus to a control without an IME reports English input (actual {window.StatusInput.Text})");
+            window.PageEditor.Editor.Focus();
+            await WaitUntilAsync(() => window.StatusInput.Text == "입력 한글");
+            check(window.StatusInput.Text == "입력 한글", $"Returning focus to the text editor reports Hangul input again (actual {window.StatusInput.Text})");
+        }
+        finally
+        {
+            window.RuleSearch.ClearValue(InputMethod.IsInputMethodEnabledProperty);
+            if (previousLanguage is not null) languages.CurrentInputLanguage = previousLanguage;
+            InputMethod.Current.ImeConversionMode = previousMode;
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!condition() && DateTime.UtcNow < deadline) await Task.Delay(25);
     }
 
     private static IEnumerable<DependencyObject> Children(DependencyObject parent)
