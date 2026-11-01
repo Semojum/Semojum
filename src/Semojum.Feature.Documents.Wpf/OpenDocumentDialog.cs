@@ -74,8 +74,11 @@ public sealed class OpenDocumentDialog : CompactDialog
             try
             {
                 if (Paths.Length == 0) throw new ArgumentException("파일을 선택해 주세요.");
-                if (!IsLocal && Paths.Sum(p => new FileInfo(p).Length) > JobClient.MaximumUploadBytes)
+                string[] oversized = IsLocal ? [] : Paths.Where(p => new FileInfo(p).Length > JobClient.MaximumUploadBytes).Select(p => Path.GetFileName(p)).ToArray();
+                if (oversized.Length > 0)
                 {
+                    // The limit is per file; the Figma notice stays generic, so the status line names the oversized files.
+                    Status.Text = "100 MB를 넘는 파일: " + string.Join(", ", oversized);
                     var notice = FileNotices.OversizedFile(); notice.Owner = this; notice.ShowDialog();
                     if (notice.Choice == 0) Semojum.Desktop.Services.CommonWindowServices.ShowHelp(this, "파일 열기");
                     return Task.CompletedTask;
@@ -100,7 +103,10 @@ public sealed class OpenDocumentDialog : CompactDialog
             catch (ArgumentException ex)
             {
                 if (picker.FileNames.All(p => Supported.Contains(Path.GetExtension(p).ToLowerInvariant())))
-                { MessageBox.Show(owner, ex.Message, "파일 선택", MessageBoxButton.OK, MessageBoxImage.Information); continue; }
+                {
+                    if (NoticeDialog.Choose(owner, "선택한 파일을 함께 열 수 없습니다.", ex.Message, ["다시 선택", "취소"]) == 0) continue;
+                    return null;
+                }
                 var notice = FileNotices.UnsupportedFormat(); notice.Owner = owner; notice.ShowDialog();
                 if (notice.Choice != 0) return null;
             }

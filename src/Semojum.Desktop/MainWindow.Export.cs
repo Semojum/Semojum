@@ -10,10 +10,16 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
-    internal Func<string, string, MessageBoxResult>? ExportConfirmation { get; set; }
+    /// <summary>Checks receive the unshown notice and return the chosen action index instead of showing it.</summary>
+    internal Func<NoticeDialog, int>? ExportConfirmation { get; set; }
     internal Func<ExportRangeDialog, bool>? ExportRangeSelection { get; set; }
-    private MessageBoxResult ConfirmExport(string message, string title) => ExportConfirmation?.Invoke(message, title)
-        ?? MessageBox.Show(this, message, title, MessageBoxButton.YesNo, MessageBoxImage.Warning);
+    // 메시지창 19종의 틀(노란 상태 띠, 실제 동작 단추 + 「취소」)로 묻습니다. 첫 단추만 내보내기를 이어 갑니다.
+    private bool ConfirmExport(string message, string detail, string action = "내보내기", double height = 196)
+    {
+        var notice = new NoticeDialog(message, detail, [action, "취소"], height: height);
+        if (ExportConfirmation is { } decide) return decide(notice) == 0;
+        notice.Owner = this; notice.ShowDialog(); return notice.Choice == 0;
+    }
     private async Task ExportAsync(string? path = null, int format = 1, bool chooseRange = true)
     {
         if (fileBusy || session.Blocks.Count == 0) return;
@@ -38,14 +44,13 @@ public partial class MainWindow
                     throw new InvalidOperationException("선택한 범위에 점역하지 못했거나 원문·옵션 변경 후 점역이 필요한 블록이 있습니다. 재점역 후 내보내 주세요.");
                 if (local is null) throw new InvalidOperationException("샘플 엔진에서는 점자 문서를 내보낼 수 없습니다.");
                 var result = await local.ComposeAsync(selected, ct);
-                if (result.Replaced.Count > 0 && ConfirmExport("BRF에서 빈칸으로 바뀌는 문자: " + string.Join(", ", result.Replaced.Select(p => $"{p.Key}({p.Value})")) + "\n계속 내보내시겠습니까?", "문자 확인") != MessageBoxResult.Yes) throw new OperationCanceledException("내보내기를 취소했습니다.");
-                if (result.SpacingUnknownBlockIds is { Length: > 0 } ids && ConfirmExport(
-                    "현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록의 빈 줄을 확인해 주세요. 블록: " + DescribeSpacingBlocks(ids)
-                    + "\n저장된 점자는 그대로 유지됩니다. 현재 판면으로 내보내시겠습니까?", "조판 빈 줄 확인") != MessageBoxResult.Yes)
+                if (result.Replaced.Count > 0 && !ConfirmExport("BRF에서 빈칸으로 바뀌는 문자가 있습니다.",
+                    "바뀌는 문자: " + string.Join(", ", result.Replaced.Select(p => $"{p.Key}({p.Value})")) + ". 계속 내보내시겠습니까?")) throw new OperationCanceledException("내보내기를 취소했습니다.");
+                if (result.SpacingUnknownBlockIds is { Length: > 0 } ids && !ConfirmExport("조판 빈 줄을 확인할 수 없는 블록이 있습니다.",
+                    "블록 " + DescribeSpacingBlocks(ids) + ". 현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록입니다. 저장된 점자는 그대로 유지됩니다. 현재 판면으로 내보내시겠습니까?", height: 226))
                     throw new OperationCanceledException("내보내기를 취소했습니다.");
-                if (result.AlignmentUnknownBlockIds is { Length: > 0 } alignmentIds && ConfirmExport(
-                    "정렬 태그와 점자 줄의 대응을 확인할 수 없습니다. 블록: " + DescribeSpacingBlocks(alignmentIds)
-                    + "\n해당 줄의 정렬을 적용하지 않은 현재 판면으로 내보내시겠습니까?", "줄별 정렬 확인") != MessageBoxResult.Yes)
+                if (result.AlignmentUnknownBlockIds is { Length: > 0 } alignmentIds && !ConfirmExport("정렬 태그와 점자 줄의 대응을 확인할 수 없습니다.",
+                    "블록 " + DescribeSpacingBlocks(alignmentIds) + ". 해당 줄의 정렬을 적용하지 않은 현재 판면으로 내보내시겠습니까?"))
                     throw new OperationCanceledException("내보내기를 취소했습니다.");
                 return result.Brf;
             }
@@ -68,7 +73,7 @@ public partial class MainWindow
             }
             var targetPath = Path.ChangeExtension(dialog.FileName, brailleBrf ? ".brf" : ".txt");
             if (!string.Equals(targetPath, dialog.FileName, StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath)
-                && ConfirmExport($"형식 변경으로 선택한 파일이 이미 있습니다.\n{targetPath}\n덮어쓰시겠습니까?", "파일 확인") != MessageBoxResult.Yes) return;
+                && !ConfirmExport("형식 변경으로 선택한 파일이 이미 있습니다.", targetPath + "\n덮어쓰시겠습니까?", "덮어쓰기", 226)) return;
             var range = ranges.Result;
             var selected = DocumentExport.SelectOriginal(snapshot, range);
             DocumentExport.RequireCompletedPages(selected);
@@ -77,7 +82,7 @@ public partial class MainWindow
             else
             {
                 if (selected.Blocks.Any(b => b.Translation?.NeedsReview == true)
-                    && ConfirmExport("선택한 범위에 누락 문자 또는 점역 불가 표시가 있습니다. 현재 점자로 내보내시겠습니까?", "점역 결과 확인") != MessageBoxResult.Yes) return;
+                    && !ConfirmExport("선택한 범위에 누락 문자 또는 점역 불가 표시가 있습니다.", "현재 점자 그대로 내보내시겠습니까?")) return;
                 var brf = range.Scope == ExportScope.OriginalPages ? await BuildAsync(selected) : fullBrf ?? await BuildAsync(snapshot);
                 brf = DocumentExport.SelectBraille(brf, range);
                 text = brailleBrf ? brf : DocumentExport.BrailleText(await local!.ReadBrfAsync(brf, ct));

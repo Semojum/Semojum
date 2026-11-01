@@ -21,10 +21,12 @@ internal static class WindowsPublicInquiryFieldsChecks
     private sealed class Fixture : HttpMessageHandler
     {
         internal readonly List<string> Bodies = [];
+        internal bool Accept;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.AbsolutePath != "/api/public/inquiries") throw new InvalidOperationException("Unexpected fixture request");
             Bodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+            if (Accept) return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":{}}", Encoding.UTF8, "application/json") };
             return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"UNAVAILABLE\",\"message\":\"fixture error\"}", Encoding.UTF8, "application/json") };
         }
     }
@@ -183,6 +185,37 @@ internal static class WindowsPublicInquiryFieldsChecks
             purchaseEmail.Clear(); purchaseMessage.Clear();
         }
         finally { if (purchase.IsVisible) purchase.Close(); }
+
+        // A successful inquiry confirms receipt in the app's message window (Case 2·5 size, one 「확인」) and then closes.
+        fixture.Accept = true;
+        var accepted = new PublicInquiryDialog(api); string? receipt = null; string[] receiptLabels = []; var receiptTimedOut = false;
+        var receiptDeadline = DateTime.UtcNow.AddSeconds(5); var receiptTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        receiptTimer.Tick += (_, _) =>
+        {
+            if (DateTime.UtcNow >= receiptDeadline)
+            {
+                receiptTimedOut = true; receiptTimer.Stop();
+                foreach (var child in Application.Current.Windows.Cast<Window>().Where(w => w.Owner == accepted && w.IsVisible).ToArray()) child.Close();
+                foreach (var input in Descendants(accepted).OfType<TextBox>()) input.Clear();
+                if (accepted.IsVisible) accepted.Close();
+                return;
+            }
+            var notice = Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(n => n.Owner == accepted && n.IsVisible);
+            if (notice is null) return;
+            receipt = notice.MessageText; receiptLabels = notice.ActionButtons.Select(b => (string)b.Content).ToArray(); receiptTimer.Stop();
+            notice.ActionButtons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        };
+        accepted.Loaded += (_, _) => accepted.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var fields = Descendants(accepted).OfType<TextBox>().ToArray();
+            fields.Single(t => t.MaxLength == 100).Text = "fixture@example.test"; fields.Single(t => t.AcceptsReturn).Text = "접수 확인";
+            Descendants(accepted).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent").IsChecked = true;
+            Descendants(accepted).OfType<Button>().Single(b => Equals(b.Content, "보내기")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }), DispatcherPriority.ApplicationIdle);
+        bool? acceptedResult;
+        receiptTimer.Start(); try { acceptedResult = accepted.ShowDialog(); } finally { receiptTimer.Stop(); }
+        check(!receiptTimedOut && acceptedResult == true && fixture.Bodies.Count == 3 && receipt == "문의를 접수했습니다." && receiptLabels.SequenceEqual(["확인"]),
+            "A received inquiry is confirmed in the app message window, not a Windows message box, and its 「확인」 closes the inquiry");
     }
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();

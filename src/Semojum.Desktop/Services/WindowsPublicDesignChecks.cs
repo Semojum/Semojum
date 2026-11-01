@@ -61,8 +61,9 @@ internal static class WindowsPublicDesignChecks
                 "Inquiry category and attachment slots use the matching Figma 16px icons");
             check(Descendants(inquiry).OfType<TextBox>().Any(b => AutomationProperties.GetName(b) == "기관명")
                 && Descendants(inquiry).OfType<TextBox>().Any(b => AutomationProperties.GetName(b) == "제목"), "Organization and title fields remain available");
-            check(!Descendants(inquiry).OfType<TextBlock>().Any(t => t.Text.Contains("1년 보관", StringComparison.Ordinal)),
-                "The inquiry does not claim an unconfirmed retention period");
+            check(Descendants(inquiry).OfType<CheckBox>().Any(c => Equals(c.Content, "개인정보 수집·이용에 동의합니다 (답변 목적 · 1년 보관)"))
+                && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("1년 보관", StringComparison.Ordinal)),
+                "The inquiry consent states the final purpose and one-year retention period");
             var consent = Descendants(inquiry).OfType<CheckBox>().Single(c => AutomationProperties.GetAutomationId(c) == "PublicInquiryConsent");
             check(consent.IsChecked != true && consent.IsEnabled && AutomationProperties.GetName(consent).Contains("동의", StringComparison.Ordinal),
                 "Inquiry consent starts unchecked and is available to assistive technology");

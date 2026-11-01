@@ -56,29 +56,31 @@ internal static class WindowsUploadLimitChecks
                 var visual = new RenderTargetBitmap((int)window.OriginalPanel.ActualWidth, (int)window.OriginalPanel.ActualHeight, 96, 96, PixelFormats.Pbgra32);
                 visual.Render(window.OriginalPanel); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(visual));
                 using (var image = File.Create(Path.Combine(outputDirectory, "original-upload-oversize.png"))) encoder.Save(image);
-                using (var file = new FileStream(large, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
-                var data = new DataObject(DataFormats.FileDrop, new[] { large, extra });
+                // The limit is per file: drop a small image together with the oversized one; the warning must name only the oversized file.
+                window.OriginalUpload.ClearLimitWarning();
+                var data = new DataObject(DataFormats.FileDrop, new[] { extra, large });
                 var ctor = typeof(DragEventArgs).GetConstructor(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
                     null, [typeof(IDataObject), typeof(DragDropKeyStates), typeof(DragDropEffects), typeof(DependencyObject), typeof(Point)], null)!;
                 var drop = (DragEventArgs)ctor.Invoke([data, DragDropKeyStates.LeftMouseButton, DragDropEffects.Copy, window.OriginalUpload.UploadArea, new Point(1, 1)]);
                 drop.RoutedEvent = UIElement.DropEvent; window.OriginalUpload.UploadArea.RaiseEvent(drop);
                 await Task.Delay(200);
                 visible = VisibleText(window.OriginalUpload);
-                check(settingsCount == 0 && modalCount == 0 && visible.Contains("100MB를 초과") && visible.Contains("2개"),
-                    "Dropping several images whose combined size exceeds the limit shows an inline aggregate warning");
+                check(settingsCount == 0 && modalCount == 0 && visible.Contains("100MB를 초과") && visible.Contains("큰이미지.png (101MB)") && !visible.Contains("추가이미지.png"),
+                    "Dropping several images where one exceeds the per-file limit names that file in the inline warning");
                 check(ReferenceEquals(model, window.Session) && model.IsDirty && handler.Uploads == 0, "An oversized drop preserves unsaved work and does not upload");
+                using (var file = new FileStream(large, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
                 window.FilePicker = _ => [large];
                 window.OriginalUpload.UploadArea.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 await Task.Delay(200);
                 visible = VisibleText(window.OriginalUpload);
                 check(settingsCount == 1 && !visible.Contains("100MB를 초과"), "Exactly 100 MiB is accepted and clears an earlier warning");
-                using (var file = new FileStream(large, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes - 1);
+                using (var file = new FileStream(extra, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
                 var dropAtLimit = new DataObject(DataFormats.FileDrop, new[] { large, extra });
                 var second = (DragEventArgs)ctor.Invoke([dropAtLimit, DragDropKeyStates.LeftMouseButton, DragDropEffects.Copy, window.OriginalUpload.UploadArea, new Point(1, 1)]);
                 second.RoutedEvent = UIElement.DropEvent; window.OriginalUpload.UploadArea.RaiseEvent(second);
                 await Task.Delay(200);
                 check(settingsCount == 2 && !VisibleText(window.OriginalUpload).Contains("100MB를 초과") && handler.Uploads == 0,
-                    "Several images totaling exactly 100 MiB reach settings without uploading");
+                    "Two images of exactly 100 MiB each (200 MiB together) reach settings without uploading");
             }
             finally { timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
         }

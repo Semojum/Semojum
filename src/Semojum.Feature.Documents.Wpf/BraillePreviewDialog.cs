@@ -18,10 +18,11 @@ public sealed class BraillePreviewDialog : CompactDialog
     private readonly TextBlock caption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new(12, 0, 12, 0) };
     public int Page { get; private set; }
     public BraillePreviewDialog(string[][] pages, string brf, PageLayout layout, string title, int initial = 1,
-        int[]? spacingUnknownBlockIds = null, Func<string, string, MessageBoxResult>? confirmSpacing = null)
+        int[]? spacingUnknownBlockIds = null, Func<NoticeDialog, int>? confirmSpacing = null)
         : this(pages, brf, layout, title, initial, spacingUnknownBlockIds, null, confirmSpacing) { }
+    /// <param name="confirmSpacing">Checks receive the unshown notice and return the chosen action index instead of showing it.</param>
     public BraillePreviewDialog(string[][] pages, string brf, PageLayout layout, string title, int initial,
-        int[]? spacingUnknownBlockIds, int[]? alignmentUnknownBlockIds, Func<string, string, MessageBoxResult>? confirmSpacing = null) : base("점자 면 미리보기 — " + title, 850, 880)
+        int[]? spacingUnknownBlockIds, int[]? alignmentUnknownBlockIds, Func<NoticeDialog, int>? confirmSpacing = null) : base("점자 면 미리보기 — " + title, 850, 880)
     {
         var unknown = spacingUnknownBlockIds ?? [];
         var unknownAlign = alignmentUnknownBlockIds ?? [];
@@ -30,9 +31,15 @@ public sealed class BraillePreviewDialog : CompactDialog
         var warnings = new List<string>();
         if (unknown.Length > 0) warnings.Add("현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록의 빈 줄을 확인해 주세요. 블록: " + blockList);
         if (unknownAlign.Length > 0) warnings.Add("정렬 태그와 점자 줄의 대응을 확인할 수 없어 해당 정렬을 적용하지 않았습니다. 블록: " + alignmentList);
-        var spacingMessage = string.Join("\n", warnings); var titleWarning = unknownAlign.Length > 0 ? "조판 정보 확인" : "조판 빈 줄 확인";
-        bool ConfirmSpacing() => warnings.Count == 0 || (confirmSpacing?.Invoke(spacingMessage + "\n현재 판면을 출력하시겠습니까?", titleWarning)
-            ?? MessageBox.Show(this, spacingMessage + "\n현재 판면을 출력하시겠습니까?", titleWarning, MessageBoxButton.YesNo, MessageBoxImage.Warning)) == MessageBoxResult.Yes;
+        var spacingMessage = string.Join("\n", warnings);
+        bool ConfirmSpacing()
+        {
+            if (warnings.Count == 0) return true;
+            var notice = new NoticeDialog(unknownAlign.Length > 0 ? "조판 정보를 확인할 수 없는 블록이 있습니다." : "조판 빈 줄을 확인할 수 없는 블록이 있습니다.",
+                spacingMessage + "\n현재 판면을 출력하시겠습니까?", ["출력", "취소"], height: warnings.Count > 1 ? 266 : 226);
+            if (confirmSpacing is { } decide) return decide(notice) == 0;
+            notice.Owner = this; notice.ShowDialog(); return notice.Choice == 0;
+        }
         void Show(int page)
         {
             if (page < 1 || page > pages.Length) throw new ArgumentException($"1–{pages.Length}면 안에서 입력해 주세요.");

@@ -18,11 +18,12 @@ internal static class WindowsCaseDesignChecks
         try
         {
             invalid.UpdateLayout(); Capture(invalid, "unsupported.png");
-            check(Math.Abs(invalid.Width - 471) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice follows the final Figma dimensions");
-            check(invalid.DetailText == "PDF · HWP · HWPX · TXT · JPG · PNG 만 열 수 있습니다.",
-                "Unsupported file notice follows the final Case 1 wording");
+            // DOCX is not converted, so Case 1 lists the formats the app really opens (JPEG and SMJ too) and widens from 471 to the 520 message size.
+            check(Math.Abs(invalid.Width - 520) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice uses the 520x196 message size that fits the real format list");
+            check(invalid.DetailText == "PDF · HWP · HWPX · TXT · JPG · JPEG · PNG · SMJ 만 열 수 있습니다." && invalid.MessageText == "이 형식은 열 수 없습니다.",
+                "Unsupported file notice keeps the Case 1 wording with the actually supported formats and no DOCX");
             var detail = Descendants(invalid).OfType<TextBlock>().Single(t => t.Text == invalid.DetailText);
-            check(detail.ActualHeight <= 21, "Supported formats fit on one line in the Figma-sized notice");
+            check(detail.ActualHeight <= 21, "Supported formats fit on one line in the 520px notice");
             var icon = Descendants(invalid).OfType<SvgViewbox>().Single();
             check(icon.Source?.ToString().EndsWith("case-error.svg", StringComparison.Ordinal) == true && icon.Drawings is { Bounds.IsEmpty: false } && icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16 && icon.ActualHeight > 0 && icon.ActualHeight <= 16,
                 "Error notice renders the original Figma warning in its 16px slot");

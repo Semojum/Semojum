@@ -15,41 +15,38 @@ public static class UploadFileReader
     public static async Task<IReadOnlyList<UploadFile>> ReadAsync(IReadOnlyList<string> paths, CancellationToken cancellationToken = default)
     {
         ValidateUniqueFileNames(paths);
-        long expectedRemaining = JobClient.MaximumUploadBytes;
+        // The limit applies to each file (Figma C3, server rule), so every file is checked against the full limit.
         foreach (var path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var length = new FileInfo(path).Length;
-            if (length > expectedRemaining) throw TooLarge();
-            expectedRemaining -= length;
+            if (new FileInfo(path).Length > JobClient.MaximumUploadBytes) throw TooLarge(path);
         }
         var files = new List<UploadFile>();
-        long remaining = JobClient.MaximumUploadBytes;
         foreach (var path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            if (source.Length > remaining) throw TooLarge();
-            var bytes = await ReadBoundedAsync(source, remaining, cancellationToken);
-            remaining -= bytes.LongLength;
+            if (source.Length > JobClient.MaximumUploadBytes) throw TooLarge(path);
+            var bytes = await ReadBoundedAsync(source, JobClient.MaximumUploadBytes, cancellationToken);
             files.Add(new(Path.GetFileName(path), bytes));
         }
         return files;
     }
 
-    private static async Task<byte[]> ReadBoundedAsync(Stream source, long remaining, CancellationToken cancellationToken)
+    private static async Task<byte[]> ReadBoundedAsync(Stream source, long limit, CancellationToken cancellationToken)
     {
         using var buffer = new MemoryStream();
         var chunk = new byte[81920]; long readTotal = 0;
         while (true)
         {
-            var count = (int)Math.Min(chunk.Length, remaining - readTotal + 1);
+            var count = (int)Math.Min(chunk.Length, limit - readTotal + 1);
             var read = await source.ReadAsync(chunk.AsMemory(0, count), cancellationToken);
             if (read == 0) break;
-            if (read > remaining - readTotal) throw TooLarge();
+            if (read > limit - readTotal) throw TooLarge();
             buffer.Write(chunk, 0, read); readTotal += read;
         }
         return buffer.ToArray();
     }
-    private static ArgumentException TooLarge() => new("업로드 전체 크기는 100 MB까지입니다. 파일 크기를 줄이거나 나누어 다시 올려 주세요.");
+    private static ArgumentException TooLarge(string? path = null) =>
+        new((path is null ? "" : $"{Path.GetFileName(path)} 파일이 100 MB를 넘습니다. ") + "파일 1개당 100 MB까지 올릴 수 있습니다. 파일 크기를 줄이거나 나누어 다시 올려 주세요.");
 }

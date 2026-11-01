@@ -63,17 +63,38 @@ public partial class MainWindow
                 }
                 if (api.Account is { Role: "ROLE_ORG_ADMIN" })
                 {
-                    if (!allowInstitution) return false;
-                    var institution = new InstitutionWindow(api, LogoutInstitutionAsync);
-                    await institution.ShowEmbeddedAsync(this);
-                    if (institution.LogoutRequested) continue;
-                    return false;
+                    if (!allowInstitution || !await ShowInstitutionAsync()) return false;
+                    continue;
                 }
                 RefreshAccount();
                 return api.Account is { } account && AutomaticLogin.IsEditorAllowed(account);
             }
         }
         finally { accountScreenGate.Release(); }
+    }
+
+    internal InstitutionWindow? Institution { get; private set; }
+    // An administrator cannot use the editor: after login the editor window is hidden and only the top-level
+    // 「기관 관리 - 누리닷」 window is shown. Its × ends the app; its logout returns to the login screen (true).
+    private async Task<bool> ShowInstitutionAsync()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        var institution = Institution = new InstitutionWindow(api, LogoutInstitutionAsync, OpenInstitutionMyPage) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
+        if (maximized) institution.WindowState = WindowState.Maximized;
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        institution.Closed += (_, _) => closed.TrySetResult();
+        institution.Show(); institution.Activate(); Hide();
+        await closed.Task; Institution = null;
+        if (resourcesReleased) return false;
+        if (institution.LogoutRequested) { Show(); return true; }
+        allowClose = true; Close(); return false;
+    }
+
+    private void OpenInstitutionMyPage(InstitutionWindow institution)
+    {
+        var workInfo = $"누리닷 {CurrentVersion.ToString(3)}\n운영체제: {Environment.OSVersion}";
+        var usage = new UsageDialog(api, workInfo, DesktopUsageActions.Create(api, workInfo) with { OpenInstitution = _ => institution.Activate() }) { Owner = institution };
+        if (usage.ShowDialog() == true && usage.LogoutRequested) _ = institution.LogoutAsync();
     }
 
     private async Task<bool> LogoutInstitutionAsync()
@@ -87,7 +108,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show("저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message, "로그아웃");
+            NoticeDialog.Choose(Institution ?? (Window)this, "로그아웃하지 못했습니다.", "저장된 로그인 정보를 삭제하지 못했습니다. " + ex.Message, ["확인"], error: true);
             return false;
         }
     }
@@ -286,6 +307,8 @@ public partial class MainWindow
                         foreach (var old in model.Blocks.Where(b => b.Page == page.Key).ToArray()) { if (model.ActiveBlock == old) model.ActiveBlock = null; model.Blocks.Remove(old); }
                         insertAt = model.Blocks.TakeWhile(b => b.Page < page.Key).Count();
                     }
+                    // The page's server report shows on its blocks as open warnings (blocks only; page-wide issues stay in the page status).
+                    ServerWarnings.Apply(result.Blocks, result.Quality ?? []);
                     foreach (var block in result.Blocks)
                     {
                         if (insertAt is { } at) { model.Blocks.Insert(at, block); insertAt = at + 1; model.ActiveBlock ??= block; } else model.Add(block);

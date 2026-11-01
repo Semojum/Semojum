@@ -39,7 +39,7 @@ internal sealed class OriginalUploadView : UserControl
         var content = new StackPanel { VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 65, 0, 0), IsHitTestVisible = false };
         content.Children.Add(Icon("original-upload.svg", 32));
         content.Children.Add(new TextBlock { Text = "PDF 파일을 드래그하거나\n클릭해서 선택하세요", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = ColorBrush(0x1A, 0x1A, 0x1A), TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 16, 0, 0), LineHeight = 22 });
-        content.Children.Add(new TextBlock { Text = "업로드 전체 최대 100MB", FontSize = 12, Foreground = ColorBrush(0x5F, 0x5F, 0x5F), TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 12, 0, 0) });
+        content.Children.Add(new TextBlock { Text = "파일 1개당 최대 100MB", FontSize = 12, Foreground = ColorBrush(0x5F, 0x5F, 0x5F), TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 12, 0, 0) });
         content.Children.Add(new TextBlock { Text = "업로드 가능한 형식: PDF, PNG, JPG, JPEG,\nTXT, HWP, HWPX, SMJ", FontSize = 12, Foreground = ColorBrush(0x5F, 0x5F, 0x5F), TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0), LineHeight = 18 });
         content.Children.Add(new Border { Background = ColorBrush(0x5B, 0x8D, 0xEF), CornerRadius = new CornerRadius(6), Width = 140, Height = 40, Margin = new Thickness(0, 16, 0, 0), Child = new TextBlock { Text = "파일 선택", FontSize = 14, FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } });
         surface.Children.Add(content); region.Content = surface;
@@ -55,7 +55,7 @@ internal sealed class OriginalUploadView : UserControl
         var warningText = new StackPanel { Margin = new Thickness(0, 5, 8, 0) };
         limitTitle.FontSize = 14; limitTitle.FontWeight = FontWeights.Bold; limitTitle.Foreground = ColorBrush(0xC4, 0x2B, 0x1C); limitTitle.TextTrimming = TextTrimming.CharacterEllipsis;
         warningText.Children.Add(limitTitle);
-        warningText.Children.Add(new TextBlock { Text = "업로드 전체 100MB를 초과했습니다", FontSize = 12, Foreground = ColorBrush(0xC4, 0x2B, 0x1C) });
+        warningText.Children.Add(new TextBlock { Text = "100MB를 초과했습니다", FontSize = 12, Foreground = ColorBrush(0xC4, 0x2B, 0x1C) });
         Grid.SetColumn(warningText, 1); warningGrid.Children.Add(warningText); limitWarning.Child = warningGrid;
         System.Windows.Automation.AutomationProperties.SetLiveSetting(limitWarning, System.Windows.Automation.AutomationLiveSetting.Assertive);
         contents.Children.Add(limitWarning);
@@ -72,10 +72,12 @@ internal sealed class OriginalUploadView : UserControl
         bar.Children.Add(Icon("original-upload-next.svg", 16)); footer.Child = bar;
         Grid.SetRow(footer, 1); root.Children.Add(footer);
     }
-    internal void ShowLimitWarning(string[] paths, long totalBytes)
+    /// <summary>Names the first oversized file and its size (Figma C3); other oversized files are counted and listed in the tooltip.</summary>
+    internal void ShowLimitWarning(IReadOnlyList<(string Path, long Bytes)> oversized)
     {
-        var name = paths.Length == 1 ? System.IO.Path.GetFileName(paths[0]) : $"파일 {paths.Length}개";
-        limitTitle.Text = $"{name} ({Math.Ceiling(totalBytes / (1024d * 1024d)):0}MB)";
+        static string Label((string Path, long Bytes) file) => $"{System.IO.Path.GetFileName(file.Path)} ({Math.Ceiling(file.Bytes / (1024d * 1024d)):0}MB)";
+        limitTitle.Text = Label(oversized[0]) + (oversized.Count > 1 ? $" 외 {oversized.Count - 1}개" : "");
+        limitTitle.ToolTip = string.Join("\n", oversized.Select(Label));
         limitWarning.Visibility = Visibility.Visible;
     }
     internal void ClearLimitWarning() => limitWarning.Visibility = Visibility.Collapsed;

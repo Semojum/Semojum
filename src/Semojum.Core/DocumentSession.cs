@@ -33,14 +33,29 @@ public sealed partial class EditorBlock : ObservableObject
     public int SourceCaret { get; set; }
     public int BrailleCaret { get; set; }
 
+    private bool applyingTranslation;
+
     partial void OnSourceChanging(string? oldValue, string newValue)
     {
         ReanchorReviews(ReviewPanel.Text, oldValue ?? "", newValue);
         // A human's braille confirmation also refers to the corresponding source.
         // Until rechecked, identical cells cannot prove the changed source is correct.
         InvalidateBrailleConfirmations();
+        ServerWarnings.Resolve(this);
     }
-    partial void OnBrailleChanging(string? oldValue, string newValue) => ReanchorReviews(ReviewPanel.Braille, oldValue ?? "", newValue);
+    partial void OnBrailleChanging(string? oldValue, string newValue)
+    {
+        ReanchorReviews(ReviewPanel.Braille, oldValue ?? "", newValue);
+        if (!applyingTranslation) ServerWarnings.Resolve(this);
+    }
+    /// <summary>Sets cells from an automatic (re)translation. Unlike a person's edit it leaves server warnings open, now covering the new cells.</summary>
+    public void ApplyTranslatedBraille(string cells)
+    {
+        var open = ServerWarnings.OpenKeys(this);
+        applyingTranslation = true;
+        try { Braille = cells; } finally { applyingTranslation = false; }
+        ServerWarnings.CoverBraille(this, open);
+    }
     partial void OnSourceChanged(string value) => SourceRevision++;
     partial void OnBrailleChanged(string value) => BrailleRevision++;
     partial void OnMetadataChanged(BlockMetadata value) => MetadataRevision++;

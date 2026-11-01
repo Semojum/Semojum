@@ -2,7 +2,6 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
@@ -14,7 +13,7 @@ namespace Semojum.Desktop.Controls;
 /// <summary>Native text selection/IME across a source page, backed by the same block models.</summary>
 public sealed class ContinuousSourceEditor : DockPanel, IDisposable
 {
-    public TextEditor Editor { get; } = new() { ShowLineNumbers = true, WordWrap = true, FontSize = 16, Padding = new(0), VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    public TextEditor Editor { get; } = new() { ShowLineNumbers = true, WordWrap = true, FontSize = 16, Padding = new(0), VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     public Action<BlockSpan[], string>? Replace { get; set; }
     public Action<bool>? Replay { get; set; }
     public Action? InsertPageBreak { get; set; }
@@ -34,15 +33,11 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     private int page;
     public ContinuousSourceEditor()
     {
-        // Draw the overview over the real vertical scrollbar.  It is not hit-testable:
-        // the underlying native Track/Thumb still handles mouse, keyboard and UIA.
-        var host = new Grid(); host.Children.Add(Editor);
-        overview = new ReviewOverview(Editor, OverviewMarkers) { HorizontalAlignment = HorizontalAlignment.Right, Width = 12, IsHitTestVisible = false };
-        host.Children.Add(overview); Children.Add(host);
-        var scrollStyle = new Style(typeof(ScrollBar));
-        var vertical = new Trigger { Property = ScrollBar.OrientationProperty, Value = Orientation.Vertical };
-        vertical.Setters.Add(new Setter(WidthProperty, 12d)); scrollStyle.Triggers.Add(vertical);
-        Editor.Resources[typeof(ScrollBar)] = scrollStyle;
+        // Figma 훑어보기 띠: an independent 12px column right of the text, visible even when
+        // nothing scrolls. It replaces the hidden native vertical scrollbar for mouse and UIA;
+        // the hidden (not disabled) scroll viewer keeps keyboard, wheel and UIA scrolling.
+        overview = new ReviewOverview(Editor, OverviewMarkers);
+        SetDock(overview, Dock.Right); Children.Add(overview); Children.Add(Editor);
         ColoredLineNumbers.SetReviewProvider(Editor.TextArea.TextView, ReviewKindForLine);
         NativeIme.Attach(Editor);
         Editor.Options.HighlightCurrentLine = true;
@@ -127,8 +122,9 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     {
         if (!ShowReviews) return null;
         var kinds = Editor.TextArea.LeftMargins.OfType<MemoMargin>().FirstOrDefault()?.ManualKinds(line) ?? [];
-        // A pending correction/deletion must not be masked by an overlapping confirmation.
-        return kinds.Contains(ReviewKind.SuggestDeletion) ? ReviewKind.SuggestDeletion
+        // A server warning or pending correction/deletion must not be masked by an overlapping confirmation.
+        return kinds.Contains(ReviewKind.OpenWarning) ? ReviewKind.OpenWarning
+            : kinds.Contains(ReviewKind.SuggestDeletion) ? ReviewKind.SuggestDeletion
             : kinds.Contains(ReviewKind.SuggestCorrection) ? ReviewKind.SuggestCorrection
             : kinds.Contains(ReviewKind.HumanConfirmed) ? ReviewKind.HumanConfirmed : null;
     }

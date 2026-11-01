@@ -137,8 +137,8 @@ public sealed class PublicInquiryDialog : CompactDialog
         ToolTipService.SetShowOnDisabled(attachment, true);
         AutomationProperties.SetAutomationId(attachment, "PublicInquiryAttachment"); AutomationProperties.SetName(attachment, "파일 첨부"); AutomationProperties.SetHelpText(attachment, "현재 공개 문의는 첨부 파일을 지원하지 않습니다.");
         attachmentRow.Children.Add(attachment); attachmentRow.Children.Add(new TextBlock { Text = "첨부 기능은 아직 지원되지 않습니다.", Foreground = Brush("#5F5F5F"), Margin = new(12, 0, 0, 0), TextWrapping = TextWrapping.Wrap }); panel.Children.Add(attachmentRow);
-        var consent = new CheckBox { Content = "문의 답변을 위한 개인정보 수집·이용에 동의합니다", Style = PublicDialogDesign.ConsentStyle("Semojum.Feature.Public.Wpf"), Margin = new(0, 4, 0, 0) };
-        AutomationProperties.SetAutomationId(consent, "PublicInquiryConsent"); AutomationProperties.SetName(consent, "문의 답변을 위한 개인정보 수집·이용에 동의합니다"); panel.Children.Add(consent);
+        var consent = new CheckBox { Content = "개인정보 수집·이용에 동의합니다 (답변 목적 · 1년 보관)", Style = PublicDialogDesign.ConsentStyle("Semojum.Feature.Public.Wpf"), Margin = new(0, 4, 0, 0) };
+        AutomationProperties.SetAutomationId(consent, "PublicInquiryConsent"); AutomationProperties.SetName(consent, "개인정보 수집·이용에 동의합니다 (답변 목적 · 1년 보관)"); panel.Children.Add(consent);
         panel.Children.Add(new TextBlock { Text = "기관명과 제목은 문의 내용에 함께 전달됩니다. 이메일·문의 내용은 운영자에게 전달됩니다.", Foreground = Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 8, 0, 8) });
         var submitted = false; var discardConfirmed = false;
         Closing += (_, e) =>
@@ -150,7 +150,7 @@ public sealed class PublicInquiryDialog : CompactDialog
         };
         async Task SubmitAsync()
         {
-            if (consent.IsChecked != true) throw new ArgumentException("문의 답변을 위한 개인정보 수집·이용에 동의해 주세요.");
+            if (consent.IsChecked != true) throw new ArgumentException("개인정보 수집·이용에 동의해 주세요.");
             if (!MailAddress.TryCreate(email.Text.Trim(), out var address) || address.Address != email.Text.Trim() || string.IsNullOrWhiteSpace(message.Text)) throw new ArgumentException("이메일 주소와 문의 내용을 확인해 주세요.");
             var lines = new List<string>();
             if (!string.IsNullOrWhiteSpace(organization.Text)) lines.Add("기관명: " + organization.Text.Trim());
@@ -159,7 +159,7 @@ public sealed class PublicInquiryDialog : CompactDialog
             if (body.Length > 2000) throw new ArgumentException("기관명·제목을 포함한 문의 내용은 2,000자까지 입력할 수 있습니다.");
             await api.SubmitInquiryAsync(new { type = type.SelectedIndex switch { 0 => "ONBOARDING", 1 => "ERROR_REPORT", _ => "ETC" }, name = "", email = address.Address, message = body, website = "" }, Lifetime.Token);
             submitted = true;
-            MessageBox.Show(this, "문의를 접수했습니다.", "문의하기"); DialogResult = true;
+            NoticeDialog.Choose(this, "문의를 접수했습니다.", "적어 주신 메일 주소로 회신해드립니다.", ["확인"], width: 440); DialogResult = true;
         }
         var cancel = Button("취소", () => { Close(); return Task.CompletedTask; }); cancel.IsCancel = false; PublicDialogDesign.StyleAction(cancel); actions.Children.Add(cancel);
         var send = Button("보내기", () => RunAsync(SubmitAsync), true); PublicDialogDesign.StyleAction(send, true); actions.Children.Add(send);

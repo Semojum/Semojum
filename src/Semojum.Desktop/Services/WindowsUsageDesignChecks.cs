@@ -42,8 +42,8 @@ internal static class WindowsUsageDesignChecks
                 "Both credit cards show the whole percentage separately at the right under their bars");
             var period = Descendants(dialog).OfType<Semojum.Desktop.Controls.SegmentedChoice>().Single();
             check(period.Items.Cast<ListBoxItem>().Select(i => i.Content).SequenceEqual(new object[] { "이번 달", "지난달" }) && period is { SelectedIndex: 0, Width: 150, Height: 32 }
-                  && !((ListBoxItem)period.Items[1]).IsEnabled && Grid.GetColumn(period) == 2,
-                "The heading row carries the 이번 달 / 지난달 choice; last month stays unavailable until the server can return it");
+                  && ((ListBoxItem)period.Items[1]).IsEnabled && Grid.GetColumn(period) == 2,
+                "The heading row carries the 이번 달 / 지난달 choice and both months can be chosen");
             check(!Descendants(dialog).OfType<DatePicker>().Any() && !Descendants(dialog).OfType<Button>().Any(b => b.Content is "조회" or "선택 작업 열기"),
                 "The work-history card is ruled only by its 최근 30일 choice, without date fields or query buttons");
             var loginStatus = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageStatusLogin");
@@ -79,6 +79,17 @@ internal static class WindowsUsageDesignChecks
             balance.Text = originalBalance;
             dialog.Width = originalWidth;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var thisMonth = UsageDialog.ThisMonthInKorea();
+            check(fixture.UsageMonths.SequenceEqual(new[] { Fixture.Month(thisMonth) }), "이번 달 cards request the current KST month from /api/users/usage, the same source as the monthly graph");
+            var personalBar = Descendants(dialog).OfType<ProgressBar>().Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "내 크레딧 사용률");
+            period.SelectedIndex = 1; await WaitAsync(() => personalBar.Value == 26.4);
+            check(fixture.UsageMonths.Last() == Fixture.Month(thisMonth.AddMonths(-1)) && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "2,640")
+                  && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "2,640 / 10,000 크레딧") && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "26%") && balance.Text == "8,251",
+                "지난달 loads the previous KST month: my credits and myCredits ÷ orgAllocated change while the cumulative institution balance stays");
+            period.SelectedIndex = 0; await WaitAsync(() => personalBar.Value == 17.49);
+            check(fixture.UsageMonths.Last() == Fixture.Month(thisMonth) && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "1,749 / 10,000 크레딧"),
+                "Returning to 이번 달 restores the current month's card values");
+            var cardRequests = fixture.UsageMonths.Count;
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "내 작업별 크레딧") && fixture.JobRequests > 0,
                 "The usage page displays the real job list without switching views");
             check(Descendants(dialog).OfType<DataGrid>().Any(g => g.Items.Cast<object>().Any(x => x.ToString()!.Contains("실제 작업.pdf", StringComparison.Ordinal))), "The job list shows the returned document");
@@ -113,8 +124,36 @@ internal static class WindowsUsageDesignChecks
             check(!fixture.Paths.Any(p => p.StartsWith("/api/org/", StringComparison.Ordinal)), "My page does not call privileged organization APIs");
             if (Environment.GetEnvironmentVariable("USAGE_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(dialog, capture);
             dialog.Navigation.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text.Contains("과금 내역을 조회할 수 없습니다", StringComparison.Ordinal)), "Unavailable monthly billing is explained without fabricated transactions");
+            Grid? monthBars = null;
+            await WaitAsync(() => (monthBars = Descendants(dialog).OfType<Grid>().FirstOrDefault(g => System.Windows.Automation.AutomationProperties.GetAutomationId(g) == "BillingMonthlyBars")) is { Children.Count: > 0 });
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var firstShown = Math.Max(1, thisMonth.Month - 5);
+            var shownMonths = monthBars!.Children.OfType<Border>().ToArray(); var expectedMonths = Enumerable.Range(firstShown, thisMonth.Month - firstShown + 1).Select(m => new DateOnly(thisMonth.Year, m, 1)).ToArray();
+            check(shownMonths.Length == Math.Min(6, thisMonth.Month) && monthBars.Children.OfType<TextBlock>().Where(t => t.Text.EndsWith('월')).Select(t => t.Text).SequenceEqual(expectedMonths.Select(m => $"{m.Month}월"))
+                  && fixture.UsageMonths.Skip(cardRequests).Order(StringComparer.Ordinal).SequenceEqual(expectedMonths.Select(Fixture.Month)),
+                "This year's graph requests and draws only the six months ending with the current KST month (from January when fewer), never a future month");
+            var light = Color.FromRgb(0x8F, 0xB4, 0xF5); var regular = Color.FromRgb(0x5B, 0x8D, 0xEF);
+            check(shownMonths.Select(b => (b.Background as SolidColorBrush)?.Color).SequenceEqual(expectedMonths.Select(m => (Color?)(m == thisMonth ? light : regular)))
+                  && shownMonths.All(b => b is { MaxWidth: 56, CornerRadius.TopLeft: 4, ActualWidth: > 0 and <= 56 }),
+                "Only the current month's 56px bar uses the lighter Figma #8FB4F5; the other months use #5B8DEF");
+            var expectedCredits = expectedMonths.Select(m => Fixture.Credits(Fixture.Month(m))).ToArray(); var axisTop = UsageDialog.AxisStep(expectedCredits.Max()) * 4;
+            check(shownMonths.Zip(expectedCredits).All(p => Math.Abs(p.First.Height - Math.Round((double)(p.Second / axisTop) * 164)) < .5)
+                  && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == axisTop.ToString("#,0", CultureInfo.InvariantCulture))
+                  && monthBars.Parent is Grid { Parent: Border { Height: 260 } }
+                  && Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "BillingMonthlyNotice").Text.Length == 0,
+                "Bars follow each month's returned credits on a four-step axis (164px) inside the 260px Figma card");
             if (Environment.GetEnvironmentVariable("BILLING_CAPTURE") is { Length: > 0 } billCapture) await WindowsSmoke.RenderElementAsync(dialog, billCapture);
+            var kind = Descendants(dialog).OfType<ComboBox>().SingleOrDefault(c => System.Windows.Automation.AutomationProperties.GetName(c) == "상세 내역 구분");
+            check(kind is { Width: 112, Height: 32, SelectedItem: "전체", ItemsSource: IEnumerable<string> kinds } && kinds.SequenceEqual(new[] { "전체", "사용", "충전" })
+                  && kind.Parent is Grid { Width: 112, Height: 32 } kindField && kindField.Children.OfType<SvgViewbox>().Any(i => i is { Width: 16, Height: 16 } && i.Source?.ToString().EndsWith("account-chevron.svg", StringComparison.Ordinal) == true),
+                "The 상세 내역 heading carries the final 112px 전체 / 사용 / 충전 combo styled like 최근 30일");
+            var billingGrid = Descendants(dialog).OfType<DataGrid>().Single(g => System.Windows.Automation.AutomationProperties.GetAutomationId(g) == "BillingDetailGrid");
+            billingGrid.ItemsSource = new[] { new UsageDialog.BillingRow("2026-08-13", "수능특강_생명Ⅱ.pdf", -11), new UsageDialog.BillingRow("2026-08-01", "크레딧 추가", 3000), new UsageDialog.BillingRow("2026-07-28", "고2_수학Ⅰ_3단원.pdf", -26) };
+            string[] Shown() => billingGrid.Items.Cast<UsageDialog.BillingRow>().Select(r => r.Description).ToArray();
+            kind!.SelectedItem = "사용"; var used = Shown(); kind.SelectedItem = "충전"; var charged = Shown(); kind.SelectedItem = "전체"; var all = Shown();
+            check(used.SequenceEqual(new[] { "수능특강_생명Ⅱ.pdf", "고2_수학Ⅰ_3단원.pdf" }) && charged.SequenceEqual(new[] { "크레딧 추가" }) && all.Length == 3,
+                "Choosing 사용 or 충전 filters billing details by the sign of the credit change, and 전체 shows every entry");
+            billingGrid.ItemsSource = null;
             dialog.Navigation.SelectedIndex = 3;
             await WaitAsync(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "서버가 돌려준 문의 내용"));
             check(fixture.MineRequested && fixture.PostRequests == 1, "Inquiry history loads the user's posts and selected post from the server");
@@ -141,6 +180,19 @@ internal static class WindowsUsageDesignChecks
         internal int PostRequests { get; private set; }
         internal bool MineRequested { get; private set; }
         internal List<string> Paths { get; } = [];
+        internal List<string> UsageMonths { get; } = [];
+        internal static string Month(DateOnly month) => month.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        /// <summary>This month 1,749 and last month 2,640 (the Figma 4월 value); earlier months 1,000 + 10 × month.</summary>
+        internal static decimal Credits(string month)
+        {
+            var thisMonth = UsageDialog.ThisMonthInKorea();
+            return month == Month(thisMonth) ? 1749 : month == Month(thisMonth.AddMonths(-1)) ? 2640 : 1000 + 10 * (month.Length == 7 ? int.Parse(month[5..], CultureInfo.InvariantCulture) : 0);
+        }
+        private object Usage(string query)
+        {
+            var month = query.StartsWith("?month=", StringComparison.Ordinal) ? query[7..] : ""; UsageMonths.Add(month);
+            return new { month, myCredits = Credits(month), orgAllocated = 10000, orgUsed = 1749, orgRemaining = 8251 };
+        }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var path = request.RequestUri!.AbsolutePath;
@@ -148,8 +200,7 @@ internal static class WindowsUsageDesignChecks
             object result = path switch
             {
                 "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER", alias = "검수자" },
-                "/api/users/usage/daily" => new { from = "2026-10-01", to = "2026-10-27", orgRemaining = 8251, orgAllocated = 10000, usedCredits = 1749, usedPercent = 17.49,
-                    daily = new[] { new { date = "2026-10-21", credits = 1749 } }, bySource = new[] { new { source = "PDF_HWP", credits = 1749 } } },
+                "/api/users/usage" => Usage(request.RequestUri.Query),
                 "/api/users/usage/jobs" => Jobs(),
                 "/api/board/posts" => Posts(request.RequestUri.Query),
                 "/api/board/posts/42" => Post(),

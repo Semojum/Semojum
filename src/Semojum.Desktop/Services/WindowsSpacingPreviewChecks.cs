@@ -12,8 +12,12 @@ internal static class WindowsSpacingPreviewChecks
     {
         var ctor = typeof(BraillePreviewDialog).GetConstructors().SingleOrDefault(c => c.GetParameters().Length == 7);
         check(ctor is not null, "Composition preview accepts unresolved spacing information");
-        var prompts = new List<string>();
-        Func<string, string, MessageBoxResult> decline = (message, _) => { prompts.Add(message); return MessageBoxResult.No; };
+        var prompts = new List<string>(); var labels = new List<string>();
+        Func<NoticeDialog, int> decline = notice =>
+        {
+            prompts.Add(notice.DetailText); labels.Add(notice.MessageText + "|" + string.Join(",", notice.ActionButtons.Select(b => b.Content)));
+            notice.Close(); return 1;
+        };
         string[][] pages = [["⠁", "⠃"]]; const string brf = "A\r\nB\r\n\f";
         var dialog = (BraillePreviewDialog)ctor!.Invoke([pages, brf, new PageLayout(), "조판 시험", 1, new[] { 7, 12 }, decline]);
         dialog.Owner = owner; dialog.Show();
@@ -26,12 +30,13 @@ internal static class WindowsSpacingPreviewChecks
                 var button = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, label));
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             }
-            check(prompts.Count == 3 && prompts.All(p => p.Contains("빈 줄") && p.Contains("7") && p.Contains("12")),
-                "Saving or printing a preview asks about unresolved spacing before opening a destination");
+            check(prompts.Count == 3 && prompts.All(p => p.Contains("빈 줄") && p.Contains("7") && p.Contains("12"))
+                && labels.All(l => l == "조판 빈 줄을 확인할 수 없는 블록이 있습니다.|출력,취소"),
+                "Saving or printing a preview asks about unresolved spacing in the app message window before opening a destination");
             check(dialog.IsVisible && pages[0][0] == "⠁" && pages[0][1] == "⠃", "Declining output retains the preview and its braille cells");
         }
         finally { dialog.Close(); }
-        prompts.Clear();
+        prompts.Clear(); labels.Clear();
         var alignment = new BraillePreviewDialog(pages, brf, new PageLayout(), "정렬 시험", 1, [], [7], decline) { Owner = owner };
         alignment.Show();
         try
@@ -40,7 +45,8 @@ internal static class WindowsSpacingPreviewChecks
             check(texts.Any(t => t.Contains("정렬") && t.Contains("7") && t.Contains("적용하지")), "Preview identifies unverified line alignment");
             foreach (var label in new[] { "BRF 저장", "점자 TXT 저장", "점자 인쇄…" })
                 Descendants(alignment).OfType<Button>().Single(b => Equals(b.Content, label)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            check(prompts.Count == 3 && prompts.All(p => p.Contains("정렬") && p.Contains("7")), "Saving or printing warns about unverified alignment");
+            check(prompts.Count == 3 && prompts.All(p => p.Contains("정렬") && p.Contains("7"))
+                && labels.All(l => l == "조판 정보를 확인할 수 없는 블록이 있습니다.|출력,취소"), "Saving or printing warns about unverified alignment");
         }
         finally { alignment.Close(); }
     }

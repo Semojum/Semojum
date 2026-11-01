@@ -91,8 +91,8 @@ public sealed partial class JobClient(SemojumApiClient api)
     {
         var allowed = new[] { ".pdf", ".hwp", ".hwpx", ".txt", ".png", ".jpg", ".jpeg" };
         if (files.Count == 0 || files.Any(f => !allowed.Contains(Path.GetExtension(f.FileName).ToLowerInvariant())))
-            throw new ArgumentException("PDF, HWP, HWPX, TXT, PNG, JPG 파일을 선택해 주세요.");
-        if (files.Sum(f => f.Bytes.LongLength) > MaximumUploadBytes) throw new ArgumentException("업로드 전체 크기는 100 MB까지입니다.");
+            throw new ArgumentException("PDF, HWP, HWPX, TXT, PNG, JPG, JPEG 파일을 선택해 주세요.");
+        if (files.FirstOrDefault(f => f.Bytes.LongLength > MaximumUploadBytes) is { } oversized) throw new ArgumentException($"{oversized.FileName} 파일이 100 MB를 넘습니다. 파일 1개당 100 MB까지 올릴 수 있습니다.");
         if (files.Count > 1 && files.Any(f => Path.GetExtension(f.FileName).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg")))
             throw new ArgumentException("여러 파일은 이미지일 때만 함께 업로드할 수 있습니다.");
         // Each retry needs fresh content; requests are replayed only after an authentication rejection.

@@ -137,8 +137,11 @@ public partial class MainWindow
             DraftChoiceGrid.Children.Add(radio);
         }
         DraftDock.Visibility = Visibility.Visible; UpdateDraftDivider();
-        var selectedIndex = table is null ? block.Metadata.SelectedIndex ?? 0 : Array.FindIndex(table.Drafts, d => d.RenderMode == block.Metadata.RenderMode);
-        ((RadioButton)DraftChoiceGrid.Children[Math.Clamp(selectedIndex, 0, drafts.Length - 1)]).IsChecked = true;
+        var selectedIndex = Math.Clamp(table is null ? block.Metadata.SelectedIndex ?? 0 : Array.FindIndex(table.Drafts, d => d.RenderMode == block.Metadata.RenderMode), 0, drafts.Length - 1);
+        // The server decides how many drafts there are: four per row, two rows shown, further rows scroll inside the dock.
+        var chosen = (RadioButton)DraftChoiceGrid.Children[selectedIndex];
+        DraftChoiceScroll.ScrollToVerticalOffset(selectedIndex / DraftChoiceGrid.Columns * chosen.Height);
+        chosen.IsChecked = true;
     }
 
     private static SvgViewbox DraftIconAsset(string name, double size) => new()
@@ -506,7 +509,7 @@ public partial class MainWindow
         if (!CanSelectDraft() || session.ActiveBlock is not { } block) return;
         if (block.Metadata.Alternatives?.Length > 0) OpenDraftDock(block);
         else if (block.Translation?.Drafts.Length > 0) OpenDraftDock(block, CaptureTableDraft(block));
-        else MessageBox.Show(this, "이 블록에는 대체 초안이 없습니다. 그림·표 등의 초안이 제공된 블록을 선택해 주세요.", "대체 초안");
+        else NoticeDialog.Choose(this, "이 블록에는 대체 초안이 없습니다.", "그림·표 등의 초안이 제공된 블록을 선택해 주세요.", ["확인"], width: 440);
         await Task.CompletedTask;
     }
     internal sealed record TableDraftSnapshot(DocumentSession Owner, EditorBlock Block, BrailleTranslation Translation,

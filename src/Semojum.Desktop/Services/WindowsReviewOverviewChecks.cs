@@ -1,6 +1,10 @@
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -37,7 +41,15 @@ internal static class WindowsReviewOverviewChecks
             source.ReviewMarks.Add(new("stale", ReviewKind.SuggestDeletion, ReviewPanel.Text, 20, 1, "", true));
             await Paint();
             check(editor.Overview.MarkerCount == 3 && memo.ManualKinds(0).Contains(ReviewKind.HumanConfirmed), "Overview uses only valid manual reviews and unresolved source memos at known locations");
-            check(!editor.Overview.IsHitTestVisible && numbers.ActualWidth >= 32, "The review number gutter and overview preserve native hit testing");
+            var strip = editor.Overview;
+            var stripLeft = strip.TranslatePoint(new Point(), editor).X; var textRight = editor.Editor.TranslatePoint(new Point(editor.Editor.ActualWidth, 0), editor).X;
+            check(strip.ActualWidth == 12 && Math.Abs(stripLeft - textRight) < .5 && Math.Abs(stripLeft + 12 - editor.ActualWidth) < .5 && strip.ActualHeight == editor.ActualHeight && numbers.ActualWidth >= 32
+                && !Descendants(editor.Editor).OfType<ScrollBar>().Any(b => b.Orientation == Orientation.Vertical && b.IsVisible),
+                "The overview is an independent 12px column right of the text and replaces the native vertical scrollbar");
+            check(editor.InputHitTest(strip.TranslatePoint(new Point(6, strip.ActualHeight / 2), editor)) == strip, "Mouse presses on the overview reach the strip, not the text");
+            var stripColors = Colors(VisualTreeHelper.GetDrawing(strip)).ToArray();
+            check(stripColors.Contains(Color.FromRgb(0xFA, 0xFA, 0xFA)) && stripColors.Contains(Color.FromRgb(0xEA, 0xEA, 0xEA)) && stripColors.Contains(Color.FromRgb(0xD1, 0xD1, 0xD1)),
+                "The strip draws the Figma fill, left rule and grey viewport frame");
             var numberColors = Colors(VisualTreeHelper.GetDrawing(numbers)).ToArray();
             check(numberColors.Contains(Color.FromRgb(223, 246, 221)) && numberColors.Contains(Color.FromRgb(15, 123, 15)), "A confirmed source line renders its green Figma background and stripe");
             var overviewColors = Colors(VisualTreeHelper.GetDrawing(editor.Overview)).ToArray();
@@ -59,28 +71,46 @@ internal static class WindowsReviewOverviewChecks
             numbers.SystemHighContrast = () => false; editor.Overview.SystemHighContrast = () => false;
             numbers.SystemChanged(null, new(nameof(SystemParameters.HighContrast))); editor.Overview.SystemChanged(null, new(nameof(SystemParameters.HighContrast))); await Paint();
             check(Colors(VisualTreeHelper.GetDrawing(editor.Overview)).Contains(Color.FromRgb(0, 95, 184)), "Turning off mocked Windows high contrast restores normal review colors");
-            var scrollbar = Descendants(editor.Editor).OfType<ScrollBar>().FirstOrDefault(b => b.Orientation == Orientation.Vertical && b.IsVisible);
-            check(scrollbar?.Track?.Thumb is { IsVisible: true }, "Native vertical track and draggable thumb remain present beneath the review overview");
             var builds = editor.Overview.CacheBuildCount;
             editor.Editor.ScrollToLine(1500); await Paint();
-            check(editor.Editor.VerticalOffset > 0 && editor.Overview.CacheBuildCount <= builds + 1, "Scrolling a long document keeps the marker cache and moves the native viewport");
-            if (scrollbar?.Track?.Thumb is { } thumb)
-            {
-                var previous = scrollbar.Value;
-                thumb.RaiseEvent(new DragStartedEventArgs(0, 0) { RoutedEvent = Thumb.DragStartedEvent });
-                thumb.RaiseEvent(new DragDeltaEventArgs(0, 20) { RoutedEvent = Thumb.DragDeltaEvent });
-                thumb.RaiseEvent(new DragCompletedEventArgs(0, 20, false) { RoutedEvent = Thumb.DragCompletedEvent });
-                await Paint();
-                check(scrollbar.Value > previous, "The original scrollbar thumb responds to its drag events through the overview");
-            }
+            check(editor.Editor.VerticalOffset > 0 && editor.Overview.CacheBuildCount <= builds + 1, "Scrolling a long document keeps the marker cache and moves the viewport");
+            var extent = strip.Extent;
+            check(strip.ViewportRect() is { } frame && Math.Abs(frame.Top - editor.Editor.VerticalOffset / extent * strip.ActualHeight) < 1
+                && Math.Abs(frame.Height - Math.Max(4, editor.Editor.ViewportHeight / extent * strip.ActualHeight)) < 1, "The strip frames the visible part of the whole document");
+            strip.JumpTo(strip.ActualHeight * .25); await Paint();
+            var centred = Math.Clamp(.25 * extent - editor.Editor.ViewportHeight / 2, 0, strip.ScrollableHeight);
+            check(Math.Abs(editor.Editor.VerticalOffset - centred) < 2, "Pressing the strip centres the editor on that part of the document");
+            var grabbed = strip.ViewportRect()!.Value; var grabbedAt = grabbed.Top + grabbed.Height / 2; var beforeDrag = editor.Editor.VerticalOffset;
+            strip.JumpTo(grabbedAt); strip.DragTo(grabbedAt + 30); await Paint();
+            check(Math.Abs(editor.Editor.VerticalOffset - (beforeDrag + 30 / strip.ActualHeight * extent)) < 2, "Dragging the viewport frame scrolls by the dragged share of the document");
+            var stripPeer = UIElementAutomationPeer.CreatePeerForElement(strip);
+            var range = (IRangeValueProvider)stripPeer.GetPattern(PatternInterface.RangeValue);
+            range.SetValue(range.Maximum / 3); await Paint();
+            check(stripPeer.GetAutomationControlType() == AutomationControlType.ScrollBar && stripPeer.GetName() == "훑어보기 띠" && Math.Abs(editor.Editor.VerticalOffset - range.Maximum / 3) < 2
+                && Math.Abs(range.Value - editor.Editor.VerticalOffset) < .01, "UIA can scroll the editor through the strip's vertical scrollbar value");
+            var viewerPeer = UIElementAutomationPeer.CreatePeerForElement(editor.Editor).GetChildren()?.OfType<ScrollViewerAutomationPeer>().FirstOrDefault();
+            var viewerScroll = viewerPeer?.GetPattern(PatternInterface.Scroll) as IScrollProvider;
+            viewerScroll?.SetScrollPercent(ScrollPatternIdentifiers.NoScroll, 0); await Paint();
+            check(viewerScroll is { VerticallyScrollable: true } && editor.Editor.VerticalOffset < 1, "The editor keeps its UIA scroll pattern with the native scrollbar hidden");
+            editor.Editor.CaretOffset = 0; await Paint();
+            editor.Editor.TextArea.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(editor.Editor)!, 0, Key.PageDown) { RoutedEvent = Keyboard.KeyDownEvent }); await Paint();
+            check(editor.Editor.TextArea.Caret.Line > 1 && editor.Editor.VerticalOffset > 0, "Keyboard paging still scrolls the editor without its native scrollbar");
             editor.Editor.Select(5, 3);
-            check(editor.Editor.SelectionLength == 3 && editor.Selection.Sum(s => s.Length) == 3, "Source selection remains usable with the overview overlay");
+            check(editor.Editor.SelectionLength == 3 && editor.Selection.Sum(s => s.Length) == 3, "Source selection remains usable beside the overview strip");
             editor.ShowReviews = false; await Paint();
             check(editor.Overview.MarkerCount == 1, "Hiding reviews leaves only real source memos in the overview");
             editor.ShowMemos = false; await Paint();
             check(editor.Overview.MarkerCount == 0, "Hiding memos and reviews clears overview markers");
             editor.ShowReviews = true; editor.ShowMemos = true; source.Memos.Clear(); source.ReviewMarks.Clear(); await Paint();
             check(editor.Overview.MarkerCount == 0, "Removing actual annotations refreshes the overview");
+            var untyped = source.Source;
+            source.AddReviewMark(ReviewKind.SuggestCorrection, ReviewPanel.Text, source.Source.IndexOf("원문 줄 2000", StringComparison.Ordinal), 2); await Paint();
+            var typedBuilds = strip.CacheBuildCount; var typedMarks = strip.PaintedMarkers.ToArray();
+            source.Source = source.Source.Insert(source.Source.IndexOf("원문 줄 2500", StringComparison.Ordinal), "가"); await Paint();
+            check(strip.CacheBuildCount == typedBuilds && strip.MarkerCount == 1 && strip.PaintedMarkers.SequenceEqual(typedMarks), "Typing that moves no mark in a 3,000-line document reuses the overview drawing");
+            source.Source = "새 줄\n" + source.Source; await Paint();
+            check(strip.CacheBuildCount > typedBuilds && strip.MarkerCount == 1, "A new line above a mark re-projects the overview");
+            source.ReviewMarks.Clear(); source.Source = untyped;
             window.Height = 640; await Paint();
             var doc = editor.Editor.Document;
             var fixtures = new List<ReviewMark>();
@@ -98,9 +128,8 @@ internal static class WindowsReviewOverviewChecks
             await Paint(); watch.Stop();
             check(editor.Overview.MarkerCount == 3000 && editor.Overview.VisualLineLookupCount <= doc.LineCount + 200,
                 $"3,000 overlapping long reviews reuse line and endpoint projections ({editor.Overview.VisualLineLookupCount} lookups, {editor.Overview.LastBuildElapsedMilliseconds} ms overview, {watch.ElapsedMilliseconds} ms full frame)");
-            var track = scrollbar!.Track!;
-            var bounds = track.TransformToVisual(editor.Overview).TransformBounds(new Rect(0, 0, track.ActualWidth, track.ActualHeight));
-            bounds.Intersect(new Rect(0, 0, editor.Overview.ActualWidth, editor.Overview.ActualHeight));
+            // The whole strip is the track: the document height maps onto its full height.
+            var bounds = new Rect(0, 0, strip.ActualWidth, strip.ActualHeight); extent = strip.Extent;
             var tops = Enumerable.Range(1, doc.LineCount).Select(line => editor.Editor.TextArea.TextView.GetVisualTopByDocumentLine(line)).ToArray();
             var expected = new List<(int Pixel, ReviewKind? Kind)>(); var seen = new HashSet<(int, ReviewKind?)>();
             var offsets = new Dictionary<int, int>();
@@ -108,7 +137,7 @@ internal static class WindowsReviewOverviewChecks
             {
                 if (offsets.TryGetValue(offset, out var value)) return value;
                 var top = editor.Editor.TextArea.TextView.GetVisualPosition(new ICSharpCode.AvalonEdit.TextViewPosition(doc.GetLocation(offset)), ICSharpCode.AvalonEdit.Rendering.VisualYPosition.LineTop).Y;
-                return offsets[offset] = (int)Math.Round(bounds.Top + Math.Clamp(top / editor.Editor.ExtentHeight, 0, 1) * Math.Max(0, bounds.Height - 3));
+                return offsets[offset] = (int)Math.Round(bounds.Top + Math.Clamp(top / extent, 0, 1) * Math.Max(0, bounds.Height - 3));
             }
             foreach (var mark in fixtures)
             {
@@ -120,7 +149,7 @@ internal static class WindowsReviewOverviewChecks
                 for (var i = 1; i + 1 < count; i++)
                 {
                     var line = first + (int)((long)(last - first) * i / (count - 1));
-                    var y = bounds.Top + Math.Clamp(tops[line - 1] / editor.Editor.ExtentHeight, 0, 1) * Math.Max(0, bounds.Height - 3);
+                    var y = bounds.Top + Math.Clamp(tops[line - 1] / extent, 0, 1) * Math.Max(0, bounds.Height - 3);
                     var item = ((int)Math.Round(y), (ReviewKind?)mark.Kind);
                     if (seen.Add(item)) expected.Add(item);
                 }
@@ -152,6 +181,11 @@ internal static class WindowsReviewOverviewChecks
             check(editor.Overview.MarkerCount == 1, "Adding a new review refreshes the overview");
             source.Source = "교체된 원문"; await Paint();
             check(editor.Editor.Text == "교체된 원문" && source.ReviewMarks.All(m => m.IsStale), "Editing text invalidates the old review projection");
+            source.AddReviewMark(ReviewKind.SuggestCorrection, ReviewPanel.Text, 0, 3); await Paint();
+            stripColors = Colors(VisualTreeHelper.GetDrawing(strip)).ToArray();
+            check(editor.Editor.ExtentHeight <= editor.Editor.ViewportHeight && strip.IsVisible && strip.ActualWidth == 12 && strip.ViewportRect() is null
+                && strip.PaintedMarkers.Any(p => p.Kind == ReviewKind.SuggestCorrection) && stripColors.Contains(Color.FromRgb(0xFA, 0xFA, 0xFA)) && stripColors.Contains(Color.FromRgb(157, 93, 0)),
+                "A short document with nothing to scroll still shows the strip and its review marks");
             editor.OverviewHighContrast = true; numbers.HighContrast = true;
             check(editor.Overview.HighContrast && numbers.HighContrast, "High contrast reaches both review gutter and overview");
             editor.Editor.ShowLineNumbers = false;
@@ -162,6 +196,64 @@ internal static class WindowsReviewOverviewChecks
         check(!numbers.ListeningForSystemChanges && !editor.Overview.ListeningForSystemChanges, "Closing the editor releases Windows high-contrast subscriptions");
         await WrappedLineChecks(check);
         await LineNumberToggleChecks(check);
+        await ServerWarningChecks(check);
+    }
+
+    private static async Task ServerWarningChecks(Action<bool, string> check)
+    {
+        var block = new EditorBlock { Id = 1, Page = 1, ServerId = "w1", Source = "첫 줄\n둘째 줄", Braille = "⠁⠃" };
+        var plain = new EditorBlock { Id = 2, Page = 1, ServerId = "w2", Source = "경고 없음" };
+        var session = new DocumentSession(); session.Add(block); session.Add(plain); session.ActiveBlock = block;
+        session.QualityReports[1] = [new("error", "unsupported_char", "w1", "지원하지 않는 문자"), new("review", "low_confidence", "w1", "신뢰도 낮음"), new("review", "unknown", null, "쪽 전체")];
+        // As when a page arrives or a document with a server report is opened.
+        ServerWarnings.Apply(session);
+        var editor = new ContinuousSourceEditor();
+        var memo = new MemoMargin(() => session.ActiveBlock, "TEXT", _ => { }) { ResolveLine = editor.ResolveLine };
+        editor.Editor.TextArea.LeftMargins.Add(memo);
+        var original = editor.Editor.TextArea.LeftMargins.OfType<LineNumberMargin>().Single();
+        var numbers = new ColoredLineNumbers { Compact = true, MinWidth = 32, Background = Brushes.WhiteSmoke, NumberBrush = Brushes.Gray };
+        editor.Editor.TextArea.LeftMargins[editor.Editor.TextArea.LeftMargins.IndexOf(original)] = numbers;
+        editor.Attach(session);
+        var window = new Window { Width = 480, Height = 300, Content = editor, ShowInTaskbar = false }; window.Show();
+        try
+        {
+            async Task Paint() { await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); }
+            await Paint();
+            Color red = Color.FromRgb(196, 43, 28), pink = Color.FromRgb(253, 231, 233);
+            var numberColors = Colors(VisualTreeHelper.GetDrawing(numbers)).ToArray();
+            check(numberColors.Contains(pink) && numberColors.Contains(red) && memo.ManualKinds(0).SequenceEqual([ReviewKind.OpenWarning]) && memo.ManualKinds(1).SequenceEqual([ReviewKind.OpenWarning])
+                && memo.ManualKinds(2).Length == 0 && ReviewVisuals.Label(ReviewKind.OpenWarning) == "안 풀린 경고" && ReviewVisuals.Icon(ReviewKind.OpenWarning).Children.Count > 0,
+                "Right after conversion every line of a flagged block shows a red number, pink band and warning triangle; other blocks show none");
+            check(editor.Overview.PaintedMarkers.Any(p => p.Kind == ReviewKind.OpenWarning) && Colors(VisualTreeHelper.GetDrawing(editor.Overview)).Contains(red),
+                "The overview strip marks the server warning in red");
+            var view = editor.Editor.TextArea.TextView;
+            var body = new DrawingVisual();
+            using (var context = body.RenderOpen()) view.BackgroundRenderers.OfType<ReviewRangeRenderer>().Single().Draw(view, context);
+            check(Colors(body.Drawing).Contains(pink) && Colors(body.Drawing).Contains(red) && Geometries(body.Drawing).OfType<StreamGeometry>().Any(),
+                "The flagged text has the pink background and a red wavy underline");
+            GridCell?[] cells = [.. block.Braille.Select((value, offset) => (GridCell?)new GridCell(block, offset, value))];
+            var face = new BrailleGridFace(1, [cells]);
+            var grid = new BrailleGridView { Blocks = [block], ItemsSource = new[] { face } };
+            check(grid.ManualReviewKinds(face, 0).SequenceEqual([ReviewKind.OpenWarning]) && grid.ManualReviewForCell(face, cells[0]!) is { Kind: ReviewKind.OpenWarning, Panel: ReviewPanel.Braille },
+                "The braille panel shows the same warning over the block's cells");
+            ServerWarnings.Apply(session);
+            check(block.ReviewMarks.Count == 4 && plain.ReviewMarks.Count == 0, "Receiving the same report again adds no duplicate warnings");
+            block.Source = "첫 줄 고침\n둘째 줄"; await Paint();
+            ServerWarnings.Apply(session); await Paint();
+            var regrid = new BrailleGridView { Blocks = [block], ItemsSource = new[] { face } };
+            check(block.ReviewMarks.Count == 4 && block.ReviewMarks.All(m => m.IsStale) && memo.ManualKinds(0).Length == 0
+                && !editor.Overview.PaintedMarkers.Any(p => p.Kind == ReviewKind.OpenWarning) && !Colors(VisualTreeHelper.GetDrawing(numbers)).Contains(red)
+                && regrid.ManualReviewKinds(face, 0).Length == 0,
+                "Editing the block resolves its warning everywhere, and the same report cannot bring it back");
+        }
+        finally { editor.Dispose(); window.Close(); }
+    }
+
+    private static IEnumerable<Geometry> Geometries(Drawing? drawing)
+    {
+        if (drawing is DrawingGroup group)
+            foreach (var child in group.Children) foreach (var geometry in Geometries(child)) yield return geometry;
+        if (drawing is GeometryDrawing { Geometry: { } shape }) yield return shape;
     }
 
     private static async Task LineNumberToggleChecks(Action<bool, string> check)
@@ -206,7 +298,7 @@ internal static class WindowsReviewOverviewChecks
             var items = editor.Overview.PaintedMarkers;
             if (!items.Any(p => p.Kind == ReviewKind.HumanConfirmed) || !items.Any(p => p.Kind == ReviewKind.SuggestDeletion) || !items.Any(p => p.Kind is null))
             {
-                check(false, $"Wrapped fixture renders all markers (count={editor.Overview.MarkerCount}, painted={items.Count}, extent={editor.Editor.ExtentHeight}, viewport={editor.Editor.ViewportHeight}, track={Descendants(editor.Editor).OfType<ScrollBar>().Count(b => b.IsVisible)}, text={editor.Editor.Text.Length})");
+                check(false, $"Wrapped fixture renders all markers (count={editor.Overview.MarkerCount}, painted={items.Count}, extent={editor.Editor.ExtentHeight}, viewport={editor.Editor.ViewportHeight}, strip={editor.Overview.ActualWidth}x{editor.Overview.ActualHeight}, text={editor.Editor.Text.Length})");
                 return;
             }
             var first = items.First(p => p.Kind == ReviewKind.HumanConfirmed).Pixel;

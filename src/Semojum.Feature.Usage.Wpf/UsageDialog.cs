@@ -26,8 +26,10 @@ public sealed class UsageDialog : CompactDialog
         tabs.Style = (Style)FindResource("UsageNavigation");
         tabs.ItemContainerStyle = NavigationTabStyle();
         var menu = new Menu { Height = 32, Padding = new(4, 0, 0, 0) };
+        // An institution administrator opens my page from the 기관 관리 window and never reaches the editor.
+        var administrator = api.Account?.Role == "ROLE_ORG_ADMIN";
         var fileMenu = new MenuItem { Header = "파일(_F)", Width = 64 }; menu.Items.Add(fileMenu);
-        var closeItem = new MenuItem { Header = "편집기로 돌아가기" }; closeItem.Click += (_, _) => Close(); fileMenu.Items.Add(closeItem);
+        var closeItem = new MenuItem { Header = administrator ? "닫기" : "편집기로 돌아가기" }; closeItem.Click += (_, _) => Close(); fileMenu.Items.Add(closeItem);
         var viewMenu = new MenuItem { Header = "보기(_V)", Width = 64 }; menu.Items.Add(viewMenu);
         var infoMenu = new MenuItem { Header = "정보(_A)", Width = 64 }; menu.Items.Add(infoMenu);
         var helpItem = new MenuItem { Header = "도움말" }; helpItem.Click += (_, _) => CommonWindowServices.ShowHelp(this, "사용량과 작업 이력"); infoMenu.Items.Add(helpItem);
@@ -53,7 +55,7 @@ public sealed class UsageDialog : CompactDialog
             Grid.SetColumn(accountName, 1); usageHeading.Children.Add(accountName);
         }
         var period = new Semojum.Desktop.Controls.SegmentedChoice("이번 달", "지난달") { Width = 150, Height = 32 };
-        period.SetAvailable(1, false, "지난달 사용량은 아직 서버에서 받을 수 없습니다."); System.Windows.Automation.AutomationProperties.SetName(period, "사용량 기간");
+        System.Windows.Automation.AutomationProperties.SetName(period, "사용량 기간");
         Grid.SetColumn(period, 2); usageHeading.Children.Add(period);
         panel.Children.Add(usageHeading);
         Border Card(UIElement child, double height) => new() { Child = child, Height = height, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8), Background = Brushes.White };
@@ -116,20 +118,93 @@ public sealed class UsageDialog : CompactDialog
         yearField.Children.Add(new SvgViewbox { Source = new Uri("pack://application:,,,/Semojum.Feature.Usage.Wpf;component/Assets/Figma/account-chevron.svg"), Width = 16, Height = 16, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, 5, 0), Stretch = Stretch.None, IsHitTestVisible = false });
         DockPanel.SetDock(yearField, Dock.Right); billingHeading.Children.Add(yearField);
         billingHeading.Children.Add(new TextBlock { Text = "과금 이력", FontSize = 20, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var monthly = new StackPanel { Margin = new(19, 15, 19, 15) };
-        monthly.Children.Add(new TextBlock { Text = "달마다 쓴 크레딧", FontSize = 14, FontWeight = FontWeights.SemiBold });
-        monthly.Children.Add(new TextBlock { Text = "이 계정에서는 월별 과금 내역을 조회할 수 없습니다. 기관 관리자에게 확인해 주세요.", Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 16, 0, 0) });
-        var monthlyCard = Card(monthly, 130); monthlyCard.Margin = new(0, 0, 0, 16); billing.Children.Add(monthlyCard);
-        var billingDetail = new StackPanel { Margin = new(19, 15, 19, 15) };
-        billingDetail.Children.Add(new TextBlock { Text = "상세 내역", FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new(0, 0, 0, 12) }); billingDetail.Children.Add(PaymentPanel());
+        // Figma C0-8 monthly chart: 4 equal axis steps over 164px (baseline y=220), 56px bars centred in equal month slots.
+        var monthly = new Grid();
+        var monthlyTitle = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(19, 15, 0, 0), VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left }; monthly.Children.Add(monthlyTitle);
+        monthlyTitle.Children.Add(new TextBlock { Text = "달마다 쓴 크레딧", FontSize = 14, FontWeight = FontWeights.SemiBold });
+        var monthlyNotice = new TextBlock { Foreground = ColorBrush("#8A8A8A"), Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; monthlyTitle.Children.Add(monthlyNotice);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(monthlyNotice, "BillingMonthlyNotice");
+        var currentLegend = new TextBlock { Text = "이번 달", Foreground = ColorBrush("#8A8A8A"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 37, 23, 0) }; monthly.Children.Add(currentLegend);
+        var axis = new TextBlock[5];
+        for (var i = 0; i < axis.Length; i++)
+        {
+            monthly.Children.Add(new Border { Height = 1, Background = ColorBrush(i == 0 ? "#D1D1D1" : "#EAEAEA"), VerticalAlignment = VerticalAlignment.Top, Margin = new(59, 219 - 41 * i, 23, 0) });
+            axis[i] = new TextBlock { Foreground = ColorBrush("#8A8A8A"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new(19, 211 - 41 * i, 0, 0) }; monthly.Children.Add(axis[i]);
+        }
+        var monthBars = new Grid { Margin = new(59, 0, 23, 0) }; monthly.Children.Add(monthBars);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(monthBars, "BillingMonthlyBars");
+        var monthlyCard = Card(monthly, 260); monthlyCard.Margin = new(0, 0, 0, 16); billing.Children.Add(monthlyCard);
+        void DrawMonthly(int shownYear, int firstMonth, decimal?[] credits)
+        {
+            var thisMonth = ThisMonthInKorea(); var step = AxisStep(credits.Select(c => c ?? 0).DefaultIfEmpty().Max());
+            for (var i = 0; i < axis.Length; i++) axis[i].Text = (step * i).ToString("#,0.##", CultureInfo.InvariantCulture);
+            monthBars.Children.Clear(); monthBars.ColumnDefinitions.Clear(); currentLegend.Visibility = shownYear == thisMonth.Year ? Visibility.Visible : Visibility.Collapsed;
+            for (var slot = 0; slot < credits.Length; slot++)
+            {
+                var month = firstMonth + slot; var value = credits[slot]; var height = value is { } v ? Math.Round((double)(v / (step * 4)) * 164) : 0;
+                var current = shownYear == thisMonth.Year && month == thisMonth.Month;
+                // 56px as in Figma, narrowing (still centred) only when a month slot is too small.
+                var bar = new Border { MaxWidth = 56, Height = height, CornerRadius = new(4), Background = ColorBrush(current ? "#8FB4F5" : "#5B8DEF"), VerticalAlignment = VerticalAlignment.Top, Margin = new(4, 219 - height, 4, 0) };
+                System.Windows.Automation.AutomationProperties.SetName(bar, $"{month}월 " + (value is { } n ? $"{n:#,0.##} 크레딧" : "불러오지 못함"));
+                var amount = new TextBlock { Text = value is { } a ? a.ToString("#,0.##", CultureInfo.InvariantCulture) : "—", Foreground = ColorBrush("#5F5F5F"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 201 - height, 0, 0) };
+                var label = new TextBlock { Text = $"{month}월", Foreground = ColorBrush("#5F5F5F"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 225, 0, 0) };
+                monthBars.ColumnDefinitions.Add(new ColumnDefinition());
+                foreach (var element in new FrameworkElement[] { bar, amount, label }) { Grid.SetColumn(element, slot); monthBars.Children.Add(element); }
+            }
+        }
+        CancellationTokenSource? monthlyLoad = null;
+        async Task LoadMonthlyAsync()
+        {
+            if (year.SelectedItem is not string yearLabel || !int.TryParse(yearLabel.TrimEnd('년'), out var shownYear)) return;
+            monthlyLoad?.Cancel(); var load = monthlyLoad = CancellationTokenSource.CreateLinkedTokenSource(Lifetime.Token);
+            // Figma shows six months: this year's six up to the current KST month (from January if fewer), a past year's July–December.
+            var thisMonth = ThisMonthInKorea(); var lastMonth = shownYear < thisMonth.Year ? 12 : shownYear == thisMonth.Year ? thisMonth.Month : 0;
+            var firstMonth = Math.Max(1, lastMonth - 5); var months = Enumerable.Range(firstMonth, Math.Max(0, lastMonth - firstMonth + 1)).ToArray();
+            monthlyNotice.Text = "불러오는 중입니다.";
+            // Each month is its own request (no list API); future months are not requested and a failed month stays an empty bar.
+            async Task<decimal?> MonthAsync(int month)
+            {
+                try
+                {
+                    var data = await api.SendAuthenticatedAsync(HttpMethod.Get, $"/api/users/usage?month={shownYear:0000}-{month:00}", cancellationToken: load.Token);
+                    return data.TryGetProperty("myCredits", out var field) && field.ValueKind == JsonValueKind.Number && field.TryGetDecimal(out var n) && n >= 0 ? n : null;
+                }
+                catch (Exception) when (!load.IsCancellationRequested) { return null; }
+            }
+            try
+            {
+                var credits = await Task.WhenAll(months.Select(MonthAsync));
+                if (!ReferenceEquals(load, monthlyLoad)) return;
+                DrawMonthly(shownYear, firstMonth, credits);
+                var failed = months.Where((_, slot) => credits[slot] is null).Select(m => $"{m}월").ToArray();
+                monthlyNotice.Text = failed.Length == 0 ? "" : $"{string.Join(", ", failed)} 사용량을 불러오지 못했습니다.";
+            }
+            catch (Exception) when (load.IsCancellationRequested) { }
+            finally { if (!ReferenceEquals(load, monthlyLoad)) load.Dispose(); }
+        }
+        year.SelectionChanged += async (_, _) => await LoadMonthlyAsync();
+        var billingDetail = new StackPanel { Margin = new(19, 11, 19, 15) };
+        var detailHeading = new DockPanel { Height = 32, Margin = new(0, 0, 0, 8) }; billingDetail.Children.Add(detailHeading);
+        var kind = Choices(["전체", "사용", "충전"], "전체"); kind.Width = 112; kind.Height = kind.MinHeight = 32; kind.Padding = new(11, 0, 25, 0); System.Windows.Automation.AutomationProperties.SetName(kind, "상세 내역 구분");
+        var kindField = new Grid { Width = 112, Height = 32 }; kindField.Children.Add(kind);
+        kindField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = ColorBrush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
+        kindField.Children.Add(new SvgViewbox { Source = new Uri("pack://application:,,,/Semojum.Feature.Usage.Wpf;component/Assets/Figma/account-chevron.svg"), Width = 16, Height = 16, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, 5, 0), Stretch = Stretch.None, IsHitTestVisible = false });
+        DockPanel.SetDock(kindField, Dock.Right); detailHeading.Children.Add(kindField);
+        detailHeading.Children.Add(new TextBlock { Text = "상세 내역", FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }); billingDetail.Children.Add(PaymentPanel(kind));
         billing.Children.Add(Card(billingDetail, 180));
-        tabs.Items.Add(new TabItem { Header = "과금 이력", Content = new ScrollViewer { Content = billing, Background = ColorBrush("#F4F6F9"), VerticalScrollBarVisibility = ScrollBarVisibility.Auto } });
+        var billingTab = new TabItem { Header = "과금 이력", Content = new ScrollViewer { Content = billing, Background = ColorBrush("#F4F6F9"), VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; tabs.Items.Add(billingTab);
+        tabs.SelectionChanged += async (_, e) => { if (e.Source == tabs && ReferenceEquals(tabs.SelectedItem, billingTab) && monthlyLoad is null) await LoadMonthlyAsync(); };
         var account = new StackPanel { Margin = new(24) };
         Row(account, "아이디", new TextBlock { Text = api.Account?.LoginId ?? "—" });
         Row(account, "계정명", new TextBlock { Text = api.Account?.DisplayName ?? "—" });
         Row(account, "권한", new TextBlock { Text = api.Account?.Role == "ROLE_ADMIN" ? "운영자" : "사용자" });
         account.Children.Add(new TextBlock { Text = "계정 정보 변경은 기관 관리자에게 문의해 주세요.", Margin = new(0, 16, 0, 0) });
         tabs.Items.Add(new TabItem { Header = "계정 정보", Content = account });
+        // 「기관 관리 · 관리자」 is shown to administrators only (Figma 263:6289-6290) and returns to their open 기관 관리 window.
+        var institutionHeader = new DockPanel(); var administratorLabel = new TextBlock { Text = "관리자", Foreground = ColorBrush("#8A8A8A"), Margin = new(0, 0, 12, 0) };
+        DockPanel.SetDock(administratorLabel, Dock.Right); institutionHeader.Children.Add(administratorLabel); institutionHeader.Children.Add(new TextBlock { Text = "기관 관리" });
+        var institutionTab = new TabItem { Header = institutionHeader }; System.Windows.Automation.AutomationProperties.SetName(institutionTab, "기관 관리 (관리자)");
+        if (administrator && actions?.OpenInstitution is not null) tabs.Items.Add(institutionTab);
         var boardClient = new BoardClient(api);
         var inquiryScreen = new Grid { Background = ColorBrush("#F4F6F9") }; var inquiryContent = new DockPanel { Margin = new(24, 20, 24, 24) }; inquiryScreen.Children.Add(inquiryContent);
         var inquiryHeading = new DockPanel { Height = 40 }; DockPanel.SetDock(inquiryHeading, Dock.Top); inquiryContent.Children.Add(inquiryHeading);
@@ -203,17 +278,20 @@ public sealed class UsageDialog : CompactDialog
         selectedInquiry = Button("상세 열기", () => SafeInquiryAsync(async () => { if (inquiryList.SelectedItem is BoardRow row) { var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token); if (actions is null) throw new InvalidOperationException("문의 화면을 열 수 없습니다."); actions.OpenPost(this, post); await LoadInquiriesAsync(); } })); detailActions.Children.Add(selectedInquiry);
         detailActions.Children.Add(Button("게시판 열기", () => { return SafeInquiryAsync(async () => { if (actions is null) throw new InvalidOperationException("게시판을 열 수 없습니다."); actions.OpenBoard(this); await LoadInquiriesAsync(); }); }));
         UpdateInquiryActions();
-        tabs.Items.Add(new TabItem { Header = "문의 내역", Content = inquiryScreen }); tabs.Items.Add(new TabItem { Header = "로그아웃" });
+        var inquiryTab = new TabItem { Header = "문의 내역", Content = inquiryScreen }; var logoutTab = new TabItem { Header = "로그아웃" };
+        tabs.Items.Add(inquiryTab); tabs.Items.Add(logoutTab);
         foreach (var tab in tabs.Items.Cast<TabItem>()) { tab.Padding = new(16, 0, 0, 0); }
         var logoutHeader = new StackPanel();
         logoutHeader.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Line"), Margin = new(16, 12, 12, 11) });
         logoutHeader.Children.Add(new TextBlock { Text = "로그아웃", Height = 32, Margin = new(16, 0, 0, 0), Foreground = ColorBrush("#C42B1C") });
-        ((TabItem)tabs.Items[4]).Header = logoutHeader; ((TabItem)tabs.Items[4]).Height = 56; ((TabItem)tabs.Items[4]).Padding = new(0);
+        logoutTab.Header = logoutHeader; logoutTab.Height = 56; logoutTab.Padding = new(0);
+        // Sections are compared by tab, not position: the administrator's 기관 관리 shifts 문의 내역 and 로그아웃.
         tabs.SelectionChanged += async (_, e) =>
         {
             if (e.Source != tabs) return;
-            if (tabs.SelectedIndex == 3 && !inquiryLoaded) await SafeInquiryAsync(() => LoadInquiriesAsync());
-            else if (tabs.SelectedIndex == 4) { LogoutRequested = true; DialogResult = true; }
+            if (tabs.SelectedItem == inquiryTab && !inquiryLoaded) await SafeInquiryAsync(() => LoadInquiriesAsync());
+            else if (tabs.SelectedItem == institutionTab) { DialogResult = true; actions?.OpenInstitution?.Invoke(this); }
+            else if (tabs.SelectedItem == logoutTab) { LogoutRequested = true; DialogResult = true; }
         };
         var history = new DockPanel { Margin = new(19, 12, 19, 16) };
         var jobsHeading = new DockPanel { Height = 32 };
@@ -241,7 +319,7 @@ public sealed class UsageDialog : CompactDialog
         var openTemplate = new DataTemplate { VisualTree = openRow }; var resumable = new DataTrigger { Binding = new Binding(nameof(JobRow.Status)), Value = "변환 중" };
         resumable.Setters.Add(new Setter(ContentProperty, "이어서 열기", "OpenJob"));
         resumable.Setters.Add(new Setter(System.Windows.Automation.AutomationProperties.NameProperty, new Binding(nameof(JobRow.FileName)) { StringFormat = "{0} 이어서 열기" }, "OpenJob")); openTemplate.Triggers.Add(resumable);
-        jobs.Columns.Add(new DataGridTemplateColumn { Header = "", Width = 96, CellTemplate = openTemplate });
+        jobs.Columns.Add(new DataGridTemplateColumn { Header = "", Width = 96, CellTemplate = openTemplate, Visibility = administrator ? Visibility.Collapsed : Visibility.Visible });
         history.Children.Add(jobs); var historyCard = Card(history, 420); panel.Children.Add(historyCard);
         System.Windows.Automation.AutomationProperties.SetAutomationId(historyCard, "UsageWorkHistoryCard");
         System.Windows.Automation.AutomationProperties.SetAutomationId(usageScroll, "UsageOverviewScroll");
@@ -252,19 +330,40 @@ public sealed class UsageDialog : CompactDialog
             if (!ReferenceEquals(e.OriginalSource, usageScroll) || e.ViewportHeightChange == 0 || e.ViewportHeight <= 0) return;
             historyCard.Height = Math.Max(420, e.ViewportHeight - 212);
         };
-        async Task LoadUsageAsync()
+        void ShowUsage(JsonElement data)
         {
-            // The server reports only the current month; 「지난달」 stays unavailable until it can be requested.
-            var data = await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/usage/daily?period=MONTH", cancellationToken: Lifetime.Token);
             summary.Text = Number(data, "orgRemaining");
-            usedTotal.Text = Number(data, "usedCredits");
+            usedTotal.Text = Number(data, "myCredits");
             summary.ToolTip = "기관에 남은 크레딧입니다. 문서 유형과 처리 방식에 따라 한 쪽당 차감량이 달라집니다.";
             var (personalPercent, orgPercent, orgUsed) = UsagePercentages(data);
             usedBar.Visibility = personalPercent is null ? Visibility.Collapsed : Visibility.Visible; usedBar.Value = personalPercent ?? 0;
             orgBar.Visibility = orgPercent is null ? Visibility.Collapsed : Visibility.Visible; orgBar.Value = orgPercent ?? 0;
-            usage.Text = personalPercent is null ? "사용률 정보 없음" : $"{Number(data, "usedCredits")} / {Number(data, "orgAllocated")} 크레딧"; usagePercentText.Text = personalPercent is null ? "" : $"{personalPercent:0}%";
+            usage.Text = personalPercent is null ? "사용률 정보 없음" : $"{Number(data, "myCredits")} / {Number(data, "orgAllocated")} 크레딧"; usagePercentText.Text = personalPercent is null ? "" : $"{personalPercent:0}%";
             orgUsage.Text = orgPercent is null ? "기관 사용률 정보 없음" : $"{orgUsed:#,0.##} / {Number(data, "orgAllocated")} 크레딧"; orgPercentText.Text = orgPercent is null ? "" : $"{orgPercent:0}%";
         }
+        var usageRequest = 0;
+        async Task LoadUsageAsync()
+        {
+            // 이번 달 and 지난달 (KST) both come from the monthly summary, the same source as the billing graph,
+            // so the cards and the graph's current-month bar always share one value and one ratio (myCredits ÷ orgAllocated).
+            var request = ++usageRequest; var month = ThisMonthInKorea().AddMonths(period.SelectedIndex == 1 ? -1 : 0);
+            try
+            {
+                var data = await api.SendAuthenticatedAsync(HttpMethod.Get, "/api/users/usage?month=" + month.ToString("yyyy-MM", CultureInfo.InvariantCulture), cancellationToken: Lifetime.Token);
+                if (request == usageRequest) ShowUsage(data);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && request == usageRequest)
+            {
+                // Never leave the other month's values under the newly chosen period.
+                ShowUsage(JsonSerializer.SerializeToElement(new { })); throw;
+            }
+        }
+        period.SelectionChanged += async (_, _) =>
+        {
+            try { await LoadUsageAsync(); }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Status.Text = "사용량을 불러오지 못했습니다. " + ex.Message; }
+        };
         async Task LoadJobsAsync()
         {
             var end = DateTime.Today; var start = range.SelectedIndex switch { 1 => end.AddDays(-89), 2 => new DateTime(end.Year, 1, 1), _ => end.AddDays(-29) };
@@ -272,9 +371,9 @@ public sealed class UsageDialog : CompactDialog
             jobs.ItemsSource = data.GetProperty("items").EnumerateArray().Select(ReadJobRow).ToArray();
         }
         range.SelectionChanged += async (_, _) => await RunAsync(LoadJobsAsync);
-        var jobsItem = new MenuItem { Header = "작업별 사용 내역" }; jobsItem.Click += async (_, _) => await RunAsync(async () => { tabs.SelectedIndex = 0; await LoadJobsAsync(); historyCard.BringIntoView(); }); viewMenu.Items.Add(jobsItem);
-        var usageItem = new MenuItem { Header = "사용량" }; usageItem.Click += (_, _) => { tabs.SelectedIndex = 0; usageScroll.ScrollToTop(); }; viewMenu.Items.Add(usageItem);
-        void OpenJob(JobRow j) { if (string.IsNullOrWhiteSpace(j.JobId) || j.JobId == "—") return; JobId = j.JobId; FileName = j.FileName; DialogResult = true; }
+        var jobsItem = new MenuItem { Header = "작업별 사용 내역" }; jobsItem.Click += async (_, _) => await RunAsync(async () => { tabs.SelectedItem = usageTab; await LoadJobsAsync(); historyCard.BringIntoView(); }); viewMenu.Items.Add(jobsItem);
+        var usageItem = new MenuItem { Header = "사용량" }; usageItem.Click += (_, _) => { tabs.SelectedItem = usageTab; usageScroll.ScrollToTop(); }; viewMenu.Items.Add(usageItem);
+        void OpenJob(JobRow j) { if (administrator || string.IsNullOrWhiteSpace(j.JobId) || j.JobId == "—") return; JobId = j.JobId; FileName = j.FileName; DialogResult = true; }
         void Open() { if (jobs.SelectedItem is JobRow j) OpenJob(j); }
         jobs.MouseDoubleClick += (_, _) => Open();
 
@@ -334,11 +433,19 @@ public sealed class UsageDialog : CompactDialog
             if (logo.Child is TextBlock text) { text.Text = "S"; text.FontFamily = new FontFamily("Segoe UI Symbol"); }
         }
     }
-    private static UIElement PaymentPanel()
+    /// <summary>A billing detail entry. No 구분 field is known from the server, so 사용/충전 follows the sign of the credit change as in the Figma rows (-11 사용, +3,000 충전).</summary>
+    internal sealed record BillingRow(string Date, string Description, decimal Credits)
+    {
+        public string Kind => Credits < 0 ? "사용" : Credits > 0 ? "충전" : "";
+        public string CreditsText => Credits.ToString("+#,0.##;-#,0.##;0", CultureInfo.InvariantCulture);
+    }
+    private static UIElement PaymentPanel(ComboBox kind)
     {
         var panel = new StackPanel(); var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, Height = 24, BorderThickness = new(0), Background = Brushes.White, HeadersVisibility = DataGridHeadersVisibility.Column };
-        foreach (var label in new[] { "날짜", "내용", "금액" }) grid.Columns.Add(new DataGridTextColumn { Header = label, Width = new(1, DataGridLengthUnitType.Star) });
-        panel.Children.Add(grid); panel.Children.Add(new TextBlock { Text = "이 계정에서는 결제 내역을 조회할 수 없습니다. 기관 관리자에게 확인해 주세요.", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new(0, 8, 0, 12) }); return panel;
+        foreach (var (label, property) in new[] { ("날짜", nameof(BillingRow.Date)), ("내용", nameof(BillingRow.Description)), ("금액", nameof(BillingRow.CreditsText)) })
+            grid.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(property), Width = new(1, DataGridLengthUnitType.Star) });
+        kind.SelectionChanged += (_, _) => grid.Items.Filter = kind.SelectedItem is "사용" or "충전" ? row => row is BillingRow entry && Equals(entry.Kind, kind.SelectedItem) : null;
+        System.Windows.Automation.AutomationProperties.SetAutomationId(grid, "BillingDetailGrid"); panel.Children.Add(grid); panel.Children.Add(new TextBlock { Text = "이 계정에서는 결제 내역을 조회할 수 없습니다. 기관 관리자에게 확인해 주세요.", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new(0, 8, 0, 12) }); return panel;
     }
     internal static string StatusLabel(string status, bool failed) => status switch
     {
@@ -378,14 +485,27 @@ public sealed class UsageDialog : CompactDialog
         });
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
+    /// <summary>The server's month boundary is KST, whatever the workstation's time zone.</summary>
+    internal static DateOnly ThisMonthInKorea()
+    {
+        var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time"));
+        return new DateOnly(now.Year, now.Month, 1);
+    }
+    /// <summary>One of four equal axis steps (Figma 0–4,000): the smallest 1, 2 or 5 × 10ⁿ that keeps the largest month under the top line.</summary>
+    internal static decimal AxisStep(decimal largest)
+    {
+        var rough = Math.Max(largest / 4, 1); var magnitude = (decimal)Math.Pow(10, Math.Floor(Math.Log10((double)rough)));
+        foreach (var factor in new[] { 1m, 2m, 5m }) if (factor * magnitude >= rough) return factor * magnitude;
+        return 10 * magnitude;
+    }
     internal static (double? Personal, double? Organization, decimal? OrganizationUsed) UsagePercentages(JsonElement data)
     {
         static decimal? Read(JsonElement element, string key) => element.TryGetProperty(key, out var field) && field.ValueKind == JsonValueKind.Number && field.TryGetDecimal(out var n) && n >= 0 ? n : null;
-        var allocated = Read(data, "orgAllocated"); var remaining = Read(data, "orgRemaining"); var used = Read(data, "usedCredits"); var reported = Read(data, "usedPercent");
+        var allocated = Read(data, "orgAllocated"); var remaining = Read(data, "orgRemaining"); var used = Read(data, "myCredits");
         if (allocated is not { } total || total <= 0) return (null, null, null);
         double? personal = null; double? organization = null; decimal? organizationUsed = null;
-        if (used is { } myUsed && myUsed <= total && reported is >= 0 and <= 100 && Math.Abs((double)(myUsed / total * 100 - reported.Value)) <= .11)
-            personal = (double)reported.Value;
+        // /api/users/usage sends no percentage: the personal bar is the month's myCredits ÷ the institution allocation.
+        if (used is { } myUsed && myUsed <= total) personal = (double)(myUsed / total * 100);
         if (remaining is { } rest && rest <= total)
         { organizationUsed = total - rest; organization = (double)(organizationUsed.Value / total * 100); }
         return (personal, organization, organizationUsed);

@@ -110,6 +110,12 @@ internal static class WindowsBoardDesignChecks
                 && noticeAuthor.FontWeight != FontWeights.Bold && postNumber.FontSize == 12 && postNumber.FontWeight == FontWeights.Normal
                 && postTitle.FontSize == 12 && postTitle.FontWeight == FontWeights.Normal,
                 "Board notice number and title use Figma bold typography without changing ordinary posts or notice authors");
+            noticeGrid.SelectedItem = noticeRow; var noticeScrolls = false;
+            var opened = await AnswerAsync(noticeBoard, 0, () => noticeGrid.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(noticeBoard)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent }),
+                notice => noticeScrolls = Descendants(notice).OfType<ScrollViewer>().Any(s => s.ScrollableHeight > 0));
+            check(opened is not null && opened.MessageText == "서버 점검 안내" && opened.DetailText == Fixture.NoticeBody
+                && opened.ActionButtons.Select(b => b.Content).SequenceEqual(new object[] { "확인" }) && Math.Abs(opened.Width - 520) <= 1 && Math.Abs(opened.Height - 316) <= 1 && noticeScrolls,
+                "A board notice opens in the app message window with its title, a 「확인」 action and a scrolling long body");
         }
         finally { noticeBoard.Close(); fixture.IncludeNotice = false; }
         var editor = new PostEditorDialog(client, null, "검수");
@@ -146,6 +152,10 @@ internal static class WindowsBoardDesignChecks
             var checkContainer = (FrameworkElement)VisualTreeHelper.GetParent(workOption);
             var checkRect = workOption.TransformToAncestor(checkContainer).TransformBounds(new Rect(0, 0, workOption.ActualWidth, workOption.ActualHeight));
             check(workOption.ActualHeight >= 20 && checkRect.Top >= 0 && checkRect.Bottom <= checkContainer.ActualHeight, "The work-information checkbox fits completely within its row");
+            var preview = (MenuItem)workOption.ContextMenu!.Items[0];
+            var previewed = await AnswerAsync(editor, 0, () => preview.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)));
+            check(previewed is { MessageText: "첨부할 작업 정보입니다.", DetailText: "검수" } && previewed.ActionButtons.Select(b => b.Content).SequenceEqual(new object[] { "확인" }),
+                "The work-information preview opens in the app message window with the exact text that will be attached");
             check(Descendants(editor).OfType<Button>().Where(b => Equals(b.Content, "취소") || Equals(b.Content, "등록")).Select(b => b.Content).SequenceEqual(new object[] { "취소", "등록" }), "Cancel precedes registration in the post editor");
             var choose = Descendants(editor).OfType<Button>().Single(b => Equals(b.Content, "파일 고르기"));
             check(choose.Width == 110 && choose.Height == 32 && choose.IsEnabled, "Post editor retains an enabled 110x32 Figma file picker");
@@ -215,8 +225,20 @@ internal static class WindowsBoardDesignChecks
             var attachmentRect = attachment.TransformToAncestor(postScroll).TransformBounds(new Rect(0, 0, attachment.ActualWidth, attachment.ActualHeight));
             check(attachmentRect.Left >= -1 && attachmentRect.Right <= postScroll.ViewportWidth + 2 && attachment.IsEnabled,
                 "The attachment download stays within a 480px detail window and remains enabled");
+            var deleteRed = false;
+            var declined = await AnswerAsync(detail, 1, () => Descendants(detail).OfType<Button>().Single(b => Equals(b.Content, "삭제")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)),
+                notice => deleteRed = notice.ActionButtons[0].Background is SolidColorBrush { Color: var red } && red == Color.FromRgb(196, 43, 28));
+            check(declined is { MessageText: "이 글을 삭제하시겠습니까?", DetailText: "문의 제목" } && declined.ActionButtons.Select(b => b.Content).SequenceEqual(new object[] { "삭제", "취소" })
+                && deleteRed && fixture.DeleteRequests == 0 && detail.IsVisible,
+                "Deleting a post asks in the app message window with a red 「삭제」, and 「취소」 keeps the post");
         }
         finally { detail.Close(); }
+        var deleting = new PostDialog(client, post, "검수"); NoticeDialog? accepted = null;
+        var guard = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) }; guard.Tick += (_, _) => { guard.Stop(); if (deleting.IsVisible) deleting.Close(); };
+        deleting.Loaded += async (_, _) => accepted = await AnswerAsync(deleting, 0, () => Descendants(deleting).OfType<Button>().Single(b => Equals(b.Content, "삭제")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
+        guard.Start(); bool? deleted;
+        try { deleted = deleting.ShowDialog(); } finally { guard.Stop(); }
+        check(accepted is not null && deleted == true && fixture.DeleteRequests == 1, "Choosing 「삭제」 in the message window deletes the post and closes its detail");
         var secretDetail = new PostDialog(client, post with { Secret = true }, "검수"); secretDetail.Show();
         try
         {
@@ -281,6 +303,23 @@ internal static class WindowsBoardDesignChecks
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
 
+    // Runs `open`, presses action `choice` of the app message window it opens over `owner`, and returns that window (null if none appeared).
+    private static async Task<NoticeDialog?> AnswerAsync(Window owner, int choice, Action open, Action<NoticeDialog>? inspect = null)
+    {
+        NoticeDialog? shown = null; var deadline = DateTime.UtcNow.AddSeconds(5);
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        timer.Tick += (_, _) =>
+        {
+            if (Application.Current.Windows.OfType<NoticeDialog>().FirstOrDefault(d => d.Owner == owner && d.IsVisible) is not { } notice)
+            { if (DateTime.UtcNow >= deadline) timer.Stop(); return; }
+            timer.Stop(); notice.UpdateLayout(); inspect?.Invoke(notice); shown = notice;
+            notice.ActionButtons[choice].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        };
+        timer.Start();
+        try { open(); while (shown is null && timer.IsEnabled) await Task.Delay(20); }
+        finally { timer.Stop(); }
+        return shown;
+    }
     private static bool HasIcon(DependencyObject root, string asset) => Descendants(root).OfType<SvgViewbox>().Any(i => i.Source?.ToString().EndsWith(asset, StringComparison.Ordinal) == true && i.Width == 16 && i.Height == 16 && i.Drawings is { Bounds.IsEmpty: false });
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); yield return child; foreach (var nested in Descendants(child)) yield return nested; } }
@@ -294,10 +333,13 @@ internal static class WindowsBoardDesignChecks
         internal bool? FailMine { get; set; }
         internal bool IncludeNotice { get; set; }
         internal int SaveRequests { get; private set; }
+        internal int DeleteRequests { get; private set; }
         internal string LastSaveBody { get; private set; } = "";
+        internal static readonly string NoticeBody = string.Join("\n", Enumerable.Range(1, 16).Select(i => $"{i}. 점검 중에는 변환과 게시판을 사용할 수 없습니다."));
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var page = 1;
+            if (request.Method == HttpMethod.Delete) DeleteRequests++;
             if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/board/posts")
             {
                 SaveRequests++; LastSaveBody = await request.Content!.ReadAsStringAsync(token);
@@ -318,6 +360,7 @@ internal static class WindowsBoardDesignChecks
             {
                 "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER" },
                 "/api/board/posts" => new { page, totalCount = 23, notices = IncludeNotice ? new object[] { new { postId = 0, title = "서버 점검 안내", answerCount = 0, author = "운영자", secret = false, createdAt = "2026-10-21", viewCount = 4, noticeId = "notice-1" } } : Array.Empty<object>(), items = new[] { new { postId = 42, title = "문의 제목", answerCount = 1, author = "작성자", secret = false, createdAt = "2026-10-21", viewCount = 4 } } },
+                "/api/board/notices/notice-1" => new { title = "서버 점검 안내", body = NoticeBody },
                 "/api/board/notifications" => new { unreadCount = 1, items = new[] { new { notificationId = 1, postId = 42, title = "문의 제목", answerCount = 1, lastAnsweredAt = "2026-10-22", read = false } } },
                 _ => new { }
             };

@@ -22,6 +22,12 @@ internal static class WindowsFileDialogDesignChecks
         check(!open.FileNames.Text.Contains("DOCX", StringComparison.OrdinalIgnoreCase), "The upload picker does not advertise DOCX");
         try { open.SetPaths(["document.docx"]); check(false, "The upload picker rejects DOCX"); }
         catch (ArgumentException) { check(true, "The upload picker rejects DOCX"); }
+        var unsupported = FileNotices.UnsupportedFormat(); var named = unsupported.DetailText.Split(" 만 ")[0].Split(" · "); unsupported.Close();
+        var panelText = LogicalDescendants(new Controls.OriginalUploadView()).OfType<TextBlock>().Single(t => t.Text.StartsWith("업로드 가능한 형식:", StringComparison.Ordinal)).Text;
+        var listed = panelText["업로드 가능한 형식:".Length..].Split([',', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var accepted = named.All(format => { try { open.SetPaths(["document." + format.ToLowerInvariant()]); return true; } catch (ArgumentException) { return false; } });
+        check(accepted && named.Order().SequenceEqual(listed.Order()) && !named.Contains("DOCX"),
+            "Case 1, the upload panel and the file picker name the same supported formats, without DOCX");
         var decomposed = "가나다.txt".Normalize(System.Text.NormalizationForm.FormD);
         open.SetPaths([decomposed]);
         check(open.FileNames.Text == "가나다.txt" && open.Paths.Single() == decomposed,
@@ -60,7 +66,7 @@ internal static class WindowsFileDialogDesignChecks
                 "A file that disappears before conversion shows an error without closing the dialog");
         }
         finally { open.Close(); }
-        CheckUploadTotalNotice(general, check);
+        CheckUploadPerFileNotice(general, check);
         var offline = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"), serverSettingsAvailable: false);
         offline.SetPaths(["document.smj"]); offline.Show();
         try
@@ -93,7 +99,7 @@ internal static class WindowsFileDialogDesignChecks
         finally { save.Close(); }
     }
 
-    private static void CheckUploadTotalNotice(BrailleForm general, Action<bool, string> check)
+    private static void CheckUploadPerFileNotice(BrailleForm general, Action<bool, string> check)
     {
         var directory = Path.Combine(Path.GetTempPath(), "semojum-upload-notice-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -101,12 +107,12 @@ internal static class WindowsFileDialogDesignChecks
         var second = Path.Combine(directory, "second.png");
         try
         {
-            const long mib = 1024L * 1024;
-            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(60 * mib);
-            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(60 * mib);
-            CheckNotice([first, second], "Two 60 MiB images report their total size rather than a single oversized file");
+            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
+            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
+            CheckNotice([first, second], null, "Two images of exactly 100 MiB each (200 MiB together) pass the per-file limit without a notice");
             using (var file = new FileStream(first, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes + 1);
-            CheckNotice([first], "One oversized file reports the selected total size accurately");
+            CheckNotice([first, second], "first.png", "One oversized image among several shows the notice and names only that file");
+            CheckNotice([first], "first.png", "One oversized file shows the per-file notice");
         }
         finally
         {
@@ -115,7 +121,7 @@ internal static class WindowsFileDialogDesignChecks
             Directory.Delete(directory);
         }
 
-        void CheckNotice(string[] paths, string description)
+        void CheckNotice(string[] paths, string? oversizedName, string description)
         {
             var dialog = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"));
             dialog.SetPaths(paths);
@@ -143,8 +149,11 @@ internal static class WindowsFileDialogDesignChecks
                 dialog.UpdateLayout(); timer.Start();
                 Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "변환 시작"))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                check(message == "파일이 100 MB 를 넘습니다." &&
-                      detail == "파일을 나누어 올린 뒤 이어 붙일 수 있습니다." && dialog.IsVisible,
+                var named = Descendants(dialog).OfType<TextBlock>().FirstOrDefault(t => t.Text.StartsWith("100 MB를 넘는 파일", StringComparison.Ordinal))?.Text ?? "";
+                check(oversizedName is null
+                        ? message is null && named.Length == 0
+                        : message == "파일이 100 MB 를 넘습니다." && detail == "파일을 나누어 올린 뒤 이어 붙일 수 있습니다." && dialog.IsVisible
+                          && named.Contains(oversizedName, StringComparison.Ordinal) && !named.Contains("second.png", StringComparison.Ordinal),
                     description);
             }
             finally { timer.Stop(); dialog.Close(); }
@@ -167,5 +176,12 @@ internal static class WindowsFileDialogDesignChecks
         yield return parent;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
             foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, i))) yield return child;
+    }
+    // An unshown control has no visual tree yet; its built content is reachable through the logical tree.
+    private static IEnumerable<object> LogicalDescendants(object node)
+    {
+        yield return node;
+        if (node is DependencyObject parent)
+            foreach (var child in LogicalTreeHelper.GetChildren(parent)) foreach (var nested in LogicalDescendants(child)) yield return nested;
     }
 }

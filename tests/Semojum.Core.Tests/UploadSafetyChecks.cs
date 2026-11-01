@@ -36,10 +36,14 @@ internal static class UploadSafetyChecks
             catch (ArgumentException ex) when (ex.Message.Contains("100")) { }
             if (new FileInfo(path).Length != JobClient.MaximumUploadBytes + 1) throw new Exception("Input altered");
             var second = Path.Combine(root, "second.png");
-            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
             await File.WriteAllBytesAsync(second, [1]);
-            try { await UploadFileReader.ReadAsync([path, second]); throw new Exception("Oversized aggregate accepted"); }
-            catch (ArgumentException ex) when (ex.Message.Contains("100")) { }
+            try { await UploadFileReader.ReadAsync([second, path]); throw new Exception("One oversized file among several accepted"); }
+            catch (ArgumentException ex) when (ex.Message.Contains("100") && ex.Message.Contains("grown.png") && !ex.Message.Contains("second.png")) { }
+            // The limit is per file: two files at exactly the limit (200 MiB together) are read in full.
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            using (var f = new FileStream(second, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            var both = await UploadFileReader.ReadAsync([path, second]);
+            if (both.Count != 2 || both.Any(file => file.Bytes.LongLength != JobClient.MaximumUploadBytes)) throw new Exception("Files within the per-file limit were rejected");
         }
         finally { Directory.Delete(root, true); }
     }
@@ -56,7 +60,7 @@ internal static class UploadSafetyChecks
             var exact = (Task<byte[]>)method.Invoke(null, [new MemoryStream(new byte[] { 1, 2, 3 }), 3L, CancellationToken.None])!;
             if (!(await exact).SequenceEqual(new byte[] { 1, 2, 3 })) throw new Exception("Exact byte limit was not accepted");
             var task = (Task<byte[]>)method.Invoke(null, [new MemoryStream(new byte[] { 1, 2, 3, 4 }), 3L, CancellationToken.None])!;
-            try { await task; throw new Exception("Actual bytes beyond remaining aggregate limit accepted"); }
+            try { await task; throw new Exception("Actual bytes beyond the per-file limit accepted"); }
             catch (ArgumentException ex) when (ex.Message.Contains("100")) { }
         }
         finally { Directory.Delete(root, true); }

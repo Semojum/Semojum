@@ -15,6 +15,7 @@ internal static class Qa4Checks
         yield return ("Text and braille panel evidence survives page parsing and SMJ round trip", RuleOriginRoundTrip);
         yield return ("QA4 inserting a footer continues to the next start without overlap or loss", Footers);
         yield return ("QA4 initial visual choice retains every alternative and protects saved manual results", VisualChoices);
+        yield return ("Server drafts of any count (2, 4) keep order, labels and selection through parsing, initial choice and SMJ", DraftCounts);
         yield return ("QA4 user forms create, update, copy and delete without changing the built-in form", Forms);
         yield return ("QA4 cancellation distinguishes accepted, finished and already-completed server responses", Cancellation);
     }
@@ -179,6 +180,37 @@ internal static class Qa4Checks
         {
             await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path);
             Check(restored.Blocks[0].Metadata.Alternatives?.Length == 3 && restored.Blocks[0].Metadata.SelectedIndex == 0 && restored.Options.VisualDescriptions!["chart"].DefaultOption == "개조식");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+    private static async Task DraftCounts()
+    {
+        // BE proto Draft carries text · label · tn_text; the element's selected_idx is 0-based. The number of drafts varies.
+        static EditorBlock Read(int id, int selected, params string[] labels) => JobClient.ReadPage(JsonSerializer.SerializeToElement(new
+        {
+            status = "COMPLETED", result = new { text_list = new[] { new { id = "x" + id, type = "image", contents = new[] { "원문" }, selected_idx = selected,
+                drafts = labels.Select(label => new { label, text = label + " 설명", tn_text = $"<!주>{label}<!/주>" }).ToArray() } } }
+        }), 1, id).Blocks.Single();
+        var two = Read(1, 1, "짧은 제목", "줄글");
+        var four = Read(2, 0, "생략", "짧은 제목", "개조식", "줄글");
+        Check(two.Metadata.Alternatives!.Select(d => d.Label).SequenceEqual(["짧은 제목", "줄글"]) && two.Metadata.SelectedIndex == 1);
+        Check(four.Metadata.Alternatives!.Select(d => d.Label).SequenceEqual(["생략", "짧은 제목", "개조식", "줄글"]) && four.Metadata.SelectedIndex == 0
+            && four.Metadata.Alternatives![2] is { Text: "개조식 설명", TaggedText: "<!주>개조식<!/주>" });
+        var options = new BrailleOptions(VisualDescriptions: VisualDescriptions.Defaults());
+        // No draft matches the figure default "개조식" among two, so the server's choice stays; among four the exact label wins.
+        Check(!VisualDraftSelection.ApplyInitial(two, options) && two.Metadata.SelectedIndex == 1 && two.Source == "원문");
+        Check(VisualDraftSelection.ApplyInitial(four, options) && four.Metadata.SelectedIndex == 2 && four.Source == "<!주>개조식<!/주>"
+            && four.Metadata.Alternatives!.Length == 4 && four.Metadata.OriginalSource == "원문");
+        four.Metadata = four.Metadata with { SelectedIndex = 3 }; four.Source = "<!주>줄글<!/주>";
+        var session = new DocumentSession(); session.Add(two); session.Add(four);
+        var path = Path.Combine(Path.GetTempPath(), "draft-counts-" + Guid.NewGuid().ToString("N") + ".smj");
+        try
+        {
+            await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path);
+            var (savedTwo, savedFour) = (restored.Blocks.Single(b => b.Id == 1), restored.Blocks.Single(b => b.Id == 2));
+            Check(savedTwo.Metadata.Alternatives!.Length == 2 && savedTwo.Metadata.SelectedIndex == 1 && savedTwo.Metadata.Alternatives![1].Label == "줄글");
+            Check(savedFour.Metadata.Alternatives!.Select(d => d.Label).SequenceEqual(["생략", "짧은 제목", "개조식", "줄글"])
+                && savedFour.Metadata.SelectedIndex == 3 && savedFour.Source == "<!주>줄글<!/주>");
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

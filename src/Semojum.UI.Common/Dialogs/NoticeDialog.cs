@@ -32,7 +32,7 @@ public class NoticeDialog : Window
             var choice = i; var label = labels[i];
             if (i > 0) buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
             buttons.ColumnDefinitions.Add(new ColumnDefinition());
-            var destructive = label is "덮어쓰기" or "합치기" or "저장 안 함";
+            var destructive = label is "덮어쓰기" or "합치기" or "저장 안 함" or "삭제";
             var color = destructive ? "#C42B1C" : i == 0 ? "#005FB8" : "#FBFBFB";
             var button = new Button { Content = label, MinWidth = 0, Height = 32, MinHeight = 0, Padding = new(4, 0, 4, 0), Margin = new(0),
                 Background = FigmaDialogElements.Brush(color), BorderBrush = FigmaDialogElements.Brush(i == 0 || destructive ? color : "#EAEAEA"),

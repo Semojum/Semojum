@@ -108,7 +108,8 @@ public partial class MainWindow
             {
                 await DownloadUpdateAsync();
                 var notice = "필수 업데이트가 필요합니다.\n" + updateStatus;
-                if (UpdateRequiredNoticeForChecks is { } showNotice) showNotice(notice); else MessageBox.Show(this, notice, "업데이트");
+                if (UpdateRequiredNoticeForChecks is { } showNotice) showNotice(notice);
+                else NoticeDialog.Choose(this, "필수 업데이트가 필요합니다.", updateStatus.Length > 0 ? updateStatus : "업데이트 후 다시 실행해 주세요.", ["확인"], error: true);
                 if (!await ConfirmAllDocumentsAsync())
                 {
                     session.Status = "필수 업데이트가 필요합니다. 작업을 저장한 뒤 다시 실행해 주세요.";
@@ -139,13 +140,15 @@ public partial class MainWindow
     private void ShowVersion()
     {
         var message = $"누리닷 {CurrentVersion.ToString(3)}\n";
-        if (availableVersion is not { } info) { MessageBox.Show(this, message + "버전 정보가 등록되지 않았거나 서버에 연결할 수 없습니다.", "버전 정보"); return; }
+        if (availableVersion is not { } info) { NoticeDialog.Choose(this, "버전 정보를 확인할 수 없습니다.", message + "버전 정보가 등록되지 않았거나 서버에 연결할 수 없습니다.", ["확인"]); return; }
         message += $"최신 버전: {info.Latest}\n{info.ReleaseNotes}\n{updateStatus}";
         if (info.Required(CurrentVersion)) message += "\n이 버전은 더 이상 지원되지 않습니다. 업데이트 후 실행해 주세요.";
-        if (!info.Available(CurrentVersion)) { MessageBox.Show(this, message + "\n최신 버전입니다.", "버전 정보"); return; }
-        if (info.DownloadUrl is null) { MessageBox.Show(this, message + "\n업데이트 다운로드 주소가 아직 등록되지 않았습니다. 관리자에게 문의해 주세요.", "버전 정보"); return; }
+        // 출시 설명은 길이를 알 수 없어 본문 8줄 높이로 열고, 넘치면 메시지창 본문이 스크롤됩니다.
+        if (!info.Available(CurrentVersion)) { NoticeDialog.Choose(this, "최신 버전입니다.", message.TrimEnd(), ["확인"], height: 316); return; }
+        if (info.DownloadUrl is null) { NoticeDialog.Choose(this, "업데이트 다운로드 주소가 아직 등록되지 않았습니다.", message.TrimEnd() + "\n관리자에게 문의해 주세요.", ["확인"], height: 316); return; }
         var question = message + "\n\n업데이트를 다운로드하시겠습니까?";
-        if ((UpdateConfirmationForChecks?.Invoke(question) ?? MessageBox.Show(this, question, "버전 정보", MessageBoxButton.YesNo)) == MessageBoxResult.Yes)
+        if ((UpdateConfirmationForChecks is { } confirm) ? confirm(question) == MessageBoxResult.Yes
+            : NoticeDialog.Choose(this, "업데이트를 다운로드하시겠습니까?", message.TrimEnd(), ["다운로드", "취소"], height: 316) == 0)
             _ = DownloadUpdateAsync();
     }
     private async Task CheckVersionAsync()
@@ -187,7 +190,8 @@ public partial class MainWindow
             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
             {
                 var message = "저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message;
-                if (LogoutCredentialErrorForChecks is { } report) report(message); else MessageBox.Show(this, message, "로그아웃");
+                if (LogoutCredentialErrorForChecks is { } report) report(message);
+                else NoticeDialog.Choose(this, "로그아웃하지 못했습니다.", "저장된 로그인 정보를 삭제하지 못했습니다. " + ex.Message, ["확인"], error: true);
                 return;
             }
             catch (Exception ex) when (ex is HttpRequestException or SemojumApiException) { } // Local credentials are already cleared, even if remote revocation is unavailable.

@@ -18,24 +18,30 @@ internal static class WindowsUsageFeedbackChecks
     {
         static (double? Personal, double? Organization, decimal? OrganizationUsed) Ratios(string text)
         { using var document = JsonDocument.Parse(text); return UsageDialog.UsagePercentages(document.RootElement); }
-        var valid = Ratios("{\"orgAllocated\":1000,\"orgRemaining\":600,\"usedCredits\":100,\"usedPercent\":10}");
-        check(valid is { Personal: 10, Organization: 40, OrganizationUsed: 400 }, "Personal and institution bars use their own server-supported numerators");
-        check(Ratios("{\"orgAllocated\":null,\"orgRemaining\":null,\"usedCredits\":10,\"usedPercent\":null}") == (null, null, null)
-            && Ratios("{\"orgAllocated\":0,\"orgRemaining\":0,\"usedCredits\":0,\"usedPercent\":0}") == (null, null, null),
+        var valid = Ratios("{\"month\":\"2026-10\",\"myCredits\":100,\"orgAllocated\":1000,\"orgUsed\":400,\"orgRemaining\":600}");
+        check(valid is { Personal: 10, Organization: 40, OrganizationUsed: 400 }, "Personal and institution bars use their own server-supported numerators (myCredits ÷ orgAllocated)");
+        check(Ratios("{\"myCredits\":10,\"orgAllocated\":null,\"orgUsed\":null,\"orgRemaining\":null}") == (null, null, null)
+            && Ratios("{\"myCredits\":0,\"orgAllocated\":0,\"orgUsed\":0,\"orgRemaining\":0}") == (null, null, null),
             "No allocation or zero denominator never invents a usage percentage");
-        var inconsistent = Ratios("{\"orgAllocated\":100,\"orgRemaining\":120,\"usedCredits\":20,\"usedPercent\":90}");
+        var inconsistent = Ratios("{\"myCredits\":120,\"orgAllocated\":100,\"orgUsed\":0,\"orgRemaining\":120}");
         check(inconsistent.Personal is null && inconsistent.Organization is null, "Contradictory personal and institution usage values do not produce bars");
-        var zero = Ratios("{\"orgAllocated\":100,\"orgRemaining\":100,\"usedCredits\":0,\"usedPercent\":0}");
+        var zero = Ratios("{\"myCredits\":0,\"orgAllocated\":100,\"orgUsed\":0,\"orgRemaining\":100}");
         check(zero is { Personal: 0, Organization: 0, OrganizationUsed: 0 }, "Verified zero usage is shown as zero rather than missing data");
 
-        var fixture = new Fixture { LoginAlias = "긴 계정 이름을 끝까지 확인할 수 있는 별칭" }; using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
+        var thisMonth = UsageDialog.ThisMonthInKorea();
+        // The first of the six shown months fails (when it is not the current month) to prove one failed month does not spoil the graph.
+        var firstShown = Math.Max(1, thisMonth.Month - 5);
+        var fixture = new Fixture { LoginAlias = "긴 계정 이름을 끝까지 확인할 수 있는 별칭", FailedUsageMonth = firstShown < thisMonth.Month ? $"{thisMonth.Year:0000}-{firstShown:00}" : null };
+        using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
         Window? inquiryOwner = null, postOwner = null, boardOwner = null;
         long? openedPost = null;
         var actions = new UsageActions(_ => { }, owner => { inquiryOwner = owner; return false; },
-            (owner, post) => { postOwner = owner; openedPost = post.PostId; }, owner => boardOwner = owner);
+            (owner, post) => { postOwner = owner; openedPost = post.PostId; }, owner => boardOwner = owner, _ => { });
         await api.LoginAsync("fixture", "fixture"); var dialog = new UsageDialog(api, actions: actions); dialog.Show();
         try
         {
+            check(dialog.Navigation.Items.Cast<TabItem>().Select(Section).SequenceEqual(["사용량", "과금 이력", "계정 정보", "문의 내역", "로그아웃"]),
+                "A user (점역사) account's my page hides the administrator-only 기관 관리 section");
             await Wait(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "600"));
             check(!Descendants(dialog).OfType<Button>().Any(b => Equals(b.Content, "쪽 구매")), "The institution credit card has no purchase button, as in the final design");
             var accountName = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageAccountName");
@@ -84,6 +90,15 @@ internal static class WindowsUsageFeedbackChecks
                 "A short usage window scrolls to the end of the loaded work history");
             dialog.Width = oldWidth; dialog.Height = oldHeight; overviewScroll.ScrollToTop();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            dialog.Navigation.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            Grid? monthBars = null;
+            await Wait(() => (monthBars = Descendants(dialog).OfType<Grid>().FirstOrDefault(g => System.Windows.Automation.AutomationProperties.GetAutomationId(g) == "BillingMonthlyBars")) is { Children.Count: > 0 });
+            var monthColumns = monthBars!.Children.OfType<Border>().ToArray();
+            var monthlyNotice = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "BillingMonthlyNotice").Text;
+            check(monthColumns.Length == Math.Min(6, thisMonth.Month) && (fixture.FailedUsageMonth is null ? monthlyNotice.Length == 0
+                    : monthlyNotice == $"{firstShown}월 사용량을 불러오지 못했습니다." && monthColumns[0].Height == 0 && monthColumns.Skip(1).All(b => b.Height > 0)
+                      && monthBars.Children.OfType<TextBlock>().Any(t => Grid.GetColumn(t) == 0 && t.Text == "—")),
+                "A month whose usage request fails stays an empty bar with a one-line notice while the other months are still drawn");
             dialog.Navigation.SelectedIndex = 3;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             await Wait(() => Descendants(dialog).OfType<ListBox>().Any());
@@ -172,6 +187,51 @@ internal static class WindowsUsageFeedbackChecks
                 "Usage heading never invents a name without an authenticated account");
         }
         finally { anonymousDialog.Close(); }
+
+        // An administrator's my page has six sections; sections are found by tab, so 문의 내역 and 로그아웃 still work after the inserted 기관 관리.
+        var adminFixture = new Fixture { LoginRole = "ROLE_ORG_ADMIN" }; using var adminHttp = new HttpClient(adminFixture); var adminApi = new SemojumApiClient(adminHttp);
+        await adminApi.LoginAsync("org-admin", "fixture");
+        Window? institutionOwner = null; string[] adminSections = []; var adminLabel = ""; var adminInquiries = false; var adminOpenColumn = Visibility.Visible;
+        var adminDialog = new UsageDialog(adminApi, actions: new UsageActions(_ => { }, _ => false, (_, _) => { }, _ => { }, owner => institutionOwner = owner));
+        var adminResult = await DriveModalAsync(adminDialog, async () =>
+        {
+            var tabs = adminDialog.Navigation.Items.Cast<TabItem>().ToArray(); adminSections = tabs.Select(Section).ToArray();
+            adminLabel = tabs.FirstOrDefault(t => Section(t) == "기관 관리")?.Header is Panel header ? header.Children.OfType<TextBlock>().First().Text : "";
+            DataGrid? jobs = null;
+            await Wait(() => (jobs = Descendants(adminDialog).OfType<DataGrid>().FirstOrDefault(g => g.Columns.Any(c => Equals(c.Header, "모드")))) is { Items.Count: > 0 });
+            adminOpenColumn = jobs!.Columns.Last().Visibility;
+            adminDialog.Navigation.SelectedItem = tabs.Single(t => Section(t) == "문의 내역");
+            await Wait(() => Descendants(adminDialog).OfType<ListBox>().Any(l => l.Items.Count == 10)); adminInquiries = true;
+            adminDialog.Navigation.SelectedItem = tabs.Single(t => Section(t) == "기관 관리");
+        });
+        check(adminSections.SequenceEqual(["사용량", "과금 이력", "계정 정보", "기관 관리", "문의 내역", "로그아웃"]) && adminLabel == "관리자",
+            "An administrator's my page shows the six final sections with 「기관 관리 · 관리자」 between 계정 정보 and 문의 내역");
+        check(adminInquiries && adminFixture.MineOnly, "With 기관 관리 inserted, the 문의 내역 section still loads the inquiry history");
+        check(adminOpenColumn == Visibility.Collapsed, "An administrator's work list offers no 열기 into the editor");
+        check(adminResult == true && ReferenceEquals(institutionOwner, adminDialog) && !adminDialog.LogoutRequested && adminDialog.JobId is null,
+            "Choosing 기관 관리 closes my page and brings the administrator's 기관 관리 window forward instead of logging out");
+        var adminLogoutDialog = new UsageDialog(adminApi, actions: new UsageActions(_ => { }, _ => false, (_, _) => { }, _ => { }, _ => { }));
+        var logoutResult = await DriveModalAsync(adminLogoutDialog, () =>
+        {
+            adminLogoutDialog.Navigation.SelectedItem = adminLogoutDialog.Navigation.Items.Cast<TabItem>().Single(t => Section(t) == "로그아웃");
+            return Task.CompletedTask;
+        });
+        check(logoutResult == true && adminLogoutDialog.LogoutRequested, "The administrator's 로그아웃 section, now the sixth tab, still requests logout");
+    }
+    private static string Section(TabItem tab) => tab.Header as string ?? ((Panel)tab.Header).Children.OfType<TextBlock>().Last().Text;
+    // Shows a my page modally (its sections close it through DialogResult) while the interaction runs inside the modal loop.
+    private static async Task<bool?> DriveModalAsync(Window dialog, Func<Task> interaction)
+    {
+        Exception? failure = null;
+        dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(new Action(async () =>
+        {
+            try { await interaction(); }
+            catch (Exception ex) { failure = ex; }
+            finally { if (dialog.IsVisible) dialog.DialogResult = false; }
+        }), DispatcherPriority.ApplicationIdle);
+        var result = await dialog.Dispatcher.InvokeAsync(dialog.ShowDialog);
+        if (failure is not null) throw failure;
+        return result;
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); yield return child; foreach (var descendant in Descendants(child)) yield return descendant; } }
@@ -180,12 +240,14 @@ internal static class WindowsUsageFeedbackChecks
     private sealed class Fixture : HttpMessageHandler
     {
         private readonly TaskCompletionSource<HttpResponseMessage> second = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal bool MineOnly; internal bool SecondStarted; internal bool PageTwoFails = true; internal int PageTwoRequests; internal string? LoginAlias;
+        internal bool MineOnly; internal bool SecondStarted; internal bool PageTwoFails = true; internal int PageTwoRequests; internal string? LoginAlias; internal string LoginRole = "ROLE_USER"; internal string? FailedUsageMonth;
         internal void FailSecond() => second.TrySetResult(Json(HttpStatusCode.Forbidden, "{\"isSuccess\":false,\"code\":\"DENIED\",\"message\":\"접근할 수 없습니다\"}"));
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             var path = request.RequestUri!.AbsolutePath;
             if (path == "/api/board/posts/2") { SecondStarted = true; return second.Task; }
+            if (path == "/api/users/usage" && FailedUsageMonth is { } failedMonth && request.RequestUri.Query.Contains("month=" + failedMonth, StringComparison.Ordinal))
+                return Task.FromResult(Json(HttpStatusCode.InternalServerError, "{\"isSuccess\":false,\"code\":\"ERROR\",\"message\":\"실패\"}"));
             if (path == "/api/board/posts" && request.RequestUri.Query.Contains("page=2", StringComparison.OrdinalIgnoreCase))
             {
                 PageTwoRequests++;
@@ -194,8 +256,8 @@ internal static class WindowsUsageFeedbackChecks
             }
             object result = path switch
             {
-                "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER", alias = LoginAlias },
-                "/api/users/usage/daily" => new { from = "2026-10-01", to = "2026-10-30", orgRemaining = 600, orgAllocated = 1000, usedCredits = 100, usedPercent = 10, daily = Array.Empty<object>(), bySource = Array.Empty<object>() },
+                "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = LoginRole, alias = LoginAlias },
+                "/api/users/usage" => new { myCredits = 100, orgAllocated = 1000, orgUsed = 400, orgRemaining = 600 },
                 "/api/users/usage/jobs" => new { items = new[] { new { jobId = "job", fileName = "작업.pdf", mode = "c", status = "COMPLETED", donePages = 1, totalPages = 1, failedPages = 0, credits = 1, finishedAt = "2026-10-30" } } },
                 "/api/board/posts" => Posts(request.RequestUri.Query),
                 "/api/board/posts/1" => new { postId = 1, title = "첫 문의", content = "첫 문의 본문", author = "나", mine = true, secret = false, hidden = false, createdAt = "2026-10-01", updatedAt = "2026-10-01", viewCount = 1, attachments = Array.Empty<object>(), answers = new[] { new { answerId = 1, content = "첫 답변", mine = false, answeredAt = "2026-10-02", updatedAt = "2026-10-02" }, new { answerId = 2, content = "둘째 답변", mine = false, answeredAt = "2026-10-03", updatedAt = "2026-10-03" } } },

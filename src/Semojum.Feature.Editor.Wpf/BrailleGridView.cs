@@ -85,7 +85,7 @@ public sealed partial class BrailleGridView : ListBox
             var starts = Enumerable.Range(0, marks.Length).OrderBy(i => marks[i].Start).ToArray();
             var ends = Enumerable.Range(0, marks.Length).OrderBy(i => marks[i].Start + marks[i].Length).ToArray();
             var active = new SortedSet<int>();
-            var byKind = new[] { new SortedSet<int>(), new SortedSet<int>(), new SortedSet<int>() };
+            var byKind = Enum.GetValues<ReviewKind>().Select(_ => new SortedSet<int>()).ToArray();
             var positions = new Dictionary<int, (ReviewMark Last, ReviewKind[] Kinds)>();
             var startIndex = 0; var endIndex = 0;
             foreach (var offset in group.Select(cell => cell.Offset).Distinct().OrderBy(offset => offset))
@@ -289,7 +289,9 @@ public sealed partial class BrailleGridView : ListBox
                             : cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick)
                             : owner?.HighContrast == true ? Brushes.White : Brushes.Black;
                         Text(cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, textBrush);
-                        if (mark is not null && mark.Kind != ReviewKind.HumanConfirmed)
+                        if (mark is { Kind: ReviewKind.OpenWarning })
+                            ReviewVisuals.Wave(dc, owner?.HighContrast == true ? Brushes.White : ReviewVisuals.Ink(mark.Kind), box.Left, box.Right, box.Bottom - 1);
+                        else if (mark is not null && mark.Kind != ReviewKind.HumanConfirmed)
                         {
                             var lineY = mark.Kind == ReviewKind.SuggestCorrection ? box.Bottom - 2 : box.Top + box.Height / 2;
                             dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : ReviewVisuals.Ink(mark.Kind), 1), new Point(box.Left, lineY), new Point(box.Right, lineY));

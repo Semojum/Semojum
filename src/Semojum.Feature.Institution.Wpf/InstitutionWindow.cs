@@ -8,7 +8,7 @@ using Semojum.Desktop.Services;
 
 namespace Semojum.Desktop.Dialogs;
 
-/// <summary>Institution administrator's desktop workspace.</summary>
+/// <summary>Institution administrator's top-level desktop window 「기관 관리 - 누리닷」; administrators do not use the editor.</summary>
 public sealed partial class InstitutionWindow : CompactDialog
 {
     private Window ModalOwner => Window.GetWindow(Root) ?? this;
@@ -49,8 +49,9 @@ public sealed partial class InstitutionWindow : CompactDialog
     internal Button AccountRequest { get; }
     internal Button CreditRequest { get; }
     internal MenuItem LogoutItem { get; }
+    internal MenuItem? MyPageItem { get; }
 
-    public InstitutionWindow(SemojumApiClient api, Func<Task<bool>> logout) : base("기관 관리 - 누리닷", 1440, 1000, editor: true)
+    public InstitutionWindow(SemojumApiClient api, Func<Task<bool>> logout, Action<InstitutionWindow>? openMyPage = null) : base("기관 관리 - 누리닷", 1440, 1000, editor: true)
     {
         this.api = api; this.logout = logout; institutionSessionMarker = api.SessionMarker;
         MinWidth = 480; MinHeight = 360; Root.Background = Brushes.White; ApplyCaption();
@@ -61,6 +62,12 @@ public sealed partial class InstitutionWindow : CompactDialog
         menu.Items.Add(new MenuItem { Header = "보기(_V)", Width = 64 });
         var information = new MenuItem { Header = "정보(_A)", Width = 64 }; menu.Items.Add(information);
         var help = new MenuItem { Header = "도움말" }; help.Click += (_, _) => CommonWindowServices.ShowHelp(ModalOwner, "사용량과 작업 이력"); information.Items.Add(help);
+        // Like the editor's 정보 menu (D1), my page sits below help; its 기관 관리 section returns here.
+        if (openMyPage is not null)
+        {
+            information.Items.Add(new Separator { Style = TryFindResource("DesktopMenuSeparator") as Style });
+            MyPageItem = new MenuItem { Header = "마이페이지 · 사용량" }; MyPageItem.Click += (_, _) => openMyPage(this); information.Items.Add(MyPageItem);
+        }
         Root.PreviewKeyDown += async (_, e) =>
         {
             // The final page has no refresh button; F5 keeps the manual reload.
@@ -174,26 +181,7 @@ public sealed partial class InstitutionWindow : CompactDialog
         };
     }
 
-    internal async Task ShowEmbeddedAsync(Semojum.UI.Common.IEmbeddedScreenHost host)
-    {
-        var owner = host.Window;
-        if (Content is not Grid frame || frame.Children.OfType<ContentPresenter>().SingleOrDefault() is not { } presenter || !ReferenceEquals(presenter.Content, Root))
-            throw new InvalidOperationException("기관 관리 화면을 만들지 못했습니다.");
-        presenter.Content = null;
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var closed = false;
-        void OnClosed(object? _, EventArgs __) { closed = true; completion.TrySetResult(true); }
-        void OwnerClosed(object? _, EventArgs __) => completion.TrySetResult(false);
-        Closed += OnClosed; owner.Closed += OwnerClosed;
-        try { await host.ShowScreenAsync(Root, "누리닷 기관 관리", completion.Task); }
-        finally
-        {
-            owner.Closed -= OwnerClosed;
-            if (!closed) Close();
-            Closed -= OnClosed;
-        }
-    }
-    private async Task LogoutAsync()
+    internal async Task LogoutAsync()
     {
         if (loggingOut) return;
         loggingOut = true; LogoutItem.IsEnabled = false;

@@ -15,7 +15,7 @@ public static class BlockEditing
         var sourceLength = first.Source.Length; var brailleLength = first.Braille.Length;
         first.Source += second.Source; first.Braille += second.Braille;
         // Combining blocks changes the source context even when one source is empty.
-        first.InvalidateBrailleConfirmations();
+        first.InvalidateBrailleConfirmations(); ServerWarnings.Resolve(first);
         first.HasManualBraille = keepBraille && (first.HasManualBraille || second.HasManualBraille);
         first.Translation = null;
         first.Metadata = first.Metadata with { BoundingBox = Union(first.Metadata.BoundingBox, second.Metadata.BoundingBox),
@@ -28,6 +28,8 @@ public static class BlockEditing
             var moved = mark with { Id = id, Start = mark.Start + (mark.Panel == ReviewPanel.Text ? sourceLength : brailleLength) };
             if (moved.Panel == ReviewPanel.Braille && moved.Kind == ReviewKind.HumanConfirmed)
                 moved = moved with { IsStale = true, Length = 0 };
+            // Merging edits both blocks, which resolves their server warnings.
+            if (moved.Kind == ReviewKind.OpenWarning) moved = ServerWarnings.Resolved(moved);
             first.ReviewMarks.Add(moved);
         }
         session.Blocks.Remove(second); session.ActiveBlock = first;

@@ -25,13 +25,9 @@ public partial class MainWindow
                 if (selected is not { Length: > 0 }) return;
                 if (!(selected.Length == 1 && Path.GetExtension(selected[0]).Equals(".smj", StringComparison.OrdinalIgnoreCase)))
                 {
-                    long total = 0;
-                    foreach (var path in selected)
-                    {
-                        var length = new FileInfo(path).Length;
-                        total = length > long.MaxValue - total ? long.MaxValue : total + length;
-                    }
-                    if (total > JobClient.MaximumUploadBytes) { OriginalUpload.ShowLimitWarning(selected, total); return; }
+                    // Figma C3: the limit applies to each file, not to the selection as a whole.
+                    var oversized = selected.Select(path => (Path: path, Bytes: new FileInfo(path).Length)).Where(file => file.Bytes > JobClient.MaximumUploadBytes).ToArray();
+                    if (oversized.Length > 0) { OriginalUpload.ShowLimitWarning(oversized); return; }
                 }
                 OriginalUpload.ClearLimitWarning();
                 await UploadAsync(selected);
@@ -96,7 +92,7 @@ public partial class MainWindow
                     if (!File.Exists(path))
                     {
                         preferences = LocalWorkspace.Forget(preferences, path); await PersistPreferencesAsync();
-                        MessageBox.Show(this, "파일이 이동되거나 삭제되어 최근 목록에서 제외했습니다.", "최근 문서"); return;
+                        NoticeDialog.Choose(this, "파일을 찾을 수 없습니다.", "파일이 이동되거나 삭제되어 최근 목록에서 제외했습니다.", ["확인"]); return;
                     }
                     await OpenAsync(path);
                 }

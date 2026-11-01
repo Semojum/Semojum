@@ -164,7 +164,11 @@ public sealed class BoardDialog : CompactDialog
         {
             if (grid.SelectedItem is not BoardRow row) return;
             if (row.NoticeId is { } notice)
-            { var n = await client.NoticeAsync(notice, Lifetime.Token); MessageBox.Show(this, n.GetProperty("body").GetString(), n.GetProperty("title").GetString()); }
+            {
+                // 길이를 알 수 없는 공지 본문은 8줄 높이로 열고, 넘치면 메시지창 본문이 스크롤됩니다.
+                var n = await client.NoticeAsync(notice, Lifetime.Token);
+                NoticeDialog.Choose(this, n.GetProperty("title").GetString() ?? "공지", n.GetProperty("body").GetString() ?? "", ["확인"], height: 316);
+            }
             else new PostDialog(client, await client.ReadAsync(row.PostId, Lifetime.Token), workInfo) { Owner = this }.ShowDialog();
             await LoadAsync();
         }
@@ -266,7 +270,7 @@ public sealed class PostEditorDialog : CompactDialog
         remove.Click += (_, _) => { if (list.SelectedItem is AttachmentChoice a) attachments.Remove(a); };
         list.PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Delete && list.SelectedItem is AttachmentChoice a) { attachments.Remove(a); e.Handled = true; } };
         var infoMenu = new ContextMenu(); var infoPreview = new MenuItem { Header = "첨부할 작업 정보 보기" }; infoMenu.Items.Add(infoPreview); info.ContextMenu = infoMenu;
-        infoPreview.Click += (_, _) => MessageBox.Show(this, workInfo, "첨부할 작업 정보");
+        infoPreview.Click += (_, _) => NoticeDialog.Choose(this, "첨부할 작업 정보입니다.", workInfo, ["확인"], height: 316);
         Action(post is null ? "등록" : "저장", async () =>
         {
             var files = new List<UploadFile>();
@@ -327,7 +331,7 @@ public sealed class PostDialog : CompactDialog
         if (post.Mine)
         {
             Action("수정", () => { var d = new PostEditorDialog(client, post, workInfo) { Owner = this }; if (d.ShowDialog() == true && d.SavedPost is { } changed) { post = changed; Title = "게시판 — " + post.Title; Render(); } });
-            Action("삭제", async () => { if (MessageBox.Show(this, "이 글을 삭제하시겠습니까?", "글 삭제", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; await client.DeleteAsync(post.PostId, Lifetime.Token); DialogResult = true; });
+            Action("삭제", async () => { if (NoticeDialog.Choose(this, "이 글을 삭제하시겠습니까?", post.Title, ["삭제", "취소"], width: 440) != 0) return; await client.DeleteAsync(post.PostId, Lifetime.Token); DialogResult = true; });
         }
         foreach (Button button in Actions.Children) { PublicDialogDesign.StyleAction(button); button.Width = 56; }
     }

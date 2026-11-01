@@ -271,7 +271,7 @@
       <Border x:Name="DraftDock" Grid.Column="2" Grid.ColumnSpan="3" Panel.ZIndex="10" VerticalAlignment="Bottom" Height="212"
               Visibility="Collapsed" Background="White" BorderBrush="#D1D1D1" BorderThickness="1">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="28"/><RowDefinition Height="40"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Grid.RowDefinitions><RowDefinition Height="28"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <Border Background="#F3F3F3" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
             <DockPanel Margin="11,0,11,0">
               <Button x:Name="DraftDockClose" DockPanel.Dock="Right" Click="DraftDockClose_Click" Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0" Background="Transparent" BorderBrush="Transparent" Style="{StaticResource PanelButton}" ToolTip="선택한 초안 적용하고 닫기" AutomationProperties.Name="선택한 초안 적용하고 닫기"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/draft-dock-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
@@ -279,8 +279,8 @@
               <TextBlock x:Name="DraftDockTitle" FontFamily="Malgun Gothic" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
             </DockPanel>
           </Border>
-          <Border Grid.Row="1" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,32,0"><UniformGrid x:Name="DraftChoiceGrid" Columns="4"/></ScrollViewer>
+          <Border Grid.Row="1" MinHeight="40" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
+            <ScrollViewer x:Name="DraftChoiceScroll" MaxHeight="76" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,32,0"><UniformGrid x:Name="DraftChoiceGrid" Columns="4"/></ScrollViewer>
           </Border>
           <Grid Grid.Row="2">
             <Grid.ColumnDefinitions><ColumnDefinition x:Name="DraftTextColumn"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
