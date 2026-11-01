@@ -1,0 +1,11 @@
+SimBraille (Regular)
+Version 1.13, February 21, 2008
+Copyright (c) Duxbury Systems, Inc. 1991-2008
+
+The desktop application bundles this font unmodified as Assets/Fonts/SimBraille.ttf
+and uses it to draw braille cells (Unicode U+2800-U+28FF) and spaces.
+
+The Semojum project owner confirmed on 2026-11-01 that the font may be used and
+distributed with the application. No license text was supplied with the font file;
+the terms are those of the copyright holder, Duxbury Systems, Inc.
+(https://www.duxburysystems.com/).
