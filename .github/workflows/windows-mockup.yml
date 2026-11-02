@@ -66,6 +66,11 @@ jobs:
         with:
           name: Semojum-win-x64
           path: artifacts/Semojum-win-x64.zip
+      - name: Save Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Semojum-win-x64-msi
+          path: artifacts/Semojum-win-x64.msi
       - name: Save UI verification
         if: always()
         uses: actions/upload-artifact@v4

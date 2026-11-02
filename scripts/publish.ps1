@@ -12,6 +12,10 @@ try {
     & "$PSScriptRoot/build-engine.ps1" -Output "$output/engine"
     Copy-Item README.md, THIRD-PARTY-NOTICES.md -Destination $output
     Copy-Item licenses -Destination $output -Recurse -Force
+    # The zip stays the in-app update package; the MSI installs the same folder per user and starts the app.
     Compress-Archive -Path "$output/*" -DestinationPath "artifacts/Semojum-$Runtime.zip" -Force
-    Write-Host "Ready: artifacts/Semojum-$Runtime.zip"
+    dotnet build installer/Semojum.Installer.wixproj @versionArgs -c Release "-p:AppDir=$output" -o artifacts/installer
+    if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+    Copy-Item "artifacts/installer/Semojum-$Runtime.msi" "artifacts/Semojum-$Runtime.msi" -Force
+    Write-Host "Ready: artifacts/Semojum-$Runtime.zip, artifacts/Semojum-$Runtime.msi"
 } finally { Pop-Location }
