@@ -38,8 +38,10 @@ internal static class WindowsCaseDesignChecks
             credit.UpdateLayout(); Capture(credit, "no-credits.png");
             check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["크레딧 구매", "문의하기", "닫기"]),
                 "Credit notice offers the final purchase, inquiry and close actions");
-            check(credit.DetailText == "크레딧을 충전한 뒤 상단 알림 창의 「이어서 처리」를 눌러 재개할 수 있습니다.",
-                "Credit notice points to the resume action in the top notice");
+            // Figma Case 16 (263:11231, 2026-11-01) is the mid-conversion stop; the server checks no credits before upload.
+            check(credit.MessageText == "크레딧이 모두 소모되어 변환을 멈췄습니다." && credit.DetailText == "크레딧을 충전한 뒤 상단 알림 창의 「이어서 처리」를 눌러 재개할 수 있습니다."
+                  && Math.Abs(credit.Width - 613) <= 1 && Math.Abs(credit.Height - 226) <= 1,
+                "Credit notice follows the final Case 16 stop wording and points to the resume action in the top notice");
         }
         finally { credit.Close(); }
         var partial = FileNotices.PartialConversion(10, 8, [2, 4]); partial.Show();
@@ -54,10 +56,14 @@ internal static class WindowsCaseDesignChecks
         check(login.MessageText == "아이디 또는 비밀번호가 맞지 않습니다." && login.ActionButtons[1].Content as string == "비밀번호 찾기", "Login notice follows the final Case 14 wording");
         var locked = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4006", "계정이 잠겼습니다."));
         check(locked.MessageText == "계정이 잠겼습니다.", "A locked-account notice keeps the server message");
+        var policyLogin = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "Bad credentials", System.Text.Json.JsonSerializer.SerializeToElement(new { remainingAttempts = 1, maxAttempts = 3, lockMinutes = 30 })));
+        var policyLocked = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.TooManyRequests, "AUTH4006", "로그인을 5회 실패해 10분 동안 잠겼습니다.", System.Text.Json.JsonSerializer.SerializeToElement(new { unlockAt = "2026-11-01T22:10:00", maxAttempts = 3, lockMinutes = 30 })));
+        check(policyLogin.DetailText == "남은 횟수 1회입니다. 3회 실패하면 30분 동안 잠깁니다." && policyLocked.MessageText == "로그인을 3회 실패해 30분 동안 잠겼습니다."
+            && policyLocked.DetailText == "다시 시도할 수 있는 시각: 22:10", "Login failure and lock notices state the server's maxAttempts, lockMinutes and unlockAt instead of a fixed policy");
         var disconnected = FileNotices.Disconnected(47); var oversized = FileNotices.OversizedFile();
         check(disconnected.DetailText == "47쪽까지 변환한 내용은 보관했습니다." && oversized.MessageText == "파일이 100 MB 를 넘습니다.",
             "Disconnected and oversized notices follow the final Case 7 and Case 2 wording");
-        foreach (var notice in new[] { login, locked, disconnected, oversized }) notice.Close();
+        foreach (var notice in new[] { login, locked, policyLogin, policyLocked, disconnected, oversized }) notice.Close();
         foreach (var index in new[] { 0, 1, 2 })
         {
             var dialog = FileNotices.NoCredits();

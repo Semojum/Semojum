@@ -24,20 +24,22 @@ internal sealed class InstitutionAccountDetailDialog : CompactDialog
         AutomationProperties.SetName(close, "닫기"); close.Click += (_, _) => Close(); header.Children.Add(close); layout.Children.Add(header);
         var body = new StackPanel { Margin = new(24, 15, 24, 0) };
         var bodyScroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetRow(bodyScroll, 1); layout.Children.Add(bodyScroll);
-        void Section(string title, params (string Label, string Value)[] fields)
+        void Section(string title, params (string Label, string Value, bool Bold)[] fields)
         {
             body.Children.Add(new TextBlock { Text = title, Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
             var rows = new StackPanel { Margin = new(16, 8, 16, 8) };
-            foreach (var (label, value) in fields)
+            foreach (var (label, value, bold) in fields)
             {
                 var line = new Grid { MinHeight = 36 }; line.ColumnDefinitions.Add(new() { Width = new(134) }); line.ColumnDefinitions.Add(new());
                 line.Children.Add(new TextBlock { Text = label, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
-                var text = new TextBlock { Text = value, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap }; Grid.SetColumn(text, 1); line.Children.Add(text); rows.Children.Add(line);
+                var text = new TextBlock { Text = value, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, FontWeight = bold ? FontWeights.Bold : FontWeights.Normal }; Grid.SetColumn(text, 1); line.Children.Add(text); rows.Children.Add(line);
             }
             body.Children.Add(new Border { Background = FigmaDialogElements.Brush("#F9F9F9"), CornerRadius = new(6), Child = rows, Margin = new(0, 0, 0, 16) });
         }
-        Section("계정", ("별칭", account.Alias ?? "정보 없음"), ("메일", "제공되지 않음"), ("만든 날", "제공되지 않음"));
-        Section("이 달 쓴 양", ("크레딧", account.UsedCredits.ToString("N0")), ("마지막 로그인", InstitutionUsage.LastSeen(account.LastLoginAt, DateTimeOffset.Now, withTime: true)));
+        // 만든 날 is the Korean calendar day; 이 달 쓴 양 is this month's usage, or the cumulative total from an older server.
+        var created = InstitutionUsage.InKorea(account.CreatedAt)?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "정보 없음";
+        Section("계정", ("별칭", account.Alias ?? "정보 없음", false), ("메일", account.Email ?? "정보 없음", false), ("만든 날", created, false));
+        Section("이 달 쓴 양", ("크레딧", (account.MonthUsedCredits ?? account.UsedCredits).ToString("N0"), true), ("마지막 로그인", InstitutionUsage.LastSeen(account.LastLoginAt, DateTimeOffset.Now, withTime: true), false));
         body.Children.Add(new TextBlock { Text = "최근 작업", Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
         var jobBackground = FigmaDialogElements.Brush("#F9F9F9");
         Jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, HeadersVisibility = DataGridHeadersVisibility.None, BorderThickness = new(0), Background = jobBackground,

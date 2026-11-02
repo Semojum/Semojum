@@ -40,7 +40,8 @@ internal static class WindowsTabProgressChecks
             await window.ExecuteAsync("new");
             var second = window.Session;
             second.JobId = "second-job"; second.JobStatus = "IN_PROGRESS";
-            second.Progress = new ConversionProgress(10, 2, 0, 1, "남은 시간 계산 중");
+            // The server gave no remaining-time estimate for this job (BE 2026-11-02: null hides the line).
+            second.Progress = new ConversionProgress(10, 2, 0, 1, ConversionProgress.RemainingLabel(null));
             await Dispatcher.Yield(DispatcherPriority.ContextIdle);
             window.UpdateLayout();
             var firstTab = (TabItem)window.DocumentTabs.Items[0];
@@ -74,8 +75,9 @@ internal static class WindowsTabProgressChecks
             var popup = ((Grid)VisualTreeHelper.GetParent(firstButton)).Children.OfType<Popup>().Single();
             firstButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(popup.IsOpen && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 완료 (37%)", StringComparison.Ordinal)),
-                "The inactive tab opens its own progress details with the correct percentage");
+            check(popup.IsOpen && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text.Contains("47쪽 / 128쪽 완료 (37%)", StringComparison.Ordinal))
+                && Descendants(popup.Child).OfType<TextBlock>().Any(t => t.Text == "잔여 12분" && t.IsVisible),
+                "The inactive tab opens its own progress details with the correct percentage and the server's remaining time");
             var cardLayer = Descendants(popup.Child).OfType<Border>().Single(b => AutomationProperties.GetAutomationId(b) == "TabProgressCard");
             check(popup.Child is Grid { ActualWidth: 320, ActualHeight: 108, Margin: var m } layers && m == new Thickness(20)
                 && cardLayer.Effect is DropShadowEffect { BlurRadius: 16, ShadowDepth: 8, Opacity: 0.14 }
@@ -130,6 +132,9 @@ internal static class WindowsTabProgressChecks
                 var cardBottom = edgeCard.PointToScreen(new Point(0, edgeCard.ActualHeight));
                 check(edgePopup.IsOpen && Math.Abs(cardBottom.Y - buttonTop.Y) <= 2,
                     $"Progress popup flips above the tab at the screen edge without a gap (tab {buttonTop.Y:0.0}, card bottom {cardBottom.Y:0.0})");
+                check(!Descendants(edgeCard).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Length == 0)
+                    && !AutomationProperties.GetName(edgeButton).TrimEnd().EndsWith(',') && AutomationProperties.GetName(edgeButton).Contains("2쪽 / 10쪽", StringComparison.Ordinal),
+                    "Without a server estimate the progress card hides the remaining-time line and its spoken name ends with the counts");
                 await CheckPointerAsync(edgeButton, edgePopup, "above", check);
             }
             finally { edgeProgress.Dispose(); edge.Close(); }

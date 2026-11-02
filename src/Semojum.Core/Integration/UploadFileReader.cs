@@ -16,19 +16,25 @@ public static class UploadFileReader
     {
         ValidateUniqueFileNames(paths);
         // The limit applies to each file (Figma C3, server rule), so every file is checked against the full limit.
+        var sizes = new List<long>();
         foreach (var path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (new FileInfo(path).Length > JobClient.MaximumUploadBytes) throw TooLarge(path);
+            var size = new FileInfo(path).Length;
+            if (size > JobClient.MaximumUploadBytes) throw TooLarge(path);
+            sizes.Add(size);
         }
-        var files = new List<UploadFile>();
+        // Several images also share one 100 MB total (BE 2026-11-02, JOB4009).
+        if (JobClient.ExceedsImageTotal(sizes)) throw new ArgumentException(JobClient.ImageTotalMessage(paths.Count));
+        var files = new List<UploadFile>(); long total = 0;
         foreach (var path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
             if (source.Length > JobClient.MaximumUploadBytes) throw TooLarge(path);
             var bytes = await ReadBoundedAsync(source, JobClient.MaximumUploadBytes, cancellationToken);
-            files.Add(new(Path.GetFileName(path), bytes));
+            files.Add(new(Path.GetFileName(path), bytes)); total += bytes.LongLength;
+            if (paths.Count > 1 && total > JobClient.MaximumUploadBytes) throw new ArgumentException(JobClient.ImageTotalMessage(paths.Count));
         }
         return files;
     }

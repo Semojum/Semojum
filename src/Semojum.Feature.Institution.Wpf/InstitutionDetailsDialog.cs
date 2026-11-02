@@ -49,8 +49,10 @@ internal sealed class InstitutionNoticeDialog : InstitutionDetailsDialog
 
 internal sealed class InstitutionOrderDialog : InstitutionDetailsDialog
 {
-    internal Button ReceiptButton { get; }
-    internal InstitutionOrderDialog(InstitutionOrder order, string? receiptEmail, Func<Task> openReceipt) : base("주문 상세", 448, "institution-order-detail-close.svg")
+    internal Button QuoteButton { get; }
+    /// <summary>「주문 (크레딧 추가)」: the kind is the description before its first 「 · 」 (크레딧 추가 · 3,000).</summary>
+    internal static string TitleOf(InstitutionOrder order) => order.Description.Split(" · ", 2)[0].Trim() is { Length: > 0 } kind ? $"주문 ({kind})" : "주문";
+    internal InstitutionOrderDialog(InstitutionOrder order, string? receiptEmail, Func<Task> openQuote) : base(TitleOf(order), 448, "institution-order-detail-close.svg")
     {
         void Section(string? title, params (string Label, object Value)[] fields)
         {
@@ -65,13 +67,18 @@ internal sealed class InstitutionOrderDialog : InstitutionDetailsDialog
             }
             ContentPanel.Children.Add(new Border { Background = FigmaDialogElements.Brush("#F9F9F9"), CornerRadius = new(6), Child = rows, Margin = new(0, 0, 0, 16) });
         }
-        Section(null, ("내용", order.Description), ("금액", "₩" + order.AmountKrw.ToString("N0")), ("요청한 사람", "정보 없음"), ("요청한 날", order.OrderDate));
+        // The server amount already includes VAT; the requester is 「kblib00 · 관리자」 and the request time is shown in Korean time.
+        var amount = new TextBlock { Text = "₩" + order.AmountKrw.ToString("N0") + "  (부가세 포함)", FontSize = 14, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap };
+        var requester = string.IsNullOrWhiteSpace(order.RequestedBy) ? "정보 없음" : order.RequestedBy + (order.RequestedByRole == "ROLE_ORG_ADMIN" ? " · 관리자" : "");
+        var requested = InstitutionUsage.InKorea(order.RequestedAt)?.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? order.OrderDate;
+        Section(null, ("내용", order.Description), ("금액", amount), ("요청한 사람", requester), ("요청한 날", requested));
         // No payment status field exists; a recorded payment date means the order is paid.
         var paid = !string.IsNullOrWhiteSpace(order.PaidAt); var paidColor = FigmaDialogElements.Brush(paid ? "#0F7B0F" : "#C42B1C");
         var payment = new Border { Background = Brushes.White, BorderBrush = paidColor, BorderThickness = new(1), CornerRadius = new(10), Padding = new(9, 1, 9, 1), HorizontalAlignment = HorizontalAlignment.Left,
             Child = new TextBlock { Text = paid ? "완납" : "미납", Foreground = paidColor, FontSize = 12 } };
-        Section("결제와 증빙", ("결제", payment), ("세금계산서", InstitutionStatusTextConverter.Label(order.InvoiceStatus, "invoice") + (string.IsNullOrWhiteSpace(receiptEmail) ? "" : " · " + receiptEmail)));
-        ReceiptButton = Button("증빙 열기", async () => await RunAsync(openReceipt)); ReceiptButton.Width = 138; ReceiptButton.Height = 32;
-        ReceiptButton.IsEnabled = !string.IsNullOrWhiteSpace(order.ReceiptFileName); ReceiptButton.ToolTip = ReceiptButton.IsEnabled ? "서버가 제공한 증빙을 엽니다." : "제공된 증빙이 없습니다."; Footer.Children.Add(ReceiptButton); Done();
+        Section("결제와 증빙", ("결제", payment), ("세금계산서", InstitutionStatusTextConverter.Label(order.InvoiceStatus, "invoice") + (string.IsNullOrWhiteSpace(receiptEmail) ? "" : "  ·  " + receiptEmail)));
+        // The receipt stays in the order table's 증빙 column; the detail offers the quote, hidden when the server has none.
+        QuoteButton = Button("견적서 내려받기", async () => await RunAsync(openQuote)); QuoteButton.Width = 138; QuoteButton.Height = 32; QuoteButton.ToolTip = order.QuoteFileName;
+        QuoteButton.Visibility = string.IsNullOrWhiteSpace(order.QuoteFileName) ? Visibility.Collapsed : Visibility.Visible; Footer.Children.Add(QuoteButton); Done();
     }
 }

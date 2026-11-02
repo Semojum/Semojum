@@ -39,11 +39,19 @@ internal static class UploadSafetyChecks
             await File.WriteAllBytesAsync(second, [1]);
             try { await UploadFileReader.ReadAsync([second, path]); throw new Exception("One oversized file among several accepted"); }
             catch (ArgumentException ex) when (ex.Message.Contains("100") && ex.Message.Contains("grown.png") && !ex.Message.Contains("second.png")) { }
-            // The limit is per file: two files at exactly the limit (200 MiB together) are read in full.
+            // BE 2026-11-02: several images also share one 100 MB total. Two files at exactly the per-file limit (200 MiB together) are refused
+            // before reading; two halves (exactly 100 MiB together) are read in full.
             using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
             using (var f = new FileStream(second, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            try { await UploadFileReader.ReadAsync([path, second]); throw new Exception("Images over the 100 MB total accepted"); }
+            catch (ArgumentException ex) when (ex.Message.Contains("이미지 2장의 합계") && ex.Message.Contains("100 MB")) { }
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes / 2);
+            using (var f = new FileStream(second, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes / 2);
             var both = await UploadFileReader.ReadAsync([path, second]);
-            if (both.Count != 2 || both.Any(file => file.Bytes.LongLength != JobClient.MaximumUploadBytes)) throw new Exception("Files within the per-file limit were rejected");
+            if (both.Count != 2 || both.Any(file => file.Bytes.LongLength != JobClient.MaximumUploadBytes / 2)) throw new Exception("Images within the 100 MB total were rejected");
+            // One file at exactly the limit is still accepted: the total applies only to several images.
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            if ((await UploadFileReader.ReadAsync([path])).Single().Bytes.LongLength != JobClient.MaximumUploadBytes) throw new Exception("A file at the per-file limit was rejected");
         }
         finally { Directory.Delete(root, true); }
     }

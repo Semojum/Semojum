@@ -130,6 +130,9 @@ internal static class WindowsInstitutionDesignChecks
             check(RowControl(selfRow) is { IsVisible: false } && RowControl(memberRow) is { IsVisible: true, Content: "잠금" } && RowControl(issueRow) is { IsVisible: true, Content: "요청 취소" }
                 && !Descendants(window.Accounts).OfType<Button>().Any(b => Equals(b.Content, "상세")),
                 "Each account row shows its own 잠금 or 요청 취소 control, none on the administrator's row, and no 상세 button");
+            check(memberRow is { UsedCredits: 1140 } && selfRow is { UsedCredits: 100 } && window.Accounts.Columns[4].GetCellContent(memberRow) is TextBlock { Text: "1,140" }
+                && window.Accounts.Columns[4].GetCellContent(issueRow) is TextBlock { Text: "—" },
+                "The 사용 column shows this month's credits as 1,140, falls back to the cumulative total from an older response and shows — for a pending request");
             check(RowId(memberRow) is { FontSize: 14, Foreground: SolidColorBrush { Color: var idColor } } memberId && memberId.FontWeight == FontWeights.Bold && idColor == Color.FromRgb(0x00, 0x5F, 0xB8)
                 && RowId(issueRow) is { Foreground: SolidColorBrush { Color: var pendingColor } } && pendingColor == Color.FromRgb(0x5F, 0x5F, 0x5F),
                 "Account IDs are 14px bold blue and the pending request line is gray");
@@ -228,6 +231,14 @@ internal static class WindowsInstitutionDesignChecks
             var emptyCell = receiptColumn.GetCellContent(noReceipt);
             check(emptyCell is not null && Descendants(emptyCell).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "—")
                 && !Descendants(emptyCell).OfType<Button>().Any(b => b.IsVisible), "An order without a receipt displays a dash without an actionable link");
+            // 견적서 내려받기 (F-AC-7) opens its presigned URL like the receipt; an order without a quote asks nothing.
+            var launched = new List<string>(); var launcher = window.ReceiptLauncher; window.ReceiptLauncher = launched.Add; window.ErrorText.Text = "";
+            var openQuote = typeof(InstitutionWindow).GetMethod("OpenQuoteForAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            await ((Task)openQuote.Invoke(window, [hasReceipt with { QuoteFileName = "견적서.pdf" }])!).WaitAsync(TimeSpan.FromSeconds(5));
+            await ((Task)openQuote.Invoke(window, [noReceipt])!).WaitAsync(TimeSpan.FromSeconds(5));
+            check(handler.QuotePaths.SequenceEqual(["/api/org/orders/3f56ae22-d121-48b1-a804-a3b48e3d3b82/quote"]) && launched.SequenceEqual(["https://example.invalid/quote"]) && window.ErrorText.Text == "",
+                "견적서 내려받기 requests its own order's quote and opens the presigned URL, and an order without a quote sends nothing");
+            window.ReceiptLauncher = launcher;
             window.Orders.ItemsSource = originalOrders; window.Width = 960; window.ErrorText.Text = "";
             window.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(30);
             check(logoutCalls == 1 && window.IsVisible && !window.LogoutRequested, "Cancelled or failed logout keeps the institution window open");
@@ -254,8 +265,8 @@ internal static class WindowsInstitutionDesignChecks
         finally { if (window.IsVisible) window.Close(); }
         await ReceiptSessionChecks(check);
 
-        var attempts = 0; string? submitted = null;
-        var dialog = new InstitutionRequestDialog(true, message => { attempts++; if (attempts == 1) throw new InvalidOperationException("fixture failure"); submitted = message; return Task.CompletedTask; });
+        var attempts = 0; InstitutionRequestDetails? submitted = null; string? submittedMessage = "unset";
+        var dialog = new InstitutionRequestDialog(true, (message, details) => { attempts++; if (attempts == 1) throw new InvalidOperationException("fixture failure"); submitted = details; submittedMessage = message; return Task.CompletedTask; });
         dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(async () =>
         {
             dialog.First.Text = "국어 담당"; dialog.Second.Text = "reader@example.test";
@@ -265,9 +276,55 @@ internal static class WindowsInstitutionDesignChecks
         });
         var watchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; watchdog.Tick += (_, _) => { watchdog.Stop(); if (dialog.IsVisible) dialog.Close(); };
         watchdog.Start(); var result = dialog.ShowDialog(); watchdog.Stop();
-        check(result == true && attempts == 2 && submitted?.Contains("reader@example.test") == true, "An account request closes successfully only after its actual callback succeeds");
+        check(result == true && attempts == 2 && submitted is { AccountAlias: "국어 담당", RecipientEmail: "reader@example.test", CreditScope: "SHARED", CreditAmount: null, InvoiceType: null } && submittedMessage is null,
+            "An account request closes only after its callback succeeds and sends alias, recipient and 기관 할당 공유 (SHARED) as fields instead of message text");
+        await CreditEstimateChecks(check);
         var detail = new InstitutionAccountDetailDialog(new("self", "본인", "ACTIVE", "ROLE_ORG_ADMIN", null, 0, true), new("self", "본인", "2026-01-01", "2026-01-31", [], 0, 0), _ => Task.CompletedTask);
         check(!detail.LockButton.IsEnabled, "The institution administrator cannot lock their own account"); detail.Close();
+    }
+    /// <summary>F-AC-11: the credit request shows the server's estimate after typing pauses, cancels a superseded request, shows 「—」 on failure and sends its fields.</summary>
+    private static async Task CreditEstimateChecks(Action<bool, string> check)
+    {
+        var calls = new List<(long Credits, CancellationToken Token)>(); TaskCompletionSource<InstitutionCreditEstimate>? held = null;
+        InstitutionRequestDetails? sent = null; string? sentMessage = "unset";
+        Task<InstitutionCreditEstimate> Estimate(long credits, CancellationToken ct)
+        {
+            calls.Add((credits, ct));
+            if (credits == 4000) return (held = new(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            if (credits == 6000) return Task.FromException<InstitutionCreditEstimate>(new HttpRequestException("fixture failure"));
+            return Task.FromResult(new InstitutionCreditEstimate(credits, 260, credits * 260));
+        }
+        var dialog = new InstitutionRequestDialog(false, (message, details) => { sentMessage = message; sent = details; return Task.CompletedTask; }, Estimate);
+        async Task Settle() { await dialog.EstimateTask; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout(); }
+        dialog.Loaded += (_, _) => dialog.Dispatcher.BeginInvoke(async () =>
+        {
+            try
+            {
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+                check(dialog.EstimateAmount is { IsVisible: true, Text: "—" } && !dialog.EstimateNote.IsVisible && calls.Count == 0, "An empty credit request shows 「—」 and asks nothing");
+                dialog.First.Text = "1"; dialog.First.Text = "12"; dialog.First.Text = "123"; await Settle();
+                check(calls.Select(c => c.Credits).SequenceEqual([123L]) && dialog.EstimateAmount.Text == "₩31,980" && dialog.EstimateNote is { IsVisible: true, Text: "부가세 포함" },
+                    "Typing quickly sends one estimate request after the pause and shows the server's amount with 부가세 포함");
+                dialog.First.Text = "3,000"; await Settle();
+                check(calls[^1].Credits == 3000 && dialog.EstimateAmount.Text == "₩780,000" && dialog.EstimateAmount.FontWeight == FontWeights.Bold && dialog.EstimateAmount.FontSize == 14,
+                    "3,000 credits show the Figma 「₩780,000 · 부가세 포함」 from the server response");
+                dialog.First.Text = "4000"; await WaitFor(() => calls.Count == 3 && held is not null);
+                dialog.First.Text = "5000"; await Settle();
+                check(calls[2].Token.IsCancellationRequested && calls[^1].Credits == 5000 && dialog.EstimateAmount.Text == "₩1,300,000", "A newer amount cancels the pending estimate and shows only its own answer");
+                held!.SetResult(new(4000, 260, 1)); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); await Task.Delay(50);
+                check(dialog.EstimateAmount.Text == "₩1,300,000", "A late answer for a superseded amount is ignored");
+                dialog.First.Text = "6000"; await Settle();
+                check(calls[^1].Credits == 6000 && dialog.EstimateAmount.Text == "—" && !dialog.EstimateNote.IsVisible, "A failed estimate leaves the amount 「—」");
+                var count = calls.Count; dialog.First.Text = "0"; await Settle();
+                check(calls.Count == count && dialog.EstimateAmount.Text == "—", "A zero or invalid amount shows 「—」 without asking the server");
+                dialog.First.Text = "3,000"; dialog.Option.SelectedIndex = 1; dialog.Submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }
+            catch (Exception ex) { check(false, "Credit estimate checks failed: " + ex.Message); dialog.Close(); }
+        });
+        var watchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) }; watchdog.Tick += (_, _) => { watchdog.Stop(); if (dialog.IsVisible) dialog.Close(); };
+        watchdog.Start(); var result = dialog.ShowDialog(); watchdog.Stop();
+        check(result == true && sent is { CreditAmount: 3000, InvoiceType: "PERSONAL", AccountAlias: null, CreditScope: null } && sentMessage is null,
+            "A credit request sends creditAmount and 개인 명의 발행 (PERSONAL) as fields instead of message text");
     }
     private static async Task WaitFor(Func<bool> predicate)
     {
@@ -316,7 +373,7 @@ internal static class WindowsInstitutionDesignChecks
         internal bool FailDashboard;
         internal string? LastReceiptPath;
         internal bool HoldReceipt, RefreshProbe, ProbeRejected, FailReceipt;
-        internal readonly List<string> ReceiptBodies = [];
+        internal readonly List<string> ReceiptBodies = [], QuotePaths = [];
         internal TaskCompletionSource<HttpResponseMessage>? HeldReceipt;
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -334,13 +391,16 @@ internal static class WindowsInstitutionDesignChecks
                 if (HoldReceipt) { HeldReceipt = new(TaskCreationOptions.RunContinuationsAsynchronously); return HeldReceipt.Task; }
                 return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"fileName\":\"receipt.pdf\",\"url\":\"http://example.invalid/receipt\"}}");
             }
+            if (path.EndsWith("/quote")) { QuotePaths.Add(path); return Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"fileName\":\"견적서.pdf\",\"url\":\"https://example.invalid/quote\"}}"); }
             if (path == "/api/org/receipt-email" && request.Method == HttpMethod.Patch) return ReceiptEmail(request, cancellationToken);
             var result = path switch
             {
                 "/api/org/dashboard" => "{\"orgName\":\"테스트 기관\",\"orgCode\":\"O1\",\"contractType\":\"ANNUAL\",\"contractStartedAt\":\"2026-01-01\",\"contractExpiresAt\":\"2026-12-31\",\"creditAllocated\":1000,\"creditUsed\":300,\"creditRemaining\":700,\"monthlyUsage\":[{\"month\":\"2026-10\",\"credits\":300}]}",
-                "/api/org/accounts" => "{\"usageSince\":\"2026-10-01\",\"items\":[{\"loginId\":\"org\",\"alias\":\"관리자\",\"status\":\"ACTIVE\",\"role\":\"ROLE_ORG_ADMIN\",\"lastLoginAt\":null,\"usedCredits\":100,\"self\":true},{\"loginId\":\"worker\",\"alias\":null,\"status\":\"ACTIVE\",\"role\":\"ROLE_USER\",\"lastLoginAt\":null,\"usedCredits\":200,\"self\":false}]}",
+                // The administrator row is an older response without the monthly fields; the worker row has them.
+                "/api/org/accounts" => "{\"usageSince\":\"2026-10-01\",\"items\":[{\"loginId\":\"org\",\"alias\":\"관리자\",\"status\":\"ACTIVE\",\"role\":\"ROLE_ORG_ADMIN\",\"lastLoginAt\":null,\"usedCredits\":100,\"self\":true},{\"loginId\":\"worker\",\"alias\":null,\"status\":\"ACTIVE\",\"role\":\"ROLE_USER\",\"lastLoginAt\":null,\"usedCredits\":3120,\"self\":false,\"email\":\"math@kblib.or.kr\",\"creditLimit\":2000,\"monthUsedCredits\":1140,\"createdAt\":\"2026-02-24T10:00:00\"}]}",
+                // The open account request carries its alias in details; its message no longer holds the fields.
                 "/api/org/requests" => "[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198072\",\"type\":\"CREDIT_ADD\",\"status\":\"OPEN\",\"message\":\"요청\",\"createdAt\":\"2026-10-01\"},"
-                    + "{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198073\",\"type\":\"ACCOUNT_ISSUE\",\"status\":\"OPEN\",\"message\":\"별칭: 국어 담당\\n받을 사람 메일: reader@example.test\",\"createdAt\":\"2026-08-12T01:00:00Z\"},"
+                    + "{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198073\",\"type\":\"ACCOUNT_ISSUE\",\"status\":\"OPEN\",\"message\":null,\"createdAt\":\"2026-08-12T01:00:00Z\",\"details\":{\"accountAlias\":\"국어 담당\",\"recipientEmail\":\"reader@example.test\",\"creditScope\":\"SHARED\",\"creditAmount\":null,\"invoiceType\":null}},"
                     + "{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198076\",\"type\":\"ACCOUNT_ISSUE\",\"status\":\"CANCELED\",\"message\":null,\"createdAt\":\"2026-10-02\"}]",
                 "/api/org/notices" => "[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198074\",\"scope\":\"ORG\",\"title\":\"공지\",\"body\":\"내용\",\"createdAt\":\"2026-10-03\"}]",
                 "/api/org/orders" => "{\"receiptEmail\":\"billing@example.test\",\"items\":[{\"id\":\"ad769b7f-5e74-40ad-94d3-1cccd1198075\",\"orderDate\":\"2026-01-01\",\"description\":\"계약\",\"amountKrw\":1000,\"creditAmount\":1000,\"paidAt\":null,\"invoiceStatus\":\"PENDING\",\"receiptFileName\":null}]}",

@@ -7,8 +7,10 @@ namespace Semojum.Core.Integration;
 /// <summary>
 /// Server status. <see cref="CompletedPages"/> is the server's <c>completedPages</c>, which counts every finished page —
 /// successful (COMPLETED/NEEDS_REVIEW) and failed (BLOCKED) alike (BE JobService.getJobStatus). Never add failures to it again.
+/// <see cref="EstimatedRemainingSec"/> is the server's estimate for the waiting and running pages (BE 2026-11-02); null when it has none.
 /// </summary>
-public sealed record JobStatus(string JobId, int TotalPages, int CompletedPages, string OverallStatus, Dictionary<int, string> Pages, bool CreditExhausted = false)
+public sealed record JobStatus(string JobId, int TotalPages, int CompletedPages, string OverallStatus, Dictionary<int, string> Pages, bool CreditExhausted = false,
+    int? EstimatedRemainingSec = null)
 {
     public bool IsTerminal => OverallStatus is "COMPLETED" or "FAILED" or "CANCELLED" or "CANCELED";
     public static bool IsFailedPage(string status) => status is "FAILED" or "BLOCKED" or "CANCELLED" or "CANCELED";
@@ -77,6 +79,9 @@ public sealed partial class JobClient(SemojumApiClient api)
         return true;
     }
     public const long MaximumUploadBytes = 100L * 1024 * 1024;
+    /// <summary>Several images go up in one request whose total has the same 100 MB limit (BE 2026-11-02, 413 JOB4009).</summary>
+    public static bool ExceedsImageTotal(IReadOnlyCollection<long> sizes) => sizes.Count > 1 && sizes.Sum() > MaximumUploadBytes;
+    public static string ImageTotalMessage(int count) => $"이미지 {count}장의 합계가 100 MB를 넘습니다. 여러 장은 합계 100 MB까지 올릴 수 있습니다. 나누어 다시 올려 주세요.";
     public async Task<JobCreated> CreateTextAsync(string fileName, DocumentSession settings, CancellationToken ct = default, string? formId = null)
     {
         var result = await api.SendAuthenticatedAsync(HttpMethod.Post, "/api/jobs/text", new
@@ -87,7 +92,8 @@ public sealed partial class JobClient(SemojumApiClient api)
         return Created(result);
     }
 
-    public async Task<JobCreated> UploadAsync(IReadOnlyList<UploadFile> files, DocumentSession settings, CancellationToken ct = default, string? formId = null)
+    /// <param name="password">The document password of an encrypted PDF, sent only after the server asked for it (JOB4018/JOB4019). Never stored or logged.</param>
+    public async Task<JobCreated> UploadAsync(IReadOnlyList<UploadFile> files, DocumentSession settings, CancellationToken ct = default, string? formId = null, string? password = null)
     {
         var allowed = new[] { ".pdf", ".hwp", ".hwpx", ".txt", ".png", ".jpg", ".jpeg" };
         if (files.Count == 0 || files.Any(f => !allowed.Contains(Path.GetExtension(f.FileName).ToLowerInvariant())))
@@ -95,6 +101,9 @@ public sealed partial class JobClient(SemojumApiClient api)
         if (files.FirstOrDefault(f => f.Bytes.LongLength > MaximumUploadBytes) is { } oversized) throw new ArgumentException($"{oversized.FileName} 파일이 100 MB를 넘습니다. 파일 1개당 100 MB까지 올릴 수 있습니다.");
         if (files.Count > 1 && files.Any(f => Path.GetExtension(f.FileName).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg")))
             throw new ArgumentException("여러 파일은 이미지일 때만 함께 업로드할 수 있습니다.");
+        if (ExceedsImageTotal(files.Select(f => f.Bytes.LongLength).ToArray())) throw new ArgumentException(ImageTotalMessage(files.Count));
+        if (password is not null && (password.Length == 0 || files.Count != 1 || !Path.GetExtension(files[0].FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("문서 암호는 PDF 파일 하나를 올릴 때만 보낼 수 있습니다.");
         // Each retry needs fresh content; requests are replayed only after an authentication rejection.
         Func<HttpContent> body = () =>
         {
@@ -111,6 +120,8 @@ public sealed partial class JobClient(SemojumApiClient api)
             if (formId is not null) form.Add(new StringContent(formId), "formId");
             form.Add(new StringContent(settings.FooterText), "footerText");
             form.Add(new StringContent(settings.Layout.ShowSourcePageNumber ? "true" : "false"), "insertPageNumber");
+            // A form part, never the query string, so the password does not appear in a URL.
+            if (password is not null) form.Add(new StringContent(password), "password");
             return form;
         };
         return Created(await api.SendAuthenticatedAsync(HttpMethod.Post, "/api/jobs", body, ct));
@@ -127,7 +138,8 @@ public sealed partial class JobClient(SemojumApiClient api)
                     throw new InvalidDataException("서버 쪽 번호가 올바르지 않습니다.");
                 pages.Add(page, item.Value.GetString() ?? "UNKNOWN");
             }
-        return new(jobId, Number(data, "totalPages"), Number(data, "completedPages"), Required(data, "overallStatus"), pages, Bool(data, "creditExhausted"));
+        return new(jobId, Number(data, "totalPages"), Number(data, "completedPages"), Required(data, "overallStatus"), pages, Bool(data, "creditExhausted"),
+            Seconds(data, "estimatedRemainingSec"));
     }
 
     public async Task<JobCancellation> CancelAsync(string jobId, CancellationToken ct = default)
@@ -212,7 +224,8 @@ public sealed partial class JobClient(SemojumApiClient api)
                         item.TryGetProperty("selected_idx", out var index) && index.ValueKind == JsonValueKind.Number && index.TryGetInt32(out var i) ? i : null,
                         type == "table" ? source : null,
                         ReadDrafts(item, braille.GetValueOrDefault(id)), ReadRules(item, braille.GetValueOrDefault(id)), source,
-                        Text(item, "visual_subtype"), Bool(item, "is_blocked"), Confidence(item, "ocr_confidence")),
+                        Text(item, "visual_subtype"), Bool(item, "is_blocked"), Confidence(item, "ocr_confidence"),
+                        Text(item, "review_flag") is "open" or "sug" or "note" ? Text(item, "review_flag") : null),
                     // A restored server result may contain manual edits. Do not overwrite on open.
                     HasManualBraille = braille.ContainsKey(id)
                 };
@@ -290,7 +303,8 @@ public sealed partial class JobClient(SemojumApiClient api)
         if (items.Length == 0 && braille.ValueKind == JsonValueKind.Object) items = Array(braille, "drafts");
         return items.Select(d => new AlternativeDraft(Text(d, "label") ?? "초안", Text(d, "text") ?? "",
             Text(d, "tn_text"), d.TryGetProperty("contents", out _) ? Contents(d) : null,
-            Text(d, "reason") ?? Text(d, "rationale"))).ToArray();
+            Text(d, "reason") ?? Text(d, "rationale"),
+            d.TryGetProperty("option", out var option) && option.ValueKind == JsonValueKind.Number && option.TryGetInt32(out var number) && number > 0 ? number : null)).ToArray();
     }
     private static RuleEvidence[] ReadRules(JsonElement text, JsonElement braille)
     {
@@ -307,5 +321,7 @@ public sealed partial class JobClient(SemojumApiClient api)
     private static string Required(JsonElement e, string name) => Text(e, name) ?? throw new InvalidDataException("서버 응답에 필수 항목이 없습니다: " + name);
     private static string? Text(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     private static int Number(JsonElement e, string name, int fallback = 0) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : fallback;
+    internal static int? Seconds(JsonElement e, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+        && v.TryGetDouble(out var seconds) && seconds is >= 0 and <= int.MaxValue ? (int)Math.Ceiling(seconds) : null;
     private static bool Bool(JsonElement e, string name, bool fallback = false) => e.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : fallback;
 }

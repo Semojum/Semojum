@@ -27,12 +27,16 @@ public sealed record BrailleSymbol(string Char, string Cells, string Group);
 public sealed record CellAddress(int BlockId, int Offset);
 public sealed record ComposedPage(int? Number, string[] Lines, CellAddress?[][] Cells, CellAddress?[] Ends, string[] Kinds);
 public sealed record ComposedBraille(string Brf, Dictionary<string, int> Replaced, ComposedPage[]? Pages = null, int[]? SpacingUnknownBlockIds = null, int[]? AlignmentUnknownBlockIds = null);
+/// <param name="ReviewFlag">The AI's line-number signal for the element (BE 2026-11-01): "open" unresolved warning, "sug" suggested fix, "note" memo; null when none.</param>
 public sealed record BlockMetadata(string Type = "text", int HeadingLevel = 0, bool MathPage = false,
     string? TableSource = null, string? RenderMode = null, string? TranslatorNote = null, int TableBoxLevel = 0,
     double[]? BoundingBox = null, int? SelectedIndex = null, string? TableDisplayText = null,
     AlternativeDraft[]? Alternatives = null, RuleEvidence[]? Rules = null, string? OriginalSource = null,
-    string? VisualSubtype = null, bool IsBlocked = false, double? OcrConfidence = null);
-public sealed record AlternativeDraft(string Label, string Text, string? TaggedText, string? LegacyBraille, string? Reason);
+    string? VisualSubtype = null, bool IsBlocked = false, double? OcrConfidence = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ReviewFlag = null);
+/// <param name="Option">The draft's fixed option number (BE 2026-11-01: 1 생략 · 2 기본 설명 · 6 별책 참조 · 7 줄글 …). Null on older pages and files.</param>
+public sealed record AlternativeDraft(string Label, string Text, string? TaggedText, string? LegacyBraille, string? Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? Option = null);
 public enum RuleEvidenceOrigin { Unknown, TextPanel, BraillePanel }
 /// <param name="Axis">What the columns count (engine 3.4.44): "braille" cells (engine) or "print" source characters (AI server). Null in older data; read by origin.</param>
 public sealed record RuleEvidence(string RuleId, string Source, string Section, string Title, string Excerpt,

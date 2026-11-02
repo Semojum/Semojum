@@ -75,11 +75,19 @@ internal sealed class OriginalUploadView : UserControl
     /// <summary>Names the first oversized file and its size (Figma C3); other oversized files are counted and listed in the tooltip.</summary>
     internal void ShowLimitWarning(IReadOnlyList<(string Path, long Bytes)> oversized)
     {
-        static string Label((string Path, long Bytes) file) => $"{System.IO.Path.GetFileName(file.Path)} ({Math.Ceiling(file.Bytes / (1024d * 1024d)):0}MB)";
         limitTitle.Text = Label(oversized[0]) + (oversized.Count > 1 ? $" 외 {oversized.Count - 1}개" : "");
         limitTitle.ToolTip = string.Join("\n", oversized.Select(Label));
         limitWarning.Visibility = Visibility.Visible;
     }
+    /// <summary>Several images over the shared 100 MB total (BE 2026-11-02): names the count and total; each file is in the tooltip.</summary>
+    internal void ShowTotalLimitWarning(IReadOnlyList<(string Path, long Bytes)> images)
+    {
+        limitTitle.Text = $"이미지 {images.Count}장 합계 ({Megabytes(images.Sum(file => file.Bytes))}MB)";
+        limitTitle.ToolTip = string.Join("\n", images.Select(Label));
+        limitWarning.Visibility = Visibility.Visible;
+    }
+    private static string Label((string Path, long Bytes) file) => $"{System.IO.Path.GetFileName(file.Path)} ({Megabytes(file.Bytes)}MB)";
+    private static string Megabytes(long bytes) => $"{Math.Ceiling(bytes / (1024d * 1024d)):0}";
     internal void ClearLimitWarning() => limitWarning.Visibility = Visibility.Collapsed;
     private static SolidColorBrush ColorBrush(byte r, byte g, byte b) => new(Color.FromRgb(r, g, b));
     private static SvgViewbox Icon(string file, double size) => new() { Source = new Uri($"pack://application:,,,/Semojum.Feature.Editor.Wpf;component/Assets/Figma/{file}"), Width = size, Height = size, Stretch = Stretch.None, HorizontalAlignment = HorizontalAlignment.Center };

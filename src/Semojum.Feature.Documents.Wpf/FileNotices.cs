@@ -4,6 +4,7 @@ internal static class FileNotices
 {
     internal static NoticeDialog UnsupportedFormat() => new("이 형식은 열 수 없습니다.", "PDF · HWP · HWPX · TXT · JPG · JPEG · PNG · SMJ 만 열 수 있습니다.", ["다시 선택", "취소"], error: true);
     internal static NoticeDialog OversizedFile() => new("파일이 100 MB 를 넘습니다.", "파일을 나누어 올린 뒤 이어 붙일 수 있습니다.", ["도움말", "취소"], error: true, width: 440);
+    internal static PdfPasswordDialog EncryptedPdf(bool wrongPassword = false) => new(wrongPassword);
     internal static NoticeDialog EngineUnavailable() => new("점역 엔진이 응답하지 않습니다.", "점자 패널만 잠깁니다. 텍스트 수정과 저장은 가능합니다.", ["다시 시도", "나중에"], error: true, width: 456);
     internal static NoticeDialog ReadOnlyDocument(bool accessDenied = false) => new(accessDenied ? "이 문서에 쓰기 권한이 없습니다." : "이 문서는 다른 창에서 열려 있습니다.", "이 창에서는 읽기 전용으로 엽니다.", ["읽기 전용으로 열기", "취소"]);
     internal static NoticeDialog InvalidRange(int start, int end, string detail) => new("고른 범위에 내용이 없습니다.", $"시작 {start}쪽, 끝 {end}쪽입니다. {detail}", ["범위 다시 지정", "취소"], width: 440);
@@ -22,16 +23,21 @@ internal static class FileNotices
     }
     internal static NoticeDialog Offline(string detail) => new("서버에 연결하지 못했습니다.", "저장과 편집은 가능합니다. 변환과 게시판은 연결이 복구된 뒤에 사용할 수 있습니다.", ["다시 시도", "오프라인으로 계속"], error: true, width: 641) { ToolTip = detail };
     internal static NoticeDialog NoCredits() => new("크레딧이 모두 소모되어 변환을 멈췄습니다.", "크레딧을 충전한 뒤 상단 알림 창의 「이어서 처리」를 눌러 재개할 수 있습니다.", ["크레딧 구매", "문의하기", "닫기"], width: 613, height: 226);
-    // Server policy (LoginAttemptService.MAX_FAILURES = 5, LOCK_DURATION = 10 minutes) behind AUTH4001 remainingAttempts / AUTH4006 unlockAt.
-    private const string LoginLockPolicy = "5회 실패하면 10분 동안 잠깁니다.";
+    // AUTH4001 and AUTH4006 carry the server policy (maxAttempts, lockMinutes) since 2026-11-01; older responses fall back to 5 times and 10 minutes.
     internal static NoticeDialog LoginRejected(Semojum.Core.Integration.SemojumApiException error)
     {
-        var detail = "아이디와 비밀번호를 확인한 뒤 다시 입력해 주세요.";
+        var detail = "아이디와 비밀번호를 확인한 뒤 다시 입력해 주세요."; var message = error.Code == "AUTH4006" ? error.Message : "아이디 또는 비밀번호가 맞지 않습니다.";
         if (error.Details is { ValueKind: System.Text.Json.JsonValueKind.Object } data)
         {
-            if (data.TryGetProperty("remainingAttempts", out var attempts)) detail = $"남은 횟수 {attempts}회입니다. {LoginLockPolicy}";
-            if (data.TryGetProperty("unlockAt", out var unlock)) detail = $"다시 시도할 수 있는 시각: {unlock}";
+            static int? Count(System.Text.Json.JsonElement data, string name) =>
+                data.TryGetProperty(name, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.Number && value.TryGetInt32(out var count) && count >= 0 ? count : null;
+            var maxAttempts = Count(data, "maxAttempts"); var lockMinutes = Count(data, "lockMinutes");
+            if (data.TryGetProperty("remainingAttempts", out var attempts)) detail = $"남은 횟수 {attempts}회입니다. {maxAttempts ?? 5}회 실패하면 {lockMinutes ?? 10}분 동안 잠깁니다.";
+            if (data.TryGetProperty("unlockAt", out var unlock))
+                detail = "다시 시도할 수 있는 시각: " + (unlock.ValueKind == System.Text.Json.JsonValueKind.String && DateTime.TryParse(unlock.GetString(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var at)
+                    ? at.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) : unlock.ToString());
+            if (error.Code == "AUTH4006" && maxAttempts is { } max && lockMinutes is { } minutes) message = $"로그인을 {max}회 실패해 {minutes}분 동안 잠겼습니다.";
         }
-        return new(error.Code == "AUTH4006" ? error.Message : "아이디 또는 비밀번호가 맞지 않습니다.", detail, ["다시 입력", "비밀번호 찾기"], error: true, width: 453);
+        return new(message, detail, ["다시 입력", "비밀번호 찾기"], error: true, width: 453);
     }
 }

@@ -12,6 +12,7 @@ internal static class AuthRestoreChecks
         yield return ("Offline restore does not create a session or erase the remembered credential", OfflineRestore);
         yield return ("Token refresh updates the current server identity and preserves a legacy response", RefreshUpdatesIdentity);
         yield return ("A changed editor-ineligible role does not replay a rejected request", RefreshRejectsChangedRole);
+        yield return ("Login sends keepLoggedIn only as the caller chose it", KeepLoggedIn);
     }
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => send(request); }
@@ -82,5 +83,18 @@ internal static class AuthRestoreChecks
         try { await api.SendAuthenticatedAsync(HttpMethod.Post, "/api/jobs/test/save", new { value = "saved" }); throw new Exception("Expected role rejection"); }
         catch (SemojumApiException ex) when (ex.Code == "AUTH_DESKTOP_ROLE") { }
         if (api.Account is not null || requestCount != 1) throw new Exception("Forbidden refreshed role replayed a request or retained the session");
+    }
+    private static async Task KeepLoggedIn()
+    {
+        var sent = new List<bool?>();
+        using var http = new HttpClient(new Handler(async req =>
+        {
+            using var body = JsonDocument.Parse(await req.Content!.ReadAsStringAsync());
+            sent.Add(body.RootElement.TryGetProperty("keepLoggedIn", out var keep) && keep.ValueKind is JsonValueKind.True or JsonValueKind.False ? keep.GetBoolean() : null);
+            return Ok(new { accessToken = "token", refreshToken = "refresh", role = "ROLE_USER" });
+        }));
+        var api = new SemojumApiClient(http);
+        await api.LoginAsync("alice", "pw"); await api.LoginAsync("alice", "pw", true); await api.LoginAsync("alice", "pw", false, CancellationToken.None);
+        if (!sent.SequenceEqual(new bool?[] { false, true, false })) throw new Exception("keepLoggedIn did not follow the caller's choice: " + string.Join(",", sent));
     }
 }

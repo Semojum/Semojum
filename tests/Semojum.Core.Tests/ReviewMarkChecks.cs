@@ -13,11 +13,32 @@ internal static class ReviewMarkChecks
         yield return ("Block merging retains review annotations in both panels", Merge);
         yield return ("Invalid review annotations and incompatible SMJ versions cannot overwrite a file", Invalid);
         yield return ("Server quality issues become whole-block open warnings that a person's edit resolves for good", ServerWarningsAsync);
+        yield return ("An AI review_flag of open is the same open warning unless the page report already names the block", ReviewFlagWarnings);
     }
 
     private sealed class CellsEngine(string cells) : ITranslationEngine
     {
         public Task<string> TranslateAsync(string text, int blockId, CancellationToken token) => Task.FromResult(cells);
+    }
+
+    private static Task ReviewFlagWarnings()
+    {
+        // BE 2026-11-01: review_flag is the line-number signal (open > sug > note). Only "open" has an app equivalent without text or range.
+        using var json = System.Text.Json.JsonDocument.Parse("""
+        {"status":"NEEDS_REVIEW","result":{"text_list":[{"id":"a","contents":["열린 경고"],"review_flag":"open"},{"id":"b","contents":["보고된 경고"],"review_flag":"open"},
+          {"id":"c","contents":["고침 제안"],"review_flag":"sug"},{"id":"d","contents":["메모"],"review_flag":"note"},{"id":"e","contents":["표시 없음"],"review_flag":null}],
+          "quality_report":{"critical_errors":[],"review_flags":[{"type":"R1","element_id":"b","message":"검토"}]}}}
+        """);
+        var page = Semojum.Core.Integration.JobClient.ReadPage(json.RootElement, 1, 1);
+        EditorBlock a = page.Blocks[0], b = page.Blocks[1];
+        Check(ServerWarnings.Apply(page.Blocks, page.Quality!) == 2 && a.ReviewMarks is [{ Kind: ReviewKind.OpenWarning, Panel: ReviewPanel.Text, IsStale: false }]
+            && b.ReviewMarks.Count == 1 && page.Blocks.Skip(2).All(x => x.ReviewMarks.Count == 0),
+            "An open flag adds one open warning, a block the report already names gets no second one, and sug, note or null add none");
+        Check(ServerWarnings.Apply(page.Blocks, page.Quality!) == 0 && a.ReviewMarks.Count == 1, "Reading the same flags again adds nothing");
+        a.Source += " 고침";
+        Check(a.ReviewMarks is [{ IsStale: true }] && ServerWarnings.Apply(page.Blocks, page.Quality!) == 0 && a.ReviewMarks is [{ IsStale: true }],
+            "A person's edit resolves the flagged warning for good");
+        return Task.CompletedTask;
     }
 
     private static async Task ServerWarningsAsync()

@@ -82,6 +82,7 @@ internal static class WindowsQa4Checks
         await WindowsGoToDesignChecks.RunAsync(check);
         await WindowsUploadLimitChecks.RunAsync(directory, check);
         await WindowsUploadSafetyChecks.RunAsync(directory, check);
+        await WindowsPdfPasswordChecks.RunAsync(check);
         await WindowsExportFileChecks.RunAsync(directory, check);
         WindowsExportRangeChecks.Run(owner, check);
         WindowsSpacingPreviewChecks.Run(owner, check);

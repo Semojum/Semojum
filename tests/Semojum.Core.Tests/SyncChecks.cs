@@ -127,9 +127,29 @@ internal static class SyncChecks
             {
                 ["page:1"] = "COMPLETED", ["page:2"] = "NEEDS_REVIEW", ["page:3"] = "BLOCKED", ["page:4"] = "RUNNING",
                 ["page:5"] = "PENDING", ["page:6"] = "PENDING", ["page:7"] = "PENDING", ["page:8"] = "PENDING", ["page:9"] = "PENDING", ["page:10"] = "PENDING"
-            } }))));
+            }, estimatedRemainingSec = 4320 }))));
         var api = new SemojumApiClient(http); await api.LoginAsync("test", "pw");
         var status = await new JobClient(api).StatusAsync("job_progress");
+        // BE 2026-11-02: the server's estimate is shown as Figma's 「잔여 1시간 12분」; no estimate shows nothing.
+        Equal(4320, status.EstimatedRemainingSec); Equal("잔여 1시간 12분", ConversionProgress.RemainingLabel(status.EstimatedRemainingSec));
+        Equal("잔여 1분", ConversionProgress.RemainingLabel(45)); Equal("잔여 1분", ConversionProgress.RemainingLabel(0)); Equal("", ConversionProgress.RemainingLabel(null));
+        Equal("10쪽 중 3쪽", status.ToProgress("").CompactLabel);
+        using var oldHttp = new HttpClient(new Handler(request => Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("login") ? Tokens()
+            : Ok(new { totalPages = 1, completedPages = 1, overallStatus = "COMPLETED", pages = new Dictionary<string, string> { ["page:1"] = "COMPLETED" }, estimatedRemainingSec = (int?)null }))));
+        var oldApi = new SemojumApiClient(oldHttp); await oldApi.LoginAsync("test", "pw");
+        Equal(null, (await new JobClient(oldApi).StatusAsync("job_done")).EstimatedRemainingSec);
+        // SSE queue_position keeps coming with position 0 while pages are still running; its estimate is kept for the progress line.
+        using var sse = new HttpClient(new Handler(request => Task.FromResult(request.RequestUri!.AbsolutePath.EndsWith("login") ? Tokens()
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
+                "event: queue_position\ndata: {\"type\":\"queue_position\",\"position\":2,\"estimated_wait_sec\":90}\n\n" +
+                "event: queue_position\ndata: {\"type\":\"queue_position\",\"position\":0,\"estimated_wait_sec\":45}\n\n" +
+                "event: job_done\ndata: {\"total_pages\":10}\n\n", Encoding.UTF8, "text/event-stream") })));
+        var sseApi = new SemojumApiClient(sse); await sseApi.LoginAsync("test", "pw");
+        await using (var watch = new JobEventWatch(sseApi, "job_progress", CancellationToken.None))
+        {
+            for (var i = 0; i < 100 && watch.EstimatedWaitSec != 45; i++) await Task.Delay(20);
+            Equal(45, watch.EstimatedWaitSec);
+        }
         Equal(3, status.FinishedPages); Equal(2, status.SucceededPages); Equal(1, status.FailedPages); Equal(1, status.RunningPages); Equal(7, status.RemainingPages);
         var progress = status.ToProgress("");
         Equal(3, progress.Finished); Equal(7, progress.Remaining);

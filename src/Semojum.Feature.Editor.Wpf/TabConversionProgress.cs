@@ -106,10 +106,11 @@ internal sealed class TabConversionProgress : Grid, IDisposable
         var percent = total == 0 ? 0 : (int)Math.Round(100d * finished / total, MidpointRounding.AwayFromZero);
         title.Text = model.Title;
         counts.Text = $"{finished}쪽 / {total}쪽 완료 ({percent}%)" + (progress.Failed > 0 ? $" · 확인 필요 {progress.Failed}" : "");
-        estimate.Text = progress.Estimate;
+        // The server's remaining-time estimate (BE 2026-11-02); without one the line is hidden.
+        estimate.Text = progress.Estimate; estimate.Visibility = progress.Estimate.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         fill.Width = 288d * percent / 100; miniFill.Width = 16d * percent / 100;
         cancel.IsEnabled = !cancelPending && model.JobId is not null;
-        AutomationProperties.SetName(trigger, $"{model.Title} 변환 진행: {counts.Text}, {progress.Estimate}");
+        AutomationProperties.SetName(trigger, $"{model.Title} 변환 진행: {counts.Text}" + (progress.Estimate.Length == 0 ? "" : ", " + progress.Estimate));
     }
 
     public void Dispose() { closeTimer.Stop(); popup.IsOpen = false; }

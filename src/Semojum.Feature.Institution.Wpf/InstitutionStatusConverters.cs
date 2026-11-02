@@ -54,12 +54,13 @@ public sealed class InstitutionLastSeenConverter : IValueConverter
 public sealed record InstitutionAccountRow(string LoginId, string? Alias, string Status, string? LastLoginAt, long? UsedCredits, string? Control,
     InstitutionAccount? Account = null, InstitutionRequest? Request = null)
 {
-    public static InstitutionAccountRow Of(InstitutionAccount a) => new(a.LoginId, a.Alias, a.Status, a.LastLoginAt, a.UsedCredits,
+    // 사용 is this month's usage, compared with the account's monthly limit; an older server only sends the cumulative total.
+    public static InstitutionAccountRow Of(InstitutionAccount a) => new(a.LoginId, a.Alias, a.Status, a.LastLoginAt, a.MonthUsedCredits ?? a.UsedCredits,
         a.Self ? null : a.Status switch { "ACTIVE" => "잠금", "INACTIVE" => "잠금 해제", _ => null }, Account: a);
-    public static InstitutionAccountRow Of(InstitutionRequest r) => new("발급 요청 중", Field(r.Message, "별칭"),
+    public static InstitutionAccountRow Of(InstitutionRequest r) => new("발급 요청 중", r.Details?.AccountAlias ?? Field(r.Message, "별칭"),
         InstitutionUsage.InKorea(r.CreatedAt) is { } day ? day.ToString("MM-dd", CultureInfo.InvariantCulture) + " 요청" : "요청", null, null,
         r is { Type: "ACCOUNT_ISSUE", Status: "OPEN" } ? "요청 취소" : null, Request: r);
-    // The account request dialog writes 「별칭: …」 as one line of the request message.
+    // Requests sent before the request fields existed carry 「별칭: …」 as one line of the message.
     private static string? Field(string? message, string label) => message?.Split('\n').Select(l => l.Trim())
         .FirstOrDefault(l => l.StartsWith(label + ": ", StringComparison.Ordinal))?[(label.Length + 2)..];
 }

@@ -25,9 +25,13 @@ public partial class MainWindow
                 if (selected is not { Length: > 0 }) return;
                 if (!(selected.Length == 1 && Path.GetExtension(selected[0]).Equals(".smj", StringComparison.OrdinalIgnoreCase)))
                 {
-                    // Figma C3: the limit applies to each file, not to the selection as a whole.
-                    var oversized = selected.Select(path => (Path: path, Bytes: new FileInfo(path).Length)).Where(file => file.Bytes > JobClient.MaximumUploadBytes).ToArray();
+                    // Figma C3: the limit applies to each file first, so an oversized file is named on its own.
+                    var sizes = selected.Select(path => (Path: path, Bytes: new FileInfo(path).Length)).ToArray();
+                    var oversized = sizes.Where(file => file.Bytes > JobClient.MaximumUploadBytes).ToArray();
                     if (oversized.Length > 0) { OriginalUpload.ShowLimitWarning(oversized); return; }
+                    // Several images also share one 100 MB total (BE 2026-11-02, JOB4009).
+                    if (sizes.All(file => Path.GetExtension(file.Path).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg")
+                        && JobClient.ExceedsImageTotal(sizes.Select(file => file.Bytes).ToArray())) { OriginalUpload.ShowTotalLimitWarning(sizes); return; }
                 }
                 OriginalUpload.ClearLimitWarning();
                 await UploadAsync(selected);

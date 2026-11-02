@@ -152,13 +152,31 @@ public partial class MainWindow
             {
                 var files = await UploadFileReader.ReadAsync(orderedFiles, documentLifetime.Token);
                 session.Status = "파일 업로드 중…";
-                var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, dialog.FormId);
+                if (await UploadJobAsync(files, settings, dialog.FormId) is not { } job) return;
                 await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(orderedFiles[0]) + ".smj", files, uploadSettings: settings);
                 if (openDocument?.Model.JobId == job.JobId) openDocument.UploadPaths = orderedFiles;
             }
             finally { fileBusy = false; }
         }
         finally { uploadFlowBusy = false; }
+    }
+
+    // BE 2026-11-01: an encrypted PDF is refused without a job (JOB4018 no password, JOB4019 wrong password). Figma Case 3 asks for
+    // the document password and the same request is sent again with it. The password stays in memory only; cancelling stops the upload.
+    private async Task<JobCreated?> UploadJobAsync(IReadOnlyList<UploadFile> files, DocumentSession settings, string? formId)
+    {
+        string? password = null;
+        while (true)
+        {
+            try { return await jobs.UploadAsync(files, settings, documentLifetime.Token, formId, password); }
+            catch (SemojumApiException ex) when (ex.Code is "JOB4018" or "JOB4019" && files is [var pdf] && Path.GetExtension(pdf.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var prompt = FileNotices.EncryptedPdf(wrongPassword: ex.Code == "JOB4019"); prompt.Owner = this; prompt.ShowDialog();
+                password = prompt.TakePassword();
+                if (password is null) { session.Status = "암호가 걸린 PDF 올리기를 취소했습니다."; return null; }
+                session.Status = "파일 업로드 중…";
+            }
+        }
     }
 
     private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null, int? restorePage = null, DocumentSession? uploadSettings = null)
@@ -216,7 +234,6 @@ public partial class MainWindow
         }
         model.ErrorNotice = model.HasPendingServerPages || model.HasPendingRestart ? "서버 재개 결과 또는 요청 상태를 먼저 확인해 주세요. 확인 전에는 서버 저장을 할 수 없습니다." : "";
         var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
-        var started = System.Diagnostics.Stopwatch.StartNew(); var initialFinished = status.FinishedPages;
         void RememberRevision(EditorBlock b, int revision)
         {
             context.Translated[b] = revision;
@@ -235,13 +252,9 @@ public partial class MainWindow
                 if (!JobClient.ApplyReceivedStatus(model, status))
                     throw new InvalidDataException("현재 문서와 다른 작업의 상태는 적용할 수 없습니다.");
                 model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 완료)" : "";
-                // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
-                // count twice nor shorten the estimate a second time (C-02).
-                var finishedSinceOpen = status.FinishedPages - initialFinished;
-                var remainingSeconds = finishedSinceOpen > 0 ? started.Elapsed.TotalSeconds / finishedSinceOpen * status.RemainingPages : 0;
-                var remaining = TimeSpan.FromMinutes(Math.Max(1, Math.Ceiling(remainingSeconds / 60)));
-                model.Progress = status.IsTerminal ? null : status.ToProgress(remainingSeconds <= 0 ? "남은 시간 계산 중"
-                    : remaining.TotalHours >= 1 ? $"잔여 {(int)remaining.TotalHours}시간 {remaining.Minutes}분" : $"잔여 {remaining.Minutes}분");
+                // BE 2026-11-02: the server estimates the time left for the waiting and running pages (status estimatedRemainingSec,
+                // SSE queue_position.estimated_wait_sec). Progress inside a page is unknown, so the bar stays per page; no estimate hides the line.
+                model.Progress = status.IsTerminal ? null : status.ToProgress(ConversionProgress.RemainingLabel(status.EstimatedRemainingSec ?? events.EstimatedWaitSec));
                 model.Status = $"AI 변환 {status.FinishedPages}/{status.TotalPages}쪽 처리 · 성공 {status.SucceededPages} · 확인 필요 {status.FailedPages} · {status.Label}";
                 foreach (var page in status.Pages.Where(p => JobStatus.IsSucceededPage(p.Value) || JobStatus.IsFailedPage(p.Value)).OrderBy(p => p.Key))
                 {

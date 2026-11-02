@@ -83,6 +83,15 @@ public sealed class OpenDocumentDialog : CompactDialog
                     if (notice.Choice == 0) Semojum.Desktop.Services.CommonWindowServices.ShowHelp(this, "파일 열기");
                     return Task.CompletedTask;
                 }
+                // Several images also share one 100 MB total (BE 2026-11-02, JOB4009): the same notice, and the status line gives the total.
+                long[] sizes = IsLocal ? [] : Paths.Select(p => new FileInfo(p).Length).ToArray();
+                if (JobClient.ExceedsImageTotal(sizes))
+                {
+                    Status.Text = $"이미지 {Paths.Length}장 합계 {Math.Ceiling(sizes.Sum() / (1024d * 1024d)):0} MB · 여러 장은 합계 100 MB까지 올릴 수 있습니다.";
+                    var notice = FileNotices.OversizedFile(); notice.Owner = this; notice.ShowDialog();
+                    if (notice.Choice == 0) Semojum.Desktop.Services.CommonWindowServices.ShowHelp(this, "파일 열기");
+                    return Task.CompletedTask;
+                }
                 Settings.Layout.Validate(); DialogResult = true;
             }
             catch (Exception ex) { Status.Text = ex.Message; }

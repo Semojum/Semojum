@@ -109,7 +109,7 @@ public sealed class UsageDialog : CompactDialog
                 summaryCard.Height = 116; summaryCard.MinHeight = 0;
             }
         };
-        var billing = new StackPanel { Margin = new(24, 20, 24, 24) };
+        var billing = new StackPanel { Margin = new(24, 20, 24, 20) };
         var billingHeading = new DockPanel { Height = 32, Margin = new(0, 0, 0, 8) }; billing.Children.Add(billingHeading);
         var years = Enumerable.Range(2026, Math.Max(1, DateTime.Today.Year - 2025)).Reverse().Select(y => $"{y}년").ToArray();
         var year = Choices(years, years[0]); year.Width = 150; year.Height = year.MinHeight = 32; year.Padding = new(11, 0, 25, 0); System.Windows.Automation.AutomationProperties.SetName(year, "과금 연도");
@@ -182,18 +182,42 @@ public sealed class UsageDialog : CompactDialog
             catch (Exception) when (load.IsCancellationRequested) { }
             finally { if (!ReferenceEquals(load, monthlyLoad)) load.Dispose(); }
         }
-        year.SelectionChanged += async (_, _) => await LoadMonthlyAsync();
-        var billingDetail = new StackPanel { Margin = new(19, 11, 19, 15) };
-        var detailHeading = new DockPanel { Height = 32, Margin = new(0, 0, 0, 8) }; billingDetail.Children.Add(detailHeading);
+        var billingDetail = new DockPanel { Margin = new(19, 11, 19, 15) };
+        var detailHeading = new DockPanel { Height = 32, Margin = new(0, 0, 0, 8) }; DockPanel.SetDock(detailHeading, Dock.Top); billingDetail.Children.Add(detailHeading);
         var kind = Choices(["전체", "사용", "충전"], "전체"); kind.Width = 112; kind.Height = kind.MinHeight = 32; kind.Padding = new(11, 0, 25, 0); System.Windows.Automation.AutomationProperties.SetName(kind, "상세 내역 구분");
         var kindField = new Grid { Width = 112, Height = 32 }; kindField.Children.Add(kind);
         kindField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = ColorBrush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
         kindField.Children.Add(new SvgViewbox { Source = new Uri("pack://application:,,,/Semojum.Feature.Usage.Wpf;component/Assets/Figma/account-chevron.svg"), Width = 16, Height = 16, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, 5, 0), Stretch = Stretch.None, IsHitTestVisible = false });
         DockPanel.SetDock(kindField, Dock.Right); detailHeading.Children.Add(kindField);
-        detailHeading.Children.Add(new TextBlock { Text = "상세 내역", FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }); billingDetail.Children.Add(PaymentPanel(kind));
-        billing.Children.Add(Card(billingDetail, 180));
+        var detailHeadingTitle = new TextBlock { Text = "상세 내역", FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }; DockPanel.SetDock(detailHeadingTitle, Dock.Left); detailHeading.Children.Add(detailHeadingTitle);
+        var creditNotice = new TextBlock { Foreground = ColorBrush("#8A8A8A"), Margin = new(12, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis }; detailHeading.Children.Add(creditNotice);
+        System.Windows.Automation.AutomationProperties.SetAutomationId(creditNotice, "BillingDetailNotice");
+        var creditGrid = PaymentPanel((Style)FindResource("UsageJobsGrid")); billingDetail.Children.Add(creditGrid);
+        billing.Children.Add(Card(billingDetail, 552));
+        CancellationTokenSource? creditLoad = null;
+        async Task LoadCreditsAsync()
+        {
+            if (year.SelectedItem is not string yearLabel || !int.TryParse(yearLabel.TrimEnd('년'), out var shownYear)) return;
+            creditLoad?.Cancel(); var load = creditLoad = CancellationTokenSource.CreateLinkedTokenSource(Lifetime.Token);
+            // The chosen year is the period (to today, KST, in the current year); 전체 / 사용 / 충전 is filtered by the server's type.
+            var today = TodayInKorea(); var to = shownYear < today.Year ? new DateOnly(shownYear, 12, 31) : today;
+            var type = kind.SelectedIndex switch { 1 => "USE", 2 => "CHARGE", _ => "ALL" };
+            creditNotice.Text = "불러오는 중입니다.";
+            try
+            {
+                var data = await api.SendAuthenticatedAsync(HttpMethod.Get, $"/api/users/usage/credit-history?from={shownYear:0000}-01-01&to={to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&type={type}", cancellationToken: load.Token);
+                if (!ReferenceEquals(load, creditLoad)) return;
+                var rows = data.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array ? items.EnumerateArray().Select(ReadBillingRow).ToArray() : Array.Empty<BillingRow>();
+                creditGrid.ItemsSource = rows; creditNotice.Text = rows.Length == 0 ? "내역이 없습니다." : "";
+            }
+            catch (Exception) when (load.IsCancellationRequested) { }
+            catch (Exception ex) { if (ReferenceEquals(load, creditLoad)) { creditGrid.ItemsSource = Array.Empty<BillingRow>(); creditNotice.Text = "상세 내역을 불러오지 못했습니다. " + ex.Message; } }
+            finally { if (!ReferenceEquals(load, creditLoad)) load.Dispose(); }
+        }
+        year.SelectionChanged += async (_, _) => await Task.WhenAll(LoadMonthlyAsync(), LoadCreditsAsync());
+        kind.SelectionChanged += async (_, _) => await LoadCreditsAsync();
         var billingTab = new TabItem { Header = "과금 이력", Content = new ScrollViewer { Content = billing, Background = ColorBrush("#F4F6F9"), VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; tabs.Items.Add(billingTab);
-        tabs.SelectionChanged += async (_, e) => { if (e.Source == tabs && ReferenceEquals(tabs.SelectedItem, billingTab) && monthlyLoad is null) await LoadMonthlyAsync(); };
+        tabs.SelectionChanged += async (_, e) => { if (e.Source == tabs && ReferenceEquals(tabs.SelectedItem, billingTab) && monthlyLoad is null) await Task.WhenAll(LoadMonthlyAsync(), LoadCreditsAsync()); };
         var account = new StackPanel { Margin = new(24) };
         Row(account, "아이디", new TextBlock { Text = api.Account?.LoginId ?? "—" });
         Row(account, "계정명", new TextBlock { Text = api.Account?.DisplayName ?? "—" });
@@ -211,56 +235,106 @@ public sealed class UsageDialog : CompactDialog
         inquiryHeading.Children.Add(new TextBlock { Text = "문의 내역", FontSize = 20, FontWeight = FontWeights.SemiBold });
         var inquiryColumns = new Grid(); inquiryColumns.ColumnDefinitions.Add(new() { Width = new(420, GridUnitType.Star) }); inquiryColumns.ColumnDefinitions.Add(new() { Width = new(16) }); inquiryColumns.ColumnDefinitions.Add(new() { Width = new(736, GridUnitType.Star) }); inquiryContent.Children.Add(inquiryColumns);
         var listLayout = new DockPanel { Margin = new(12, 8, 12, 12) };
-        var inquiryActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left }; DockPanel.SetDock(inquiryActions, Dock.Bottom); listLayout.Children.Add(inquiryActions);
-        var inquiryList = new ListBox { BorderThickness = new(0), Background = Brushes.White, ItemTemplate = InquiryRowTemplate(), ItemContainerStyle = InquiryRowStyle() }; listLayout.Children.Add(inquiryList);
+        // Figma C0-9 has no paging buttons: the list shows the first ten inquiries and 「더 보기」 (shown only when more exist) adds the next ten below.
+        var inquiryActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new(0, 8, 0, 0) }; DockPanel.SetDock(inquiryActions, Dock.Bottom); listLayout.Children.Add(inquiryActions);
+        var inquiryRows = new System.Collections.ObjectModel.ObservableCollection<BoardRow>();
+        var inquiryList = new ListBox { BorderThickness = new(0), Background = Brushes.White, ItemsSource = inquiryRows, ItemTemplate = InquiryRowTemplate(), ItemContainerStyle = InquiryRowStyle() }; listLayout.Children.Add(inquiryList);
         var inquiryCard = new Border { Background = Brushes.White, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8), Child = listLayout }; inquiryColumns.Children.Add(inquiryCard);
-        var detailLayout = new DockPanel { Margin = new(19, 15, 19, 16) };
+        var detailLayout = new DockPanel { Margin = new(19, 15, 19, 19) };
         var detailTitle = new TextBlock { Text = "문의를 선택해 주세요.", FontSize = 18, TextWrapping = TextWrapping.Wrap }; DockPanel.SetDock(detailTitle, Dock.Top); detailLayout.Children.Add(detailTitle);
-        var detailMetadata = new TextBlock { Foreground = (Brush)FindResource("Muted"), Margin = new(0, 8, 0, 12) }; DockPanel.SetDock(detailMetadata, Dock.Top); detailLayout.Children.Add(detailMetadata);
-        var detailActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; DockPanel.SetDock(detailActions, Dock.Bottom); detailLayout.Children.Add(detailActions);
-        var detailBody = new StackPanel(); detailLayout.Children.Add(new ScrollViewer { Content = detailBody, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var detailMetadata = new TextBlock { Foreground = (Brush)FindResource("Muted"), Margin = new(0, 8, 0, 8) }; DockPanel.SetDock(detailMetadata, Dock.Top); detailLayout.Children.Add(detailMetadata);
+        var detailRule = new Border { Height = 1, Background = ColorBrush("#EAEAEA"), Margin = new(0, 0, 0, 7) }; DockPanel.SetDock(detailRule, Dock.Top); detailLayout.Children.Add(detailRule);
+        var detailActions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 8, 0, 0) }; DockPanel.SetDock(detailActions, Dock.Bottom); detailLayout.Children.Add(detailActions);
+        // The thread (280) and the follow-up field (408) share the card height as in the 1440x1000 Figma frame.
+        var detailRows = new Grid(); detailRows.RowDefinitions.Add(new() { Height = new(280, GridUnitType.Star) }); detailRows.RowDefinitions.Add(new() { Height = new(408, GridUnitType.Star) }); detailLayout.Children.Add(detailRows);
+        var detailBody = new StackPanel(); detailRows.Children.Add(new ScrollViewer { Content = detailBody, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var followUp = new TextBox { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 10000, BorderThickness = new(0), Background = Brushes.Transparent, Padding = new(11, 7, 11, 7), VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, IsEnabled = false };
+        System.Windows.Automation.AutomationProperties.SetName(followUp, "이어서 물을 것을 적는다");
+        var followUpHint = new TextBlock { Text = "이어서 물을 것을 적는다", Foreground = ColorBrush("#8A8A8A"), Margin = new(12, 8, 12, 0), VerticalAlignment = VerticalAlignment.Top, IsHitTestVisible = false };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(followUpHint, "InquiryFollowUpPlaceholder");
+        var followUpLine = new Border { Height = 1, Background = ColorBrush("#D1D1D1"), VerticalAlignment = VerticalAlignment.Bottom, IsHitTestVisible = false };
+        followUp.GotKeyboardFocus += (_, _) => { followUpLine.Height = 2; followUpLine.Background = ColorBrush("#005FB8"); };
+        followUp.LostKeyboardFocus += (_, _) => { followUpLine.Height = 1; followUpLine.Background = ColorBrush("#D1D1D1"); };
+        var followUpBox = new Grid(); followUpBox.Children.Add(followUp); followUpBox.Children.Add(followUpHint); followUpBox.Children.Add(followUpLine);
+        var followUpField = new Border { Background = Brushes.White, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(4), Child = followUpBox }; Grid.SetRow(followUpField, 1); detailRows.Children.Add(followUpField);
         var detailCard = new Border { Background = Brushes.White, BorderBrush = ColorBrush("#EAEAEA"), BorderThickness = new(1), CornerRadius = new(8), Child = detailLayout }; Grid.SetColumn(detailCard, 2); inquiryColumns.Children.Add(detailCard);
-        var boardPage = 1; var boardTotal = 0; var inquiryLoaded = false; var listRequest = 0; var selectionRequest = 0;
-        Button? previousInquiry = null, nextInquiry = null, selectedInquiry = null;
+        var boardPage = 1; var boardTotal = 0; var inquiryLoaded = false; var listRequest = 0; var selectionRequest = 0; var sending = false;
+        Button? moreInquiries = null, sendFollowUp = null;
         void UpdateInquiryActions()
         {
-            if (previousInquiry is not null) previousInquiry.IsEnabled = inquiryLoaded && boardPage > 1;
-            if (nextInquiry is not null) nextInquiry.IsEnabled = inquiryLoaded && (long)boardPage * 10 < boardTotal;
-            if (selectedInquiry is not null) selectedInquiry.IsEnabled = inquiryList.SelectedItem is BoardRow;
+            var more = inquiryLoaded && (long)boardPage * 10 < boardTotal;
+            if (moreInquiries is not null) moreInquiries.Visibility = more ? Visibility.Visible : Visibility.Collapsed;
+            var selected = inquiryList.SelectedItem is BoardRow; followUp.IsEnabled = selected && !sending;
+            followUpHint.Visibility = followUp.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (sendFollowUp is not null) sendFollowUp.IsEnabled = selected && !sending && !string.IsNullOrWhiteSpace(followUp.Text);
         }
-        void ClearInquiryError() { if (Status.Text.StartsWith("문의 내역을 불러오지 못했습니다.", StringComparison.Ordinal)) Status.Text = ""; }
-        async Task LoadInquiriesAsync(int? requestedPage = null)
+        followUp.TextChanged += (_, _) => UpdateInquiryActions();
+        void ClearInquiryError() { if (Status.Text.StartsWith("문의 내역을 불러오지 못했습니다.", StringComparison.Ordinal) || Status.Text.StartsWith("이어 묻기를 보내지 못했습니다.", StringComparison.Ordinal)) Status.Text = ""; }
+        async Task LoadInquiriesAsync(bool more = false, long? selectPost = null)
         {
-            var page = requestedPage ?? boardPage; var request = ++listRequest;
+            var page = more ? boardPage + 1 : 1; var request = ++listRequest;
             var data = await boardClient.ListAsync(page, "TITLE_CONTENT", "", true, Lifetime.Token);
             if (Lifetime.IsCancellationRequested || request != listRequest) return;
-            boardPage = page; boardTotal = data.TotalCount; inquiryList.ItemsSource = data.Items; inquiryLoaded = true; ClearInquiryError();
-            if (data.Items.Length > 0) inquiryList.SelectedIndex = 0;
-            else { detailTitle.Text = "보낸 문의가 없습니다."; detailMetadata.Text = ""; detailBody.Children.Clear(); }
-            UpdateInquiryActions();
-        }
-        async Task ShowInquiryAsync(BoardRow row, int request)
-        {
-            var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token);
-            if (Lifetime.IsCancellationRequested || request != selectionRequest || !ReferenceEquals(inquiryList.SelectedItem, row)) return;
-            detailTitle.Text = post.Title; detailMetadata.Text = $"{post.CreatedAt}  ·  {(post.Answers.Length > 0 ? $"답변 {post.Answers.Length}건" : "답변 없음")}"; detailBody.Children.Clear(); ClearInquiryError();
-            void AddMessage(string title, string text)
+            boardPage = page; boardTotal = data.TotalCount; inquiryLoaded = true; ClearInquiryError();
+            // A row moved onto the next page by a newer inquiry is not listed twice.
+            if (more) { foreach (var row in data.Items) if (!inquiryRows.Any(r => r.PostId == row.PostId)) inquiryRows.Add(row); }
+            else
             {
-                detailBody.Children.Add(new TextBlock { Text = title, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 0, 0, 6) });
-                detailBody.Children.Add(new Border { Background = ColorBrush("#F9F9F9"), CornerRadius = new(6), Padding = new(16, 12, 16, 12), Margin = new(0, 0, 0, 16), Child = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, LineHeight = 20 } });
+                inquiryRows.Clear(); foreach (var row in data.Items) inquiryRows.Add(row);
+                if (inquiryRows.Count > 0) inquiryList.SelectedItem = inquiryRows.FirstOrDefault(r => r.PostId == selectPost) ?? inquiryRows[0];
+                else { detailTitle.Text = "보낸 문의가 없습니다."; detailMetadata.Text = ""; detailBody.Children.Clear(); }
             }
-            AddMessage("보낸 글", post.Content); foreach (var answer in post.Answers) AddMessage("운영자 답변 · " + answer.AnsweredAt, answer.Content);
-            if (post.Attachments.Length > 0) detailBody.Children.Add(new TextBlock { Text = $"첨부 {post.Attachments.Length}개 · ‘상세 열기’에서 확인", Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap });
+            UpdateInquiryActions();
         }
         async Task SafeInquiryAsync(Func<Task> action)
         {
             try { await action(); } catch (OperationCanceledException) { } catch (Exception ex) { Status.Text = "문의 내역을 불러오지 못했습니다. " + ex.Message; }
         }
+        async Task ShowInquiryAsync(BoardRow row, int request)
+        {
+            var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token);
+            if (Lifetime.IsCancellationRequested || request != selectionRequest || !ReferenceEquals(inquiryList.SelectedItem, row)) return;
+            // Figma 「분류 · 날짜 · 답변 완료」; an older server without status keeps the operator answer count.
+            var answered = post.Answers.Count(a => !a.FromAuthor);
+            var state = post.Status is "ANSWERED" or "WAITING" ? InquiryState(post.Status, answered).Label : answered > 0 ? $"답변 {answered}건" : "답변 없음";
+            detailTitle.Text = post.Title; detailMetadata.Text = string.Join("  ·  ", new[] { CategoryLabel(post.Category), post.CreatedAt, state }.Where(part => !string.IsNullOrEmpty(part))); detailBody.Children.Clear(); ClearInquiryError();
+            void AddMessage(string title, string text)
+            {
+                detailBody.Children.Add(new TextBlock { Text = title, Foreground = (Brush)FindResource("Muted"), Margin = new(0, 0, 0, 6) });
+                detailBody.Children.Add(new Border { Background = ColorBrush("#F9F9F9"), CornerRadius = new(6), Padding = new(16, 12, 16, 12), Margin = new(0, 0, 0, 16), Child = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, LineHeight = 20 } });
+            }
+            // Operator answers and the writer's follow-ups come as one thread in writing order.
+            AddMessage("보낸 글", post.Content); foreach (var answer in post.Answers) AddMessage((answer.FromAuthor ? "이어 물은 글" : "운영자 답변") + "  ·  " + answer.AnsweredAt, answer.Content);
+            if (post.Attachments.Length > 0)
+            {
+                var attachmentNote = new TextBlock { Foreground = (Brush)FindResource("Muted"), TextWrapping = TextWrapping.Wrap }; attachmentNote.Inlines.Add(new Run($"첨부 {post.Attachments.Length}개 · "));
+                var openPost = new Hyperlink(new Run("게시판에서 보기")); attachmentNote.Inlines.Add(openPost);
+                openPost.Click += async (_, _) => await SafeInquiryAsync(async () => { if (actions is null) throw new InvalidOperationException("문의 화면을 열 수 없습니다."); actions.OpenPost(this, post); await LoadInquiriesAsync(selectPost: post.PostId); });
+                detailBody.Children.Add(attachmentNote);
+            }
+        }
+        async Task SendFollowUpAsync()
+        {
+            if (sending || inquiryList.SelectedItem is not BoardRow row || string.IsNullOrWhiteSpace(followUp.Text)) return;
+            sending = true; UpdateInquiryActions();
+            try
+            {
+                await boardClient.FollowUpAsync(row.PostId, followUp.Text, Lifetime.Token);
+                followUp.Clear(); ClearInquiryError();
+                // A follow-up returns the inquiry to 처리 중 until an operator answers; reselecting reads the thread with the new message.
+                var index = inquiryRows.IndexOf(row);
+                if (index >= 0) { var waiting = row with { Status = "WAITING" }; inquiryRows[index] = waiting; inquiryList.SelectedItem = waiting; }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Status.Text = "이어 묻기를 보내지 못했습니다. " + ex.Message; }
+            finally { sending = false; UpdateInquiryActions(); }
+        }
         var writeInquiry = Button("새 문의", () => SafeInquiryAsync(async () => { if (actions is null) throw new InvalidOperationException("문의 화면을 열 수 없습니다."); if (actions.NewInquiry(this)) await LoadInquiriesAsync(); }), true);
         PublicDialogDesign.StyleAction(writeInquiry, true); writeInquiry.Width = 108; writeInquiry.Margin = new(0); DockPanel.SetDock(writeInquiry, Dock.Right); inquiryHeading.Children.Insert(0, writeInquiry);
         inquiryList.SelectionChanged += async (_, _) =>
         {
-            var request = ++selectionRequest;
+            // A draft belongs to the inquiry it was written under.
+            var request = ++selectionRequest; followUp.Clear();
             UpdateInquiryActions();
             if (inquiryList.SelectedItem is not BoardRow row) return;
             detailTitle.Text = "문의 내용을 불러오는 중입니다."; detailMetadata.Text = ""; detailBody.Children.Clear();
@@ -273,10 +347,8 @@ public sealed class UsageDialog : CompactDialog
                 Status.Text = "문의 내역을 불러오지 못했습니다. " + ex.Message;
             }
         };
-        previousInquiry = Button("이전", () => SafeInquiryAsync(async () => { if (boardPage > 1) await LoadInquiriesAsync(boardPage - 1); })); inquiryActions.Children.Add(previousInquiry);
-        nextInquiry = Button("다음", () => SafeInquiryAsync(async () => { if ((long)boardPage * 10 < boardTotal) await LoadInquiriesAsync(boardPage + 1); })); inquiryActions.Children.Add(nextInquiry);
-        selectedInquiry = Button("상세 열기", () => SafeInquiryAsync(async () => { if (inquiryList.SelectedItem is BoardRow row) { var post = await boardClient.ReadAsync(row.PostId, Lifetime.Token); if (actions is null) throw new InvalidOperationException("문의 화면을 열 수 없습니다."); actions.OpenPost(this, post); await LoadInquiriesAsync(); } })); detailActions.Children.Add(selectedInquiry);
-        detailActions.Children.Add(Button("게시판 열기", () => { return SafeInquiryAsync(async () => { if (actions is null) throw new InvalidOperationException("게시판을 열 수 없습니다."); actions.OpenBoard(this); await LoadInquiriesAsync(); }); }));
+        moreInquiries = Button("더 보기", () => SafeInquiryAsync(() => LoadInquiriesAsync(more: true))); PublicDialogDesign.StyleAction(moreInquiries); moreInquiries.Margin = new(0); inquiryActions.Children.Add(moreInquiries);
+        sendFollowUp = Button("보내기", SendFollowUpAsync, true); PublicDialogDesign.StyleAction(sendFollowUp, true); sendFollowUp.Width = 92; sendFollowUp.Margin = new(0); sendFollowUp.IsDefault = false; detailActions.Children.Add(sendFollowUp);
         UpdateInquiryActions();
         var inquiryTab = new TabItem { Header = "문의 내역", Content = inquiryScreen }; var logoutTab = new TabItem { Header = "로그아웃" };
         tabs.Items.Add(inquiryTab); tabs.Items.Add(logoutTab);
@@ -395,17 +467,45 @@ public sealed class UsageDialog : CompactDialog
         var panel = new FrameworkElementFactory(typeof(StackPanel)); panel.SetValue(MarginProperty, new Thickness(8, 8, 8, 8));
         var title = new FrameworkElementFactory(typeof(TextBlock)); title.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.DisplayTitle))); title.SetValue(FontSizeProperty, 14d); title.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); panel.AppendChild(title);
         var metadata = new FrameworkElementFactory(typeof(DockPanel)); metadata.SetValue(MarginProperty, new Thickness(0, 5, 0, 0));
-        var badge = new FrameworkElementFactory(typeof(Border)); badge.SetValue(DockPanel.DockProperty, Dock.Right);
-        badge.SetValue(FrameworkElement.HeightProperty, 18d); badge.SetValue(FrameworkElement.MinWidthProperty, 69d);
+        // Figma C0-9 row: 분류 (100px) · 날짜 · state chip at the right (답변 완료 #0F7B0F, 처리 중 #9D5D00).
+        var state = new InquiryRowConverter();
+        var badge = new FrameworkElementFactory(typeof(Border)); badge.SetValue(DockPanel.DockProperty, Dock.Right); badge.SetValue(FrameworkElement.HeightProperty, 18d);
         badge.SetValue(Border.CornerRadiusProperty, new CornerRadius(9)); badge.SetValue(Border.BorderThicknessProperty, new Thickness(1));
-        badge.SetValue(Border.BorderBrushProperty, ColorBrush("#8A8A8A")); badge.SetValue(Border.BackgroundProperty, Brushes.White);
-        badge.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty, new Binding(nameof(BoardRow.AnswerCount)) { StringFormat = "답변 {0}건" });
-        var count = new FrameworkElementFactory(typeof(TextBlock)); count.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.AnswerCount)) { StringFormat = "답변 {0}건" });
-        count.SetValue(TextBlock.ForegroundProperty, ColorBrush("#5F5F5F")); count.SetValue(TextBlock.FontSizeProperty, 12d);
-        count.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Center); count.SetValue(FrameworkElement.MarginProperty, new Thickness(6, 0, 6, 0));
+        badge.SetBinding(Border.BorderBrushProperty, new Binding { Converter = state, ConverterParameter = "edge" }); badge.SetValue(Border.BackgroundProperty, Brushes.White);
+        badge.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty, new Binding { Converter = state });
+        var count = new FrameworkElementFactory(typeof(TextBlock)); count.SetBinding(TextBlock.TextProperty, new Binding { Converter = state });
+        count.SetBinding(TextBlock.ForegroundProperty, new Binding { Converter = state, ConverterParameter = "text" }); count.SetValue(TextBlock.FontSizeProperty, 12d);
+        count.SetValue(TextBlock.TextAlignmentProperty, TextAlignment.Center); count.SetValue(FrameworkElement.MarginProperty, new Thickness(8, 0, 8, 0));
         count.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); badge.AppendChild(count); metadata.AppendChild(badge);
+        var category = new FrameworkElementFactory(typeof(TextBlock)); category.SetValue(DockPanel.DockProperty, Dock.Left); category.SetValue(FrameworkElement.WidthProperty, 100d);
+        category.SetBinding(TextBlock.TextProperty, new Binding { Converter = state, ConverterParameter = "category" }); category.SetBinding(VisibilityProperty, new Binding { Converter = state, ConverterParameter = "categoryVisibility" });
+        category.SetValue(TextBlock.ForegroundProperty, ColorBrush("#5F5F5F")); category.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); metadata.AppendChild(category);
         var date = new FrameworkElementFactory(typeof(TextBlock)); date.SetBinding(TextBlock.TextProperty, new Binding(nameof(BoardRow.CreatedAt))); date.SetValue(TextBlock.ForegroundProperty, ColorBrush("#8A8A8A")); metadata.AppendChild(date); panel.AppendChild(metadata);
         return new DataTemplate(typeof(BoardRow)) { VisualTree = panel };
+    }
+    /// <summary>The server's inquiry status (WAITING · ANSWERED); an older server without status keeps the neutral answer count.</summary>
+    internal static (string Label, string Edge, string Text) InquiryState(string? status, int answers) => status switch
+    {
+        "ANSWERED" => ("답변 완료", "#0F7B0F", "#0F7B0F"), "WAITING" => ("처리 중", "#9D5D00", "#9D5D00"), _ => ($"답변 {answers}건", "#8A8A8A", "#5F5F5F")
+    };
+    /// <summary>The four Figma inquiry categories; posts written before categories (null) show none.</summary>
+    internal static string CategoryLabel(string? category) => category switch
+    {
+        "ACCOUNT" => "계정 · 발급", "RESULT" => "점역 결과", "BILLING" => "크레딧 · 결제", "USAGE" => "사용법", _ => ""
+    };
+    private sealed class InquiryRowConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is not BoardRow row) return DependencyProperty.UnsetValue;
+            var (label, edge, text) = InquiryState(row.Status, row.AnswerCount); var category = CategoryLabel(row.Category);
+            return parameter switch
+            {
+                "edge" => ColorBrush(edge), "text" => ColorBrush(text), "category" => category,
+                "categoryVisibility" => category.Length > 0 ? Visibility.Visible : Visibility.Collapsed, _ => label
+            };
+        }
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
     private static Style InquiryRowStyle()
     {
@@ -433,19 +533,38 @@ public sealed class UsageDialog : CompactDialog
             if (logo.Child is TextBlock text) { text.Text = "S"; text.FontFamily = new FontFamily("Segoe UI Symbol"); }
         }
     }
-    /// <summary>A billing detail entry. No 구분 field is known from the server, so 사용/충전 follows the sign of the credit change as in the Figma rows (-11 사용, +3,000 충전).</summary>
-    internal sealed record BillingRow(string Date, string Description, decimal Credits)
+    /// <summary>A 상세 내역 row from /api/users/usage/credit-history: 구분 is the server's USE (사용) or CHARGE (충전); 잔액 is the institution balance after the row (— without an institution).</summary>
+    internal sealed record BillingRow(string Date, string Kind, string Description, string Pages, string Credits, string Balance);
+    internal static BillingRow ReadBillingRow(JsonElement item)
     {
-        public string Kind => Credits < 0 ? "사용" : Credits > 0 ? "충전" : "";
-        public string CreditsText => Credits.ToString("+#,0.##;-#,0.##;0", CultureInfo.InvariantCulture);
+        static decimal? Amount(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var n) ? n : null;
+        var kind = Value(item, "type") switch { "USE" => "사용", "CHARGE" => "충전", var other => other };
+        return new(Value(item, "date"), kind, Value(item, "title").Normalize(System.Text.NormalizationForm.FormC),
+            Amount(item, "pages") is { } pages ? pages.ToString("#,0", CultureInfo.InvariantCulture) : "—",
+            Amount(item, "credits") is { } credits ? credits.ToString("+#,0.##;-#,0.##;0", CultureInfo.InvariantCulture) : "—",
+            Amount(item, "balanceAfter") is { } balance ? balance.ToString("#,0.##", CultureInfo.InvariantCulture) : "—");
     }
-    private static UIElement PaymentPanel(ComboBox kind)
+    private static DataGrid PaymentPanel(Style style)
     {
-        var panel = new StackPanel(); var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, Height = 24, BorderThickness = new(0), Background = Brushes.White, HeadersVisibility = DataGridHeadersVisibility.Column };
-        foreach (var (label, property) in new[] { ("날짜", nameof(BillingRow.Date)), ("내용", nameof(BillingRow.Description)), ("금액", nameof(BillingRow.CreditsText)) })
-            grid.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(property), Width = new(1, DataGridLengthUnitType.Star) });
-        kind.SelectionChanged += (_, _) => grid.Items.Filter = kind.SelectedItem is "사용" or "충전" ? row => row is BillingRow entry && Equals(entry.Kind, kind.SelectedItem) : null;
-        System.Windows.Automation.AutomationProperties.SetAutomationId(grid, "BillingDetailGrid"); panel.Children.Add(grid); panel.Children.Add(new TextBlock { Text = "이 계정에서는 결제 내역을 조회할 수 없습니다. 기관 관리자에게 확인해 주세요.", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.DimGray, Margin = new(0, 8, 0, 12) }); return panel;
+        // Figma C0-8 상세 내역: 날짜 110 · 구분 chip 270 · 내용 280 · 쪽수 100 · 크레딧 120 (14px Bold, 충전 green) · 잔액, 32px rows.
+        var grid = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, RowHeight = 32, Style = style };
+        grid.Columns.Add(new DataGridTextColumn { Header = "날짜", Binding = new Binding(nameof(BillingRow.Date)), Width = 110 });
+        var chip = new FrameworkElementFactory(typeof(Border), "KindChip"); chip.SetValue(FrameworkElement.HeightProperty, 18d); chip.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+        chip.SetValue(Border.CornerRadiusProperty, new CornerRadius(9)); chip.SetValue(Border.BorderThicknessProperty, new Thickness(1)); chip.SetValue(Border.PaddingProperty, new Thickness(8, 0, 8, 0));
+        chip.SetValue(Border.BackgroundProperty, Brushes.White); chip.SetValue(Border.BorderBrushProperty, ColorBrush("#EAEAEA"));
+        chip.SetBinding(System.Windows.Automation.AutomationProperties.NameProperty, new Binding(nameof(BillingRow.Kind)));
+        var chipText = new FrameworkElementFactory(typeof(TextBlock), "KindText"); chipText.SetBinding(TextBlock.TextProperty, new Binding(nameof(BillingRow.Kind)));
+        chipText.SetValue(TextBlock.ForegroundProperty, ColorBrush("#5F5F5F")); chipText.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); chip.AppendChild(chipText);
+        var chipTemplate = new DataTemplate { VisualTree = chip }; var charged = new DataTrigger { Binding = new Binding(nameof(BillingRow.Kind)), Value = "충전" };
+        charged.Setters.Add(new Setter(Border.BorderBrushProperty, ColorBrush("#0F7B0F"), "KindChip")); charged.Setters.Add(new Setter(TextBlock.ForegroundProperty, ColorBrush("#0F7B0F"), "KindText")); chipTemplate.Triggers.Add(charged);
+        grid.Columns.Add(new DataGridTemplateColumn { Header = "구분", Width = 270, CellTemplate = chipTemplate });
+        grid.Columns.Add(new DataGridTextColumn { Header = "내용", Binding = new Binding(nameof(BillingRow.Description)), Width = 280 });
+        grid.Columns.Add(new DataGridTextColumn { Header = "쪽수", Binding = new Binding(nameof(BillingRow.Pages)), Width = 100 });
+        var amount = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle); amount.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d)); amount.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
+        var green = new DataTrigger { Binding = new Binding(nameof(BillingRow.Kind)), Value = "충전" }; green.Setters.Add(new Setter(TextBlock.ForegroundProperty, ColorBrush("#0F7B0F"))); amount.Triggers.Add(green);
+        grid.Columns.Add(new DataGridTextColumn { Header = "크레딧", Binding = new Binding(nameof(BillingRow.Credits)), Width = 120, ElementStyle = amount });
+        grid.Columns.Add(new DataGridTextColumn { Header = "잔액", Binding = new Binding(nameof(BillingRow.Balance)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        System.Windows.Automation.AutomationProperties.SetAutomationId(grid, "BillingDetailGrid"); System.Windows.Automation.AutomationProperties.SetName(grid, "상세 내역"); return grid;
     }
     internal static string StatusLabel(string status, bool failed) => status switch
     {
@@ -486,11 +605,8 @@ public sealed class UsageDialog : CompactDialog
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => Binding.DoNothing;
     }
     /// <summary>The server's month boundary is KST, whatever the workstation's time zone.</summary>
-    internal static DateOnly ThisMonthInKorea()
-    {
-        var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time"));
-        return new DateOnly(now.Year, now.Month, 1);
-    }
+    internal static DateOnly ThisMonthInKorea() { var today = TodayInKorea(); return new DateOnly(today.Year, today.Month, 1); }
+    internal static DateOnly TodayInKorea() => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Korea Standard Time")).DateTime);
     /// <summary>One of four equal axis steps (Figma 0–4,000): the smallest 1, 2 or 5 × 10ⁿ that keeps the largest month under the top line.</summary>
     internal static decimal AxisStep(decimal largest)
     {

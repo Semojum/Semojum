@@ -142,22 +142,60 @@ internal static class WindowsUsageDesignChecks
                   && monthBars.Parent is Grid { Parent: Border { Height: 260 } }
                   && Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "BillingMonthlyNotice").Text.Length == 0,
                 "Bars follow each month's returned credits on a four-step axis (164px) inside the 260px Figma card");
-            if (Environment.GetEnvironmentVariable("BILLING_CAPTURE") is { Length: > 0 } billCapture) await WindowsSmoke.RenderElementAsync(dialog, billCapture);
             var kind = Descendants(dialog).OfType<ComboBox>().SingleOrDefault(c => System.Windows.Automation.AutomationProperties.GetName(c) == "상세 내역 구분");
             check(kind is { Width: 112, Height: 32, SelectedItem: "전체", ItemsSource: IEnumerable<string> kinds } && kinds.SequenceEqual(new[] { "전체", "사용", "충전" })
                   && kind.Parent is Grid { Width: 112, Height: 32 } kindField && kindField.Children.OfType<SvgViewbox>().Any(i => i is { Width: 16, Height: 16 } && i.Source?.ToString().EndsWith("account-chevron.svg", StringComparison.Ordinal) == true),
                 "The 상세 내역 heading carries the final 112px 전체 / 사용 / 충전 combo styled like 최근 30일");
             var billingGrid = Descendants(dialog).OfType<DataGrid>().Single(g => System.Windows.Automation.AutomationProperties.GetAutomationId(g) == "BillingDetailGrid");
-            billingGrid.ItemsSource = new[] { new UsageDialog.BillingRow("2026-08-13", "수능특강_생명Ⅱ.pdf", -11), new UsageDialog.BillingRow("2026-08-01", "크레딧 추가", 3000), new UsageDialog.BillingRow("2026-07-28", "고2_수학Ⅰ_3단원.pdf", -26) };
-            string[] Shown() => billingGrid.Items.Cast<UsageDialog.BillingRow>().Select(r => r.Description).ToArray();
-            kind!.SelectedItem = "사용"; var used = Shown(); kind.SelectedItem = "충전"; var charged = Shown(); kind.SelectedItem = "전체"; var all = Shown();
-            check(used.SequenceEqual(new[] { "수능특강_생명Ⅱ.pdf", "고2_수학Ⅰ_3단원.pdf" }) && charged.SequenceEqual(new[] { "크레딧 추가" }) && all.Length == 3,
-                "Choosing 사용 or 충전 filters billing details by the sign of the credit change, and 전체 shows every entry");
-            billingGrid.ItemsSource = null;
+            var billingNotice = Descendants(dialog).OfType<TextBlock>().Single(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "BillingDetailNotice");
+            UsageDialog.BillingRow[] Shown() => billingGrid.Items.Cast<UsageDialog.BillingRow>().ToArray();
+            await WaitAsync(() => Shown().Length == 3); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var shownYear = int.Parse(((string)Descendants(dialog).OfType<ComboBox>().Single(c => System.Windows.Automation.AutomationProperties.GetName(c) == "과금 연도").SelectedItem).TrimEnd('년'), CultureInfo.InvariantCulture);
+            var today = UsageDialog.TodayInKorea(); var periodEnd = shownYear < today.Year ? new DateOnly(shownYear, 12, 31) : today;
+            check(fixture.CreditQueries.Count == 1 && fixture.CreditQueries[0] == $"?from={shownYear:0000}-01-01&to={periodEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&type=ALL" && billingNotice.Text.Length == 0,
+                "상세 내역 asks /api/users/usage/credit-history once for the chosen year (to today, KST) with type=ALL");
+            check(billingGrid.Columns.Select(c => c.Header as string).SequenceEqual(new[] { "날짜", "구분", "내용", "쪽수", "크레딧", "잔액" })
+                  && billingGrid.Columns.Take(5).Select(c => c.Width.Value).SequenceEqual(new[] { 110d, 270, 280, 100, 120 }) && billingGrid.RowHeight == 32
+                  && billingGrid.Parent is DockPanel { Parent: Border { Height: 552 } },
+                "상세 내역 is the final six-column table (날짜 · 구분 · 내용 · 쪽수 · 크레딧 · 잔액) with 32px rows in the 552px Figma card");
+            var shown = Shown();
+            check(shown.Select(r => (r.Date, r.Kind, r.Description, r.Pages, r.Credits, r.Balance)).SequenceEqual(new[] {
+                    ("2026-08-13", "사용", "수능특강_생명Ⅱ.pdf", "14", "-11", "5,400"), ("2026-08-01", "충전", "크레딧 추가 (주문 20260801-02)", "—", "+3,000", "5,544"), ("2026-07-28", "사용", "고2_수학Ⅰ_3단원.pdf", "26", "-26", "—") }),
+                "Rows show the server's 구분, title, pages (— for a charge), signed credits and balanceAfter (— when the account has no institution)");
+            var chips = Descendants(billingGrid).OfType<Border>().Where(b => b is { Height: 18, CornerRadius.TopLeft: 9 }).ToArray();
+            var charge = chips.FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetName(b) == "충전"); var use = chips.FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetName(b) == "사용");
+            var chargeAmount = Descendants(billingGrid).OfType<TextBlock>().FirstOrDefault(t => t.Text == "+3,000"); var useAmount = Descendants(billingGrid).OfType<TextBlock>().FirstOrDefault(t => t.Text == "-11");
+            Color? EdgeOf(Border? b) => (b?.BorderBrush as SolidColorBrush)?.Color; Color? InkOf(TextBlock? t) => (t?.Foreground as SolidColorBrush)?.Color;
+            check(EdgeOf(charge) == Color.FromRgb(15, 123, 15) && InkOf(charge?.Child as TextBlock) == Color.FromRgb(15, 123, 15) && EdgeOf(use) == Color.FromRgb(234, 234, 234) && InkOf(use?.Child as TextBlock) == Color.FromRgb(95, 95, 95)
+                  && chargeAmount is { FontSize: 14 } && chargeAmount.FontWeight == FontWeights.Bold && InkOf(chargeAmount) == Color.FromRgb(15, 123, 15)
+                  && useAmount is { FontSize: 14 } && useAmount.FontWeight == FontWeights.Bold && InkOf(useAmount) == Color.FromRgb(26, 26, 26),
+                "구분 chips and 14px bold credits follow Figma: 사용 grey, 충전 green");
+            if (Environment.GetEnvironmentVariable("BILLING_CAPTURE") is { Length: > 0 } billCapture) await WindowsSmoke.RenderElementAsync(dialog, billCapture);
+            kind!.SelectedItem = "사용"; await WaitAsync(() => fixture.CreditQueries.Last().EndsWith("&type=USE", StringComparison.Ordinal) && Shown().Length == 2); var used = Shown();
+            kind.SelectedItem = "충전"; await WaitAsync(() => fixture.CreditQueries.Last().EndsWith("&type=CHARGE", StringComparison.Ordinal) && Shown().Length == 1); var charged = Shown();
+            kind.SelectedItem = "전체"; await WaitAsync(() => fixture.CreditQueries.Last().EndsWith("&type=ALL", StringComparison.Ordinal) && Shown().Length == 3);
+            check(used.All(r => r.Kind == "사용") && charged.Single().Kind == "충전" && fixture.CreditQueries.Count == 4,
+                "전체 / 사용 / 충전 asks the server's type=ALL / USE / CHARGE instead of guessing from the credit sign");
+            fixture.CreditFails = true; kind.SelectedItem = "사용";
+            await WaitAsync(() => billingNotice.Text.StartsWith("상세 내역을 불러오지 못했습니다.", StringComparison.Ordinal));
+            check(billingGrid.Items.Count == 0, "A failed 상세 내역 request shows a one-line notice instead of the previous kind's rows");
+            fixture.CreditFails = false; kind.SelectedItem = "전체"; await WaitAsync(() => Shown().Length == 3 && billingNotice.Text.Length == 0);
             dialog.Navigation.SelectedIndex = 3;
             await WaitAsync(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "서버가 돌려준 문의 내용"));
             check(fixture.MineRequested && fixture.PostRequests == 1, "Inquiry history loads the user's posts and selected post from the server");
             check(Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "실제 운영자 답변"), "Inquiry details show the returned operator answer");
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            var inquiryChip = Descendants(dialog).OfType<ListBox>().SelectMany(l => Descendants(l)).OfType<Border>().FirstOrDefault(b => b is { Height: 18, CornerRadius.TopLeft: 9 });
+            check(inquiryChip is { BorderBrush: SolidColorBrush answeredEdge } && answeredEdge.Color == Color.FromRgb(15, 123, 15) && System.Windows.Automation.AutomationProperties.GetName(inquiryChip) == "답변 완료"
+                  && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "계정 · 발급" && t.IsVisible)
+                  && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "계정 · 발급  ·  2026-10-21  ·  답변 완료") && Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "운영자 답변  ·  2026-10-22"),
+                "Inquiry rows and detail follow Figma C0-9: 분류, date and the green 답변 완료 chip from the server status");
+            var followUpBox = Descendants(dialog).OfType<TextBox>().SingleOrDefault(t => System.Windows.Automation.AutomationProperties.GetName(t) == "이어서 물을 것을 적는다");
+            var sendButton = Descendants(dialog).OfType<Button>().SingleOrDefault(b => Equals(b.Content, "보내기"));
+            check(followUpBox is { IsEnabled: true, AcceptsReturn: true, MaxLength: 10000 } && sendButton is { Width: 92, Height: 32, IsEnabled: false, IsDefault: false }
+                  && Descendants(dialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "InquiryFollowUpPlaceholder" && t.Text == "이어서 물을 것을 적는다" && t.IsVisible)
+                  && !Descendants(dialog).OfType<Button>().Any(b => b.Content is "이전" or "다음" or "상세 열기" or "게시판 열기" || b.Content is "더 보기" && b.IsVisible),
+                "Inquiry detail ends with the Figma follow-up field and 92px 보내기 instead of the old 이전 / 다음 / 상세 열기 / 게시판 열기 buttons");
             if (Environment.GetEnvironmentVariable("INQUIRY_CAPTURE") is { Length: > 0 } inquiryCapture) await WindowsSmoke.RenderElementAsync(dialog, inquiryCapture);
         }
         finally { dialog.Close(); }
@@ -181,7 +219,22 @@ internal static class WindowsUsageDesignChecks
         internal bool MineRequested { get; private set; }
         internal List<string> Paths { get; } = [];
         internal List<string> UsageMonths { get; } = [];
+        internal List<string> CreditQueries { get; } = [];
+        internal bool CreditFails;
         internal static string Month(DateOnly month) => month.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        /// <summary>The Figma C0-8 rows: two uses and an institution charge; the last row comes from a time without institution (balanceAfter null).</summary>
+        private object CreditHistory(string query)
+        {
+            CreditQueries.Add(query);
+            var type = query.Split('&').Select(p => p.TrimStart('?')).FirstOrDefault(p => p.StartsWith("type=", StringComparison.Ordinal))?[5..] ?? "ALL";
+            var items = new[]
+            {
+                new { date = "2026-08-13", type = "USE", title = "수능특강_생명Ⅱ.pdf", pages = (int?)14, credits = -11L, jobId = (string?)"job_1", orderId = (string?)null, balanceAfter = (long?)5400 },
+                new { date = "2026-08-01", type = "CHARGE", title = "크레딧 추가 (주문 20260801-02)", pages = (int?)null, credits = 3000L, jobId = (string?)null, orderId = (string?)"7f0c3e7e-0d0b-4b8e-9d55-1f2a3b4c5d6e", balanceAfter = (long?)5544 },
+                new { date = "2026-07-28", type = "USE", title = "고2_수학Ⅰ_3단원.pdf", pages = (int?)26, credits = -26L, jobId = (string?)"job_2", orderId = (string?)null, balanceAfter = (long?)null }
+            };
+            return new { from = "2026-01-01", to = "2026-08-31", type, orgRemaining = 5400, items = items.Where(i => type == "ALL" || i.type == type).ToArray() };
+        }
         /// <summary>This month 1,749 and last month 2,640 (the Figma 4월 value); earlier months 1,000 + 10 × month.</summary>
         internal static decimal Credits(string month)
         {
@@ -197,11 +250,17 @@ internal static class WindowsUsageDesignChecks
         {
             var path = request.RequestUri!.AbsolutePath;
             Paths.Add(path);
+            if (path == "/api/users/usage/credit-history" && CreditFails)
+            {
+                CreditQueries.Add(request.RequestUri.Query);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"COMMON5000\",\"message\":\"실패\"}", Encoding.UTF8, "application/json") });
+            }
             object result = path switch
             {
                 "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER", alias = "검수자" },
                 "/api/users/usage" => Usage(request.RequestUri.Query),
                 "/api/users/usage/jobs" => Jobs(),
+                "/api/users/usage/credit-history" => CreditHistory(request.RequestUri.Query),
                 "/api/board/posts" => Posts(request.RequestUri.Query),
                 "/api/board/posts/42" => Post(),
                 _ => new { }
@@ -241,13 +300,13 @@ internal static class WindowsUsageDesignChecks
         private object Posts(string query)
         {
             MineRequested = query.Contains("mine=true", StringComparison.OrdinalIgnoreCase);
-            return new { page = 1, totalCount = 1, notices = Array.Empty<object>(), items = new[] { new { postId = 42, title = "서버 문의", answerCount = 1, author = "검수자", secret = false, createdAt = "2026-10-21", viewCount = 1 } } };
+            return new { page = 1, totalCount = 1, notices = Array.Empty<object>(), items = new[] { new { postId = 42, title = "서버 문의", category = "ACCOUNT", answerCount = 1, author = "검수자", secret = false, createdAt = "2026-10-21", viewCount = 1, status = "ANSWERED" } } };
         }
         private object Post()
         {
             PostRequests++;
-            return new { postId = 42, title = "서버 문의", content = "서버가 돌려준 문의 내용", author = "검수자", mine = true, secret = false, hidden = false, createdAt = "2026-10-21", updatedAt = "2026-10-21", viewCount = 1,
-                attachments = Array.Empty<object>(), answers = new[] { new { answerId = 7, content = "실제 운영자 답변", mine = false, answeredAt = "2026-10-22", updatedAt = "2026-10-22" } } };
+            return new { postId = 42, title = "서버 문의", content = "서버가 돌려준 문의 내용", category = "ACCOUNT", status = "ANSWERED", author = "검수자", mine = true, secret = false, hidden = false, createdAt = "2026-10-21", updatedAt = "2026-10-21", viewCount = 1,
+                attachments = Array.Empty<object>(), answers = new[] { new { answerId = 7, content = "실제 운영자 답변", mine = false, answeredAt = "2026-10-22", updatedAt = "2026-10-22", fromAuthor = false } } };
         }
     }
 }

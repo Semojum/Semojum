@@ -135,7 +135,7 @@ internal static class WindowsBoardDesignChecks
                 "「목록」 shows the refreshed list again in the same window and returns keyboard focus to it");
         }
         finally { noticeBoard.Close(); fixture.IncludeNotice = false; }
-        fixture.IncludeNotice = true; fixture.ManyMine = true;
+        fixture.IncludeNotice = true;
         var lists = new BoardDialog(client, "검수"); lists.Show();
         try
         {
@@ -156,14 +156,22 @@ internal static class WindowsBoardDesignChecks
             requested = fixture.RequestedPages.Count;
             answeredNav.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitAsync(() => listGrid.IsEnabled && AutomationProperties.GetItemStatus(answeredNav) == "선택됨");
+            lists.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             var answeredRows = listGrid.Items.Cast<BoardRow>().ToArray();
-            check(answeredRows.Select(r => r.PostId).SequenceEqual([112L, 105L, 101L]) && answeredRows.All(r => r.NoticeId is null)
-                && fixture.RequestedPages.Skip(requested).SequenceEqual([1, 2]) && fixture.RequestedModes.Skip(requested).All(m => m)
+            check(answeredRows.Select(r => r.PostId).SequenceEqual(Enumerable.Range(111, 10).Reverse().Select(id => (long)id)) && answeredRows.All(r => r.NoticeId is null)
+                && fixture.RequestedPages.Skip(requested).SequenceEqual([1]) && fixture.RequestedAnswered.Skip(requested).SequenceEqual([true]) && !fixture.RequestedModes[^1]
                 && AutomationProperties.GetItemStatus(noticeNav) == "선택 안 됨"
-                && Descendants(lists).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "답변 받은 글" && t.FontSize == 20) && Descendants(lists).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "3건"),
-                "「답변 받은 글」 reads every page of my posts and lists only those with an operator answer");
+                && Descendants(lists).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "답변 받은 글" && t.FontSize == 20) && Descendants(lists).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "13건")
+                && Descendants(lists).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "/ 2"),
+                "「답변 받은 글」 asks the server once for answered=true and shows its first page and total without notices");
+            requested = fixture.RequestedPages.Count;
+            Descendants(lists).OfType<Button>().Single(b => AutomationProperties.GetName(b) == "게시판 2쪽").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitAsync(() => listGrid.IsEnabled && fixture.RequestedPages.Count > requested && listGrid.Items.Count == 3);
+            check(fixture.RequestedPages.Skip(requested).SequenceEqual([2]) && fixture.RequestedAnswered[^1] && AutomationProperties.GetItemStatus(answeredNav) == "선택됨"
+                && listGrid.Items.Cast<BoardRow>().Select(r => r.PostId).SequenceEqual([110L, 109L, 108L]),
+                "The next 「답변 받은 글」 page is the server's answered=true page 2");
         }
-        finally { lists.Close(); fixture.IncludeNotice = false; fixture.ManyMine = false; }
+        finally { lists.Close(); fixture.IncludeNotice = false; }
         var drafting = new BoardDialog(client, "검수"); drafting.Show();
         try
         {
@@ -218,8 +226,10 @@ internal static class WindowsBoardDesignChecks
             Descendants(editor).OfType<Button>().Single(b => Equals(b.Content, "등록")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             check(fixture.SaveRequests == beforeSave, "Placeholder text cannot make an empty post valid or reach the server");
-            check(Descendants(editor).OfType<ComboBox>().Any(c => AutomationProperties.GetName(c) == "게시글 분류" && !c.IsEnabled
-                && AutomationProperties.GetHelpText(c).Contains("제공하지 않습니다")), "Unsupported post classification remains visible with an explicit unavailable state");
+            var categoryBox = Descendants(editor).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "게시글 분류");
+            check(categoryBox.IsEnabled && categoryBox.ToolTip is null && string.IsNullOrEmpty(AutomationProperties.GetHelpText(categoryBox))
+                && categoryBox.Items.Cast<string>().SequenceEqual(["계정 · 발급", "점역 결과", "크레딧 · 결제", "사용법"]) && Equals(categoryBox.SelectedItem, "점역 결과"),
+                "The post category is enabled with the four Figma categories and starts at 「점역 결과」");
             check(Descendants(editor).OfType<TextBox>().Any(t => t.AcceptsReturn && t.Height == 220), "Post editor offers the final Figma multiline field");
             check(Descendants(editor).OfType<CheckBox>().Any(c => Equals(c.Content, "현재 작업 정보 첨부") && c.IsChecked == true), "New post retains optional current-work attachment");
             check(HasIcon(editor, "board-check.svg"), "The checked work-information option renders the Figma check icon");
@@ -243,7 +253,7 @@ internal static class WindowsBoardDesignChecks
                 "The narrow post editor can scroll to its file picker");
         }
         finally { CloseDiscarding(editor); }
-        var editPost = new BoardPost(42, "기존 제목", "기존 본문", "작성자", true, false, false, "2026-10-21", "", 4, [], []);
+        var editPost = new BoardPost(42, "기존 제목", "기존 본문", "작성자", true, false, false, "2026-10-21", "", 4, [], [], "BILLING");
         var editing = BoardDialog.Reading(client, editPost, "검수"); editing.Show();
         try
         {
@@ -258,12 +268,37 @@ internal static class WindowsBoardDesignChecks
                 && Descendants(editing).OfType<TextBox>().Any(t => AutomationProperties.GetName(t) == "게시글 제목" && t.Text == "기존 제목")
                 && Descendants(editing).OfType<TextBox>().Any(t => AutomationProperties.GetName(t) == "게시글 본문" && t.Text == "기존 본문"),
                 "Editing existing post content replaces the post in the board body and never overlays placeholder text");
+            check(Equals(Descendants(editing).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "게시글 분류").SelectedItem, "크레딧 · 결제"),
+                "Editing a post shows its own category instead of the new-post default");
             Descendants(editing).OfType<Button>().Single(b => Equals(b.Content, "취소")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitAsync(() => !Descendants(editing).OfType<PostEditorView>().Any());
             check(Descendants(editing).OfType<PostView>().Single().IsVisible && !Application.Current.Windows.OfType<NoticeDialog>().Any(d => d.Owner == editing && d.IsVisible) && !editing.Changed,
                 "Cancelling an unchanged edit returns to the same post without asking");
         }
         finally { CloseDiscarding(editing); }
+        // A post written before categories shows none; choosing one sends it with the edit (PUT), and leaving it unchosen would keep the server's.
+        var recategorized = BoardDialog.Reading(client, editPost with { Category = null }, "검수"); recategorized.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Descendants(recategorized).OfType<Button>().Single(b => Equals(b.Content, "수정")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitAsync(() => Descendants(recategorized).OfType<PostEditorView>().Any(v => v.IsVisible));
+            recategorized.UpdateLayout(); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var legacyCategory = Descendants(recategorized).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "게시글 분류");
+            check(legacyCategory.SelectedItem is null && legacyCategory.IsEnabled, "Editing a post without a category shows no category rather than inventing one");
+            legacyCategory.SelectedItem = "사용법"; var saves = fixture.SaveRequests;
+            Descendants(recategorized).OfType<Button>().Single(b => Equals(b.Content, "저장")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await WaitAsync(() => fixture.SaveRequests > saves && !Descendants(recategorized).OfType<PostEditorView>().Any());
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(fixture.LastSaveMethod == HttpMethod.Put && fixture.LastSaveCategory == "USAGE" && recategorized.Changed && Descendants(recategorized).OfType<PostView>().Single().IsVisible,
+                "Saving an edit sends the chosen category with PUT and returns to the post");
+        }
+        finally
+        {
+            // An unsaved choice would otherwise ask before closing; this post started without a category.
+            foreach (var box in Descendants(recategorized).OfType<ComboBox>().Where(c => AutomationProperties.GetName(c) == "게시글 분류")) box.SelectedItem = null;
+            CloseDiscarding(recategorized);
+        }
         var submitted = BoardDialog.Writing(client, "검수"); submitted.Show();
         try
         {
@@ -276,6 +311,7 @@ internal static class WindowsBoardDesignChecks
             check(submitted.Changed && fixture.LastSaveBody.Contains("서버에 보낼 제목") && fixture.LastSaveBody.Contains("서버에 보낼 본문")
                 && !fixture.LastSaveBody.Contains("한 줄로 무엇이 문제인지 적는다") && !fixture.LastSaveBody.Contains("12쪽 7줄에서"),
                 "Submitting a post sends only the entered values, never the placeholder hints");
+            check(fixture.LastSaveMethod == HttpMethod.Post && fixture.LastSaveCategory == "RESULT", "A new post sends the default 「점역 결과」 category as RESULT");
             check(submitted.IsVisible && fixture.RequestedPages[^1] == 1 && Descendants(submitted).OfType<DataGrid>().Single().IsVisible,
                 "After 「등록」 the same board window shows page 1 of the list");
         }
@@ -437,24 +473,29 @@ internal static class WindowsBoardDesignChecks
     {
         internal List<int> RequestedPages { get; } = [];
         internal List<bool> RequestedModes { get; } = [];
+        internal List<bool> RequestedAnswered { get; } = [];
         internal int? FailPage { get; set; }
         internal bool? FailMine { get; set; }
         internal bool IncludeNotice { get; set; }
-        internal bool ManyMine { get; set; }
         internal int SaveRequests { get; private set; }
         internal int DeleteRequests { get; private set; }
         internal int PostReads { get; private set; }
         internal string LastSaveBody { get; private set; } = "";
+        internal HttpMethod? LastSaveMethod { get; private set; }
+        internal string? LastSaveCategory { get; private set; }
         internal static readonly string NoticeBody = string.Join("\n", Enumerable.Range(1, 16).Select(i => $"{i}. 점검 중에는 변환과 게시판을 사용할 수 없습니다."));
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
-            var page = 1; var mine = false; var searched = false;
+            var page = 1; var mine = false; var searched = false; var answered = false;
             if (request.Method == HttpMethod.Delete) DeleteRequests++;
             if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/api/board/posts/42") PostReads++;
-            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/board/posts")
+            // 등록 (POST) and 수정 (PUT) send multipart; the category part is absent when none was chosen.
+            if (request.Method == HttpMethod.Post && request.RequestUri!.AbsolutePath == "/api/board/posts" || request.Method == HttpMethod.Put && request.RequestUri!.AbsolutePath == "/api/board/posts/42")
             {
-                SaveRequests++; LastSaveBody = await request.Content!.ReadAsStringAsync(token);
-                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":{\"postId\":43}}", Encoding.UTF8, "application/json") };
+                SaveRequests++; LastSaveMethod = request.Method; LastSaveBody = await request.Content!.ReadAsStringAsync(token);
+                LastSaveCategory = ((MultipartFormDataContent)request.Content).FirstOrDefault(p => p.Headers.ContentDisposition?.Name?.Trim('"') == "category") is { } part ? await part.ReadAsStringAsync(token) : null;
+                if (request.Method == HttpMethod.Post)
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":{\"postId\":43}}", Encoding.UTF8, "application/json") };
             }
             if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath == "/api/board/posts")
             {
@@ -462,24 +503,25 @@ internal static class WindowsBoardDesignChecks
                 if (value is not null && int.TryParse(value.AsSpan(5), out var parsed)) page = parsed;
                 RequestedPages.Add(page);
                 mine = request.RequestUri.Query.Contains("mine=true", StringComparison.OrdinalIgnoreCase); RequestedModes.Add(mine);
+                answered = request.RequestUri.Query.Contains("answered=true", StringComparison.OrdinalIgnoreCase); RequestedAnswered.Add(answered);
                 searched = request.RequestUri.Query.TrimStart('?').Split('&').Any(v => v.StartsWith("keyword=", StringComparison.Ordinal) && v.Length > "keyword=".Length);
                 if (FailMine == mine)
                     return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"FIXTURE\",\"message\":\"fixture view failure\"}", Encoding.UTF8, "application/json") };
                 if (FailPage == page)
                     return new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"FIXTURE\",\"message\":\"fixture page failure\"}", Encoding.UTF8, "application/json") };
             }
-            // Like the server, notices come only with the unsearched full list. With ManyMine my posts span two pages
-            // (112–103, 102–101) and only 112, 105 and 101 have operator answers.
-            var myPage = Enumerable.Range(0, Math.Clamp(12 - (page - 1) * 10, 0, 10)).Select(i => 112 - (page - 1) * 10 - i).ToArray();
-            var items = ManyMine && mine
-                ? myPage.Select(id => new { postId = id, title = $"내 문의 {id}", answerCount = id switch { 105 => 2, 112 or 101 => 1, _ => 0 }, author = "fixture", secret = false, createdAt = "2026-10-21", viewCount = 4 }).ToArray()
-                : new[] { new { postId = 42, title = "문의 제목", answerCount = 1, author = "작성자", secret = false, createdAt = "2026-10-21", viewCount = 4 } };
+            // Like the server, notices come only with the unsearched full list. With answered=true the server pages
+            // 13 answered posts (120–111, 110–108; anyone's public posts) and sends no notices.
+            var answeredPage = Enumerable.Range(0, Math.Clamp(13 - (page - 1) * 10, 0, 10)).Select(i => 120 - (page - 1) * 10 - i).ToArray();
+            var items = answered
+                ? answeredPage.Select(id => new { postId = id, title = $"답변 받은 문의 {id}", category = (string?)"RESULT", answerCount = 1, author = id % 2 == 0 ? "fixture" : "test***", secret = false, createdAt = "2026-10-21", viewCount = 4, status = "ANSWERED" }).ToArray()
+                : new[] { new { postId = 42, title = "문의 제목", category = (string?)null, answerCount = 1, author = "작성자", secret = false, createdAt = "2026-10-21", viewCount = 4, status = "ANSWERED" } };
             object result = request.RequestUri!.AbsolutePath switch
             {
                 "/api/auth/login" => new { accessToken = "fixture", refreshToken = "fixture", role = "ROLE_USER" },
-                "/api/board/posts" => new { page, totalCount = ManyMine && mine ? 12 : 23, notices = IncludeNotice && !mine && !searched ? new object[] { new { postId = 0, title = "서버 점검 안내", answerCount = 0, author = "운영자", secret = false, createdAt = "2026-10-21", viewCount = 4, noticeId = "notice-1" } } : Array.Empty<object>(), items },
+                "/api/board/posts" => new { page, totalCount = answered ? 13 : 23, notices = IncludeNotice && !mine && !searched && !answered ? new object[] { new { postId = 0, title = "서버 점검 안내", answerCount = 0, author = "운영자", secret = false, createdAt = "2026-10-21", viewCount = 4, noticeId = "notice-1" } } : Array.Empty<object>(), items },
                 "/api/board/notices/notice-1" => new { title = "서버 점검 안내", body = NoticeBody },
-                "/api/board/posts/42" => new { postId = 42, title = "문의 제목", content = "서버의 본문", author = "작성자", mine = true, secret = false, hidden = false, createdAt = "2026-10-21", updatedAt = "", viewCount = 4, attachments = Array.Empty<object>(), answers = Array.Empty<object>() },
+                "/api/board/posts/42" => new { postId = 42, title = "문의 제목", content = "서버의 본문", category = request.Method == HttpMethod.Put ? LastSaveCategory : "BILLING", author = "작성자", mine = true, secret = false, hidden = false, createdAt = "2026-10-21", updatedAt = "", viewCount = 4, attachments = Array.Empty<object>(), answers = Array.Empty<object>(), status = "WAITING" },
                 "/api/board/notifications" => new { unreadCount = 1, items = new[] { new { notificationId = 1, postId = 42, title = "문의 제목", answerCount = 1, lastAnsweredAt = "2026-10-22", read = false } } },
                 _ => new { }
             };

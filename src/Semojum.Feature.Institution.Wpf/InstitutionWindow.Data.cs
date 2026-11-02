@@ -143,7 +143,8 @@ public sealed partial class InstitutionWindow
     private async Task RequestCreditAsync() => await RequestAsync(false);
     private async Task RequestAsync(bool account)
     {
-        var dialog = new InstitutionRequestDialog(account, async message => { await Client.CreateRequestAsync(account ? "ACCOUNT_ISSUE" : "CREDIT_ADD", message, Lifetime.Token); }) { Owner = ModalOwner };
+        var dialog = new InstitutionRequestDialog(account, async (message, details) => { await Client.CreateRequestAsync(account ? "ACCOUNT_ISSUE" : "CREDIT_ADD", message, details, Lifetime.Token); },
+            account ? null : (credits, ct) => Client.CreditEstimateAsync(credits, ct)) { Owner = ModalOwner };
         if (dialog.ShowDialog() == true) await RefreshAsync();
     }
     private async Task RunRowControlAsync(InstitutionAccountRow row)
@@ -200,26 +201,29 @@ public sealed partial class InstitutionWindow
     }
     private Task OpenOrderAsync(InstitutionOrder order)
     {
-        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenReceiptForAsync(order)) { Owner = ModalOwner };
+        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenQuoteForAsync(order)) { Owner = ModalOwner };
         dialog.ShowDialog(); return Task.CompletedTask;
     }
     internal Action<string> ReceiptLauncher { get; set; } = url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-    private async Task OpenReceiptForAsync(InstitutionOrder order)
+    private Task OpenReceiptForAsync(InstitutionOrder order) => OpenOrderFileAsync(order.ReceiptFileName, ct => Client.ReceiptAsync(order.Id, ct), "증빙을 열지 못했습니다. ");
+    /// <summary>The quote opens like the receipt: a short-lived presigned URL handed to the shell.</summary>
+    private Task OpenQuoteForAsync(InstitutionOrder order) => OpenOrderFileAsync(order.QuoteFileName, ct => Client.QuoteAsync(order.Id, ct), "견적서를 열지 못했습니다. ");
+    private async Task OpenOrderFileAsync(string? fileName, Func<CancellationToken, Task<InstitutionReceipt>> fetch, string failure)
     {
-        if (string.IsNullOrWhiteSpace(order.ReceiptFileName)) return;
+        if (string.IsNullOrWhiteSpace(fileName)) return;
         var marker = api.SessionMarker;
         var owner = api.Account;
         if (marker is null || marker != institutionSessionMarker || owner?.Role != "ROLE_ORG_ADMIN" || api.SessionMarker != marker) return;
         var lifetime = Lifetime.Token;
         try
         {
-            var receipt = await Client.ReceiptAsync(order.Id, lifetime);
+            var file = await fetch(lifetime);
             // A late response from a closed window or an earlier login must never launch a URL.
             // A token refresh retains the marker; logout and even a same-account login replace it.
             if (lifetime.IsCancellationRequested || !Root.IsVisible || api.SessionMarker != marker || api.Account is not { Role: "ROLE_ORG_ADMIN" } current || current.LoginId != owner.LoginId) return;
-            ReceiptLauncher(receipt.Url);
+            ReceiptLauncher(file.Url);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception ex) { if (!lifetime.IsCancellationRequested && Root.IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = "증빙을 열지 못했습니다. " + ex.Message; }
+        catch (Exception ex) { if (!lifetime.IsCancellationRequested && Root.IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = failure + ex.Message; }
     }
 }

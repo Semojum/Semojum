@@ -32,7 +32,7 @@ public sealed class BoardListViewModel(IBoardListSource source, bool initiallyMi
             var (total, rows) = kind switch
             {
                 BoardListKind.Notices => Slice(await NoticesAsync(field, keyword, cancellationToken), page),
-                BoardListKind.Answered => Slice(await AnsweredAsync(field, keyword, cancellationToken), page),
+                BoardListKind.Answered => await AnsweredAsync(page, field, keyword, cancellationToken),
                 _ => await ServerPageAsync(page, kind == BoardListKind.Mine, field, keyword, cancellationToken)
             };
             cancellationToken.ThrowIfCancellationRequested();
@@ -56,18 +56,11 @@ public sealed class BoardListViewModel(IBoardListSource source, bool initiallyMi
         return term.Length == 0 ? notices
             : notices.Where(n => ((field == "AUTHOR" ? n.Author : n.Title) ?? "").Contains(term, StringComparison.OrdinalIgnoreCase)).ToArray();
     }
-    // Reads every page of my posts and keeps those with an operator answer. The notification list holds only
-    // answers the operator chose to announce, so it cannot stand in for this list.
-    private async Task<BoardRow[]> AnsweredAsync(string field, string keyword, CancellationToken cancellationToken)
+    // The server pages posts with an operator answer (answered=true) and sends no notices with them.
+    private async Task<(int Total, BoardRow[] Rows)> AnsweredAsync(int page, string field, string keyword, CancellationToken cancellationToken)
     {
-        var answered = new List<BoardRow>();
-        for (var page = 1; ; page++)
-        {
-            var data = await source.ListAsync(page, field, keyword, true, cancellationToken);
-            var items = data.Items ?? [];
-            answered.AddRange(items.Where(row => row.AnswerCount > 0));
-            if (items.Length == 0 || page * PageSize >= data.TotalCount) return answered.ToArray();
-        }
+        var data = await source.ListAnsweredAsync(page, field, keyword, cancellationToken);
+        return (data.TotalCount, data.Items ?? []);
     }
     private static (int Total, BoardRow[] Rows) Slice(BoardRow[] rows, int page) => (rows.Length, rows.Skip((page - 1) * PageSize).Take(PageSize).ToArray());
 

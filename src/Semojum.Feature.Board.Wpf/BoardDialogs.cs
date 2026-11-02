@@ -315,10 +315,11 @@ internal sealed class PostEditorView : BoardBodyView
         var card = new DockPanel(); var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 16, 0, 0) }; DockPanel.SetDock(actions, Dock.Bottom); card.Children.Add(actions);
         var panel = new StackPanel(); card.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); Children.Add(BoardDesign.Card(card, new(19, 15, 19, 19)));
         panel.Children.Add(new TextBlock { Text = "분류", Height = 16, Foreground = (Brush)FindResource("Muted") });
-        var category = CompactDialog.Choices(["지원하지 않음"], "지원하지 않음"); category.Width = 220; category.Height = 32; category.MinHeight = 32; category.HorizontalAlignment = HorizontalAlignment.Left;
-        category.Margin = new(0, 2, 0, 10); category.IsEnabled = false; category.ToolTip = "현재 서버는 게시글 분류를 제공하지 않습니다.";
-        ToolTipService.SetShowOnDisabled(category, true); System.Windows.Automation.AutomationProperties.SetName(category, "게시글 분류");
-        System.Windows.Automation.AutomationProperties.SetHelpText(category, "현재 서버는 게시글 분류를 제공하지 않습니다."); panel.Children.Add(category);
+        // A new post starts at 「점역 결과」; an edit shows its own category, or none for a post written before categories.
+        var category = CompactDialog.Choices(BoardCategories.All.Select(c => c.Label).ToArray(), BoardCategories.Label(post is null ? BoardCategories.Default : post.Category));
+        category.Width = 220; category.Height = 32; category.MinHeight = 32; category.HorizontalAlignment = HorizontalAlignment.Left; category.Margin = new(0, 2, 0, 10);
+        System.Windows.Automation.AutomationProperties.SetName(category, "게시글 분류"); panel.Children.Add(category);
+        var initialCategory = category.SelectedItem;
         title = new TextBox { Text = post?.Title ?? "", MaxLength = 100, Height = 32 }; panel.Children.Add(new TextBlock { Text = "제목", Height = 16, Foreground = (Brush)FindResource("Muted") });
         panel.Children.Add(BoardDesign.InputWithHint(title, "한 줄로 무엇이 문제인지 적는다", "게시글 제목", "BoardTitlePlaceholder", new Thickness(0, 6, 0, 0)));
         var content = new TextBox { Text = post?.Content ?? "", MaxLength = 10000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 220, VerticalContentAlignment = VerticalAlignment.Top, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -353,7 +354,7 @@ internal sealed class PostEditorView : BoardBodyView
         var infoMenu = new ContextMenu(); var infoPreview = new MenuItem { Header = "첨부할 작업 정보 보기" }; infoMenu.Items.Add(infoPreview); info.ContextMenu = infoMenu;
         infoPreview.Click += (_, _) => NoticeDialog.Choose(Board, "첨부할 작업 정보입니다.", workInfo, ["확인"], height: 316);
         drafted = () => title.Text != (post?.Title ?? "") || content.Text != (post?.Content ?? "") || (secret.IsChecked == true) != (post?.Secret == true)
-            || attachments.Count != (post?.Attachments ?? []).Length || attachments.Any(a => a.LocalPath is not null);
+            || !Equals(category.SelectedItem, initialCategory) || attachments.Count != (post?.Attachments ?? []).Length || attachments.Any(a => a.LocalPath is not null);
         actions.Children.Add(CompactDialog.Button("취소", async () => { if (ConfirmLeave()) await Board.RunBodyAsync(() => Board.LeaveBodyAsync(this, false)); }));
         Action(actions, post is null ? "등록" : "저장", async () =>
         {
@@ -361,7 +362,8 @@ internal sealed class PostEditorView : BoardBodyView
             foreach (var a in attachments.Where(a => a.LocalPath is not null))
             { if (new FileInfo(a.LocalPath!).Length > 10 * 1024 * 1024) throw new InvalidDataException("첨부 파일이 10 MB를 초과했습니다."); files.Add(new(a.Name, await File.ReadAllBytesAsync(a.LocalPath!, Board.Token))); }
             if (info.IsChecked == true) files.Add(new($"작업정보_{DateTime.Now:yyyy-MM-dd}.txt", Encoding.UTF8.GetBytes(workInfo)));
-            var saved = await client.SaveAsync(post?.PostId, title.Text, content.Text, secret.IsChecked == true, attachments.Where(a => a.ExistingId.HasValue).Select(a => a.ExistingId!.Value).ToArray(), files.ToArray(), Board.Token);
+            var code = BoardCategories.All.FirstOrDefault(c => Equals(c.Label, category.SelectedItem)).Code;
+            var saved = await client.SaveAsync(post?.PostId, title.Text, content.Text, secret.IsChecked == true, attachments.Where(a => a.ExistingId.HasValue).Select(a => a.ExistingId!.Value).ToArray(), files.ToArray(), code, Board.Token);
             SavedId = saved.Id; SavedPost = saved.Post; await Board.LeaveBodyAsync(this, true);
         }, true);
         foreach (Button button in actions.Children) { PublicDialogDesign.StyleAction(button, button.IsDefault); button.Width = 84; }

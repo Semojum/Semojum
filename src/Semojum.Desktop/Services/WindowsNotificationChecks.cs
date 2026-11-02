@@ -125,7 +125,7 @@ internal static class WindowsNotificationChecks
         var inquiry = new PublicInquiryDialog(unsignedApi); inquiry.Show();
         try
         {
-            var email = Descendants(inquiry).OfType<TextBox>().Single(t => t.MaxLength == 100);
+            var email = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "답 받을 주소");
             var message = Descendants(inquiry).OfType<TextBox>().Single(t => t.AcceptsReturn && t.MaxLength == 2000);
             var organization = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "기관명");
             var title = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "제목");
@@ -139,13 +139,14 @@ internal static class WindowsNotificationChecks
             check(fixture.InquiryWasAnonymous && message.Text == "작성한 문의" && organization.Text == "테스트 기관" && title.Text == "문의 제목"
                 && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("접근할 수 없습니다")),
                 "A failed anonymous inquiry reports its error and retains all typed fields");
-            check(fixture.InquiryMessage == "[계정 · 발급] 기관명: 테스트 기관\n제목: 문의 제목\n\n작성한 문의" && fixture.InquiryName == "" && fixture.InquiryType == "ONBOARDING",
-                "The default category, organization and title reach the existing anonymous message contract without replacing the sender name");
-            message.Text = new string('가', 1990);
+            check(fixture.Inquiry is { } sent && sent.GetValueOrDefault("message") == "작성한 문의" && sent.GetValueOrDefault("orgName") == "테스트 기관" && sent.GetValueOrDefault("title") == "문의 제목"
+                && sent.GetValueOrDefault("type") == "ACCOUNT" && !sent.ContainsKey("name"),
+                "The default category, organization and title reach the anonymous inquiry as their own fields without a sender name");
+            message.Text = new string('가', 2001);
             submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(50);
-            check(fixture.InquiryPosts == 1 && message.Text.Length == 1990
+            check(fixture.InquiryPosts == 1 && message.Text.Length == 2001
                 && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("2,000자")),
-                "The combined inquiry length limit rejects the request without losing fields");
+                "The inquiry length limit rejects the request without losing fields");
             message.Text = "작성한 문의";
             var cancel = Descendants(inquiry).OfType<Button>().Single(b => Equals(b.Content, "취소"));
             var sawConfirm = AnswerInquiryClose(inquiry, 0, () => cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
@@ -258,9 +259,7 @@ internal static class WindowsNotificationChecks
         public bool PublicWasAnonymous { get; private set; }
         public int InquiryPosts { get; private set; }
         public bool InquiryWasAnonymous { get; private set; }
-        public string? InquiryMessage { get; private set; }
-        public string? InquiryName { get; private set; }
-        public string? InquiryType { get; private set; }
+        public Dictionary<string, string>? Inquiry { get; private set; }
         public bool HoldNotifications { get; set; }
         public bool HoldPublic { get; set; }
         public bool DenyPublic { get; set; }
@@ -330,10 +329,7 @@ internal static class WindowsNotificationChecks
         }
         private async Task<HttpResponseMessage> ReceiveInquiryAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
-            InquiryMessage = payload.RootElement.GetProperty("message").GetString();
-            InquiryName = payload.RootElement.GetProperty("name").GetString();
-            InquiryType = payload.RootElement.GetProperty("type").GetString();
+            Inquiry = await WindowsPublicInquiryFieldsChecks.FormAsync(request.Content!, cancellationToken);
             return Error();
         }
         private static HttpResponseMessage Error() => new(HttpStatusCode.Forbidden)

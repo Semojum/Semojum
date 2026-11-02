@@ -126,6 +126,7 @@ public sealed partial class InstitutionWindow : CompactDialog
         AccountRequest = Button("＋ 계정 발급 요청", () => RequestAccountAsync()); AccountRequest.Width = 150; AccountRequest.Height = 32; AccountRequest.IsEnabled = false; AccountRequest.ToolTip = "기관 정보를 불러온 뒤 요청할 수 있습니다.";
         Accounts = Table(("계정 ID", "LoginId"), ("별칭", "Alias"), ("마지막 로그인", "LastLoginAt"), ("사용", "UsedCredits")); Accounts.Columns.Insert(2, StatusColumn("상태", "Status", "account"));
         ((DataGridTextColumn)Accounts.Columns[3]).Binding = new Binding("LastLoginAt") { Converter = new InstitutionLastSeenConverter() };
+        ((DataGridTextColumn)Accounts.Columns[4]).Binding = new Binding("UsedCredits") { StringFormat = "N0", TargetNullValue = "—" };
         var loginId = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle); loginId.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d)); loginId.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
         loginId.Setters.Add(new Setter(TextBlock.ForegroundProperty, FigmaDialogElements.Brush("#005FB8")));
         var requestLine = new DataTrigger { Binding = new Binding(nameof(InstitutionAccountRow.Account)), Value = null }; requestLine.Setters.Add(new Setter(TextBlock.ForegroundProperty, FigmaDialogElements.Brush("#5F5F5F"))); loginId.Triggers.Add(requestLine);

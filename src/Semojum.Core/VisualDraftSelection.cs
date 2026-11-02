@@ -18,7 +18,11 @@ public static class VisualDraftSelection
             if (mode is not null) block.Metadata = metadata = metadata with { RenderMode = mode };
         }
         var drafts = metadata.Alternatives ?? [];
-        var selected = Array.FindIndex(drafts, d => d.Label.Trim() == choice);
+        // BE 2026-11-01: drafts carry a fixed option number and labels have changed before, so the number pairs first.
+        // Older pages have no number and keep the label rules below. Diagram-only names have no known number yet.
+        int? option = choice switch { "생략" => 1, "별책 참조" => 6, "줄글" => 7, "짧은 제목" or "개조식" or "상세" => 2, _ => null };
+        var selected = option is { } number ? Array.FindIndex(drafts, d => d.Option == number) : -1;
+        if (selected < 0) selected = Array.FindIndex(drafts, d => d.Label.Trim() == choice);
         if (selected < 0 && choice == "생략") selected = Array.FindIndex(drafts, d => d.Label.Trim().EndsWith("생략", StringComparison.Ordinal));
         if (selected < 0 && choice == "별책 참조") selected = Array.FindIndex(drafts, d => d.Label.Contains("참조", StringComparison.Ordinal));
         // QA4: these legacy description styles were consolidated into the current "설명" / "기본" draft.

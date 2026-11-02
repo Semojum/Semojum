@@ -14,15 +14,16 @@ internal static class WindowsInstitutionVisualChecks
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
-        var account = new InstitutionAccount("kblib02", "수학 담당", "ACTIVE", "ROLE_USER", "2026-08-13", 1140, false);
+        // The cumulative usedCredits (3,120) differs from this month's 1,140 so the detail shows which one it uses.
+        var account = new InstitutionAccount("kblib02", "수학 담당", "ACTIVE", "ROLE_USER", "2026-08-13", 3120, false, "math@kblib.or.kr", 2000, 1140, "2026-02-24T10:00:00");
         var jobs = new InstitutionAccountJobs("kblib02", "수학 담당", "2026-08-01", "2026-08-31",
             [new("job", "문서.pdf", "IMAGE", "DONE", 14, 14, 0, 11, null, null), new("job2", "둘째.pdf", "IMAGE", "DONE", 28, 28, 0, null, null, null)], 42, 11);
-        var notice = new InstitutionNotice(Guid.NewGuid(), "ORG", "크레딧 소진 임박 안내", "운영자가 보낸 실제 공지 내용입니다.", null, null, "2026-08-13");
-        var order = new InstitutionOrder(Guid.NewGuid(), "2026-06-02", "크레딧 추가 · 3,000", 780000, 3000, null, "PENDING", null);
+        var notice = new InstitutionNotice(Guid.NewGuid(), "ORG", "크레딧 소진 임박 안내", "운영자가 보낸 실제 공지 내용입니다.", null, null, "2026-08-13", "MAINTENANCE");
+        var order = new InstitutionOrder(Guid.NewGuid(), "2026-06-02", "크레딧 추가 · 3,000", 780000, 3000, null, "PENDING", null, "kblib00", "ROLE_ORG_ADMIN", "2026-06-02T02:20:00Z", "견적서_20260602.pdf");
         var views = new (Window Window, string Name, double Width, double Height, string Asset)[]
         {
-            (new InstitutionRequestDialog(true, _ => Task.CompletedTask), "institution-account-request.png", 520, 344, "institution-account-request-close.svg"),
-            (new InstitutionRequestDialog(false, _ => Task.CompletedTask), "institution-credit-request.png", 520, 288, "institution-credit-request-close.svg"),
+            (new InstitutionRequestDialog(true, (_, _) => Task.CompletedTask), "institution-account-request.png", 520, 344, "institution-account-request-close.svg"),
+            (new InstitutionRequestDialog(false, (_, _) => Task.CompletedTask), "institution-credit-request.png", 520, 288, "institution-credit-request-close.svg"),
             (new InstitutionAccountDetailDialog(account, jobs, _ => Task.CompletedTask), "institution-account-detail.png", 560, 564, "institution-account-detail-close.svg"),
             (new InstitutionNoticeDialog(notice, true), "institution-notice-detail.png", 560, 276, "institution-notice-detail-close.svg"),
             (new InstitutionOrderDialog(order, null, () => Task.CompletedTask), "institution-order-detail.png", 560, 448, "institution-order-detail-close.svg")
@@ -43,6 +44,10 @@ internal static class WindowsInstitutionVisualChecks
                     check(body is { IsVisible: true, ActualHeight: > 300 } && origin.Y >= 54 && origin.Y + body.ActualHeight <= height - 63,
                         "The account-detail scrollable body renders between the title and footer without clipping");
                     check(Descendants(window).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "수학 담당"), "The account detail actually renders its server-provided alias");
+                    bool Shows(string text, bool bold = false) => Descendants(window).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == text && t.FontSize == 14 && (t.FontWeight == FontWeights.Bold) == bold);
+                    check(Shows("math@kblib.or.kr") && Shows("2026-02-24") && Shows("1,140", bold: true)
+                        && !Descendants(window).OfType<TextBlock>().Any(t => t.Text is "제공되지 않음" or "3,120"),
+                        "Account detail shows the server email, the Korean creation day and this month's credits in bold 14px instead of the cumulative total");
                     var accountDetail = (InstitutionAccountDetailDialog)window;
                     check(accountDetail.Jobs.HeadersVisibility == DataGridHeadersVisibility.None && accountDetail.Jobs.GridLinesVisibility == DataGridGridLinesVisibility.None && accountDetail.Jobs.RowHeight == 32 && accountDetail.Jobs.Items.Count == 2,
                         "Account detail uses the Figma headerless, gridless 32px job rows while retaining actual job data");
@@ -73,6 +78,11 @@ internal static class WindowsInstitutionVisualChecks
                     var origin = body?.TransformToAncestor(window).Transform(new Point()) ?? new Point(0, 0);
                     check(body is { IsVisible: true, ActualHeight: > 250 } && origin.Y >= 54 && origin.Y + body.ActualHeight <= height - 63,
                         "The order-detail body occupies its own row between title and footer");
+                    var orderDetail = (InstitutionOrderDialog)window; var texts = Descendants(window).OfType<TextBlock>().Where(t => t.IsVisible).ToArray();
+                    check(texts.Any(t => t.Text == "주문 (크레딧 추가)" && t.FontSize == 16) && texts.Any(t => t.Text == "₩780,000  (부가세 포함)" && t.FontSize == 14 && t.FontWeight == FontWeights.Bold)
+                        && texts.Any(t => t.Text == "kblib00 · 관리자") && texts.Any(t => t.Text == "2026-06-02 11:20") && texts.Any(t => t.Text == "미납")
+                        && orderDetail.QuoteButton is { IsVisible: true, Content: "견적서 내려받기", Width: 138 } && !Descendants(window).OfType<Button>().Any(b => Equals(b.Content, "증빙 열기")),
+                        "Order detail is titled 「주문 (크레딧 추가)」 with the bold VAT-inclusive amount, the requester and Korean request time, the 미납 chip and 견적서 내려받기");
                 }
                 else if (window is InstitutionNoticeDialog)
                 {
@@ -86,6 +96,10 @@ internal static class WindowsInstitutionVisualChecks
                     var origin = requestBody.First.TransformToAncestor(window).Transform(new Point());
                     check(requestBody.First.IsVisible && origin.Y >= 55 && origin.Y + requestBody.First.ActualHeight <= height - 64,
                         $"{name} keeps its editable fields between title and action row");
+                    if (name == "institution-credit-request.png")
+                        check(requestBody.EstimateAmount is { IsVisible: true, Text: "—", FontSize: 14 } && requestBody.EstimateAmount.FontWeight == FontWeights.Bold && !requestBody.EstimateNote.IsVisible
+                            && !Descendants(window).OfType<TextBlock>().Any(t => t.Text == "금액 정보가 제공되지 않았습니다."),
+                            "Without a server estimate the credit request's 예상 금액 shows 「—」 and never a calculated amount");
                 }
                 if (Environment.GetEnvironmentVariable("INSTITUTION_VISUAL_DIR") is { Length: > 0 } directory)
                 { Directory.CreateDirectory(directory); await WindowsSmoke.RenderElementAsync(window, Path.Combine(directory, name)); }
@@ -116,8 +130,18 @@ internal static class WindowsInstitutionVisualChecks
             }
             finally { window.Close(); }
         }
-        var absentReceipt = new InstitutionOrderDialog(order, null, () => Task.CompletedTask);
-        check(!absentReceipt.ReceiptButton.IsEnabled, "An order with no server receipt cannot offer a document download"); absentReceipt.Close();
+        // An older order (no requester, no quote) keeps the order date and hides the quote button.
+        var older = new InstitutionOrderDialog(new(Guid.NewGuid(), "2026-02-24", "연간 계약 · 10,000 크레딧", 2400000, 10000, "2026-02-25", "ISSUED", "계산서.pdf"), "account@kblib.or.kr", () => Task.CompletedTask);
+        older.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); older.UpdateLayout();
+            var texts = Descendants(older).OfType<TextBlock>().Where(t => t.IsVisible).Select(t => t.Text).ToArray();
+            check(older.QuoteButton.Visibility == Visibility.Collapsed && texts.Contains("주문 (연간 계약)") && texts.Contains("정보 없음") && texts.Contains("2026-02-24")
+                && texts.Contains("완납") && texts.Contains("발행 완료  ·  account@kblib.or.kr"),
+                "An order without a quote hides 견적서 내려받기, and an order without requester fields keeps its order date");
+        }
+        finally { older.Close(); }
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     { yield return root; for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) foreach (var child in Descendants(VisualTreeHelper.GetChild(root, i))) yield return child; }

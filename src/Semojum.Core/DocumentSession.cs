@@ -272,7 +272,14 @@ public sealed record QualityIssue(string Severity, string Type, string? ElementI
 /// </summary>
 public sealed record ConversionProgress(int Total, int Succeeded, int Failed, int Running, string Estimate)
 {
-    public string CompactLabel => $"{Total}쪽 중 {Finished}쪽 · {Estimate}";
+    public string CompactLabel => $"{Total}쪽 중 {Finished}쪽" + (Estimate.Length == 0 ? "" : " · " + Estimate);
+    /// <summary>Figma 「잔여 1시간 12분」 from the server's estimate (BE 2026-11-02); no estimate shows nothing.</summary>
+    public static string RemainingLabel(int? seconds)
+    {
+        if (seconds is not { } value || value < 0) return "";
+        var remaining = TimeSpan.FromMinutes(Math.Max(1, Math.Ceiling(value / 60d)));
+        return remaining.TotalHours >= 1 ? $"잔여 {(int)remaining.TotalHours}시간 {remaining.Minutes}분" : $"잔여 {remaining.Minutes}분";
+    }
     public int Finished => Math.Min(Total, Succeeded + Failed);
     public int Remaining => Math.Max(0, Total - Finished);
     public string Label => $"{Total}쪽 중 {Finished}쪽 처리 · 성공 {Succeeded} · 확인 필요 {Failed}"

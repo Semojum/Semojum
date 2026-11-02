@@ -107,9 +107,13 @@ internal static class WindowsFileDialogDesignChecks
         var second = Path.Combine(directory, "second.png");
         try
         {
-            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
-            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
-            CheckNotice([first, second], null, "Two images of exactly 100 MiB each (200 MiB together) pass the per-file limit without a notice");
+            // BE 2026-11-02: several images also share one 100 MB total; the same notice opens and the status line gives the total.
+            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes / 2);
+            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes / 2);
+            CheckNotice([first, second], null, "Two images of exactly 100 MiB together pass the total limit without a notice");
+            using (var file = new FileStream(first, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
+            using (var file = new FileStream(second, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
+            CheckNotice([first, second], "이미지 2장 합계 200 MB", "Two images of exactly 100 MiB each (200 MiB together) show the notice with the total", "이미지 2장 합계");
             using (var file = new FileStream(first, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes + 1);
             CheckNotice([first, second], "first.png", "One oversized image among several shows the notice and names only that file");
             CheckNotice([first], "first.png", "One oversized file shows the per-file notice");
@@ -121,7 +125,7 @@ internal static class WindowsFileDialogDesignChecks
             Directory.Delete(directory);
         }
 
-        void CheckNotice(string[] paths, string? oversizedName, string description)
+        void CheckNotice(string[] paths, string? oversizedName, string description, string statusStart = "100 MB를 넘는 파일")
         {
             var dialog = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"));
             dialog.SetPaths(paths);
@@ -149,7 +153,7 @@ internal static class WindowsFileDialogDesignChecks
                 dialog.UpdateLayout(); timer.Start();
                 Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "변환 시작"))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                var named = Descendants(dialog).OfType<TextBlock>().FirstOrDefault(t => t.Text.StartsWith("100 MB를 넘는 파일", StringComparison.Ordinal))?.Text ?? "";
+                var named = Descendants(dialog).OfType<TextBlock>().FirstOrDefault(t => t.Text.StartsWith(statusStart, StringComparison.Ordinal))?.Text ?? "";
                 check(oversizedName is null
                         ? message is null && named.Length == 0
                         : message == "파일이 100 MB 를 넘습니다." && detail == "파일을 나누어 올린 뒤 이어 붙일 수 있습니다." && dialog.IsVisible

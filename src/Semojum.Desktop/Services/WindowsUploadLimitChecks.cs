@@ -74,13 +74,23 @@ internal static class WindowsUploadLimitChecks
                 await Task.Delay(200);
                 visible = VisibleText(window.OriginalUpload);
                 check(settingsCount == 1 && !visible.Contains("100MB를 초과"), "Exactly 100 MiB is accepted and clears an earlier warning");
+                async Task DropAsync(params string[] files)
+                {
+                    var args = (DragEventArgs)ctor.Invoke([new DataObject(DataFormats.FileDrop, files), DragDropKeyStates.LeftMouseButton, DragDropEffects.Copy, window.OriginalUpload.UploadArea, new Point(1, 1)]);
+                    args.RoutedEvent = UIElement.DropEvent; window.OriginalUpload.UploadArea.RaiseEvent(args);
+                    await Task.Delay(200); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); window.OriginalPanel.UpdateLayout();
+                }
+                // BE 2026-11-02: several images also share one 100 MB total (JOB4009), named in the same inline warning.
                 using (var file = new FileStream(extra, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
-                var dropAtLimit = new DataObject(DataFormats.FileDrop, new[] { large, extra });
-                var second = (DragEventArgs)ctor.Invoke([dropAtLimit, DragDropKeyStates.LeftMouseButton, DragDropEffects.Copy, window.OriginalUpload.UploadArea, new Point(1, 1)]);
-                second.RoutedEvent = UIElement.DropEvent; window.OriginalUpload.UploadArea.RaiseEvent(second);
-                await Task.Delay(200);
+                await DropAsync(large, extra);
+                visible = VisibleText(window.OriginalUpload);
+                check(settingsCount == 1 && modalCount == 0 && visible.Contains("100MB를 초과") && visible.Contains("이미지 2장 합계 (200MB)") && handler.Uploads == 0,
+                    "Two images of exactly 100 MiB each (200 MiB together) exceed the 100 MB total and name it inline without opening settings");
+                using (var file = new FileStream(large, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes / 2);
+                using (var file = new FileStream(extra, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes / 2);
+                await DropAsync(large, extra);
                 check(settingsCount == 2 && !VisibleText(window.OriginalUpload).Contains("100MB를 초과") && handler.Uploads == 0,
-                    "Two images of exactly 100 MiB each (200 MiB together) reach settings without uploading");
+                    "Two images of exactly 100 MiB together reach settings, clear the warning and do not upload");
             }
             finally { timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
         }

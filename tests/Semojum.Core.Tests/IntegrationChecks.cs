@@ -21,6 +21,7 @@ internal static class IntegrationChecks
         yield return ("V3.1 page maps IDs, multiline contents, metadata and memos", JobPageMapping);
         yield return ("Job save freezes lines and reports partial failure without replay", JobSave);
         yield return ("Multipart uploads use repeated file parts and reject mixed documents", JobUpload);
+        yield return ("Encrypted PDF retries the same upload with a password form part only after JOB4018", JobPassword);
         yield return ("SMJ round trip preserves original, options, table metadata and manual edits", SmjRoundTrip);
         yield return ("SMJ cancellation preserves prior file and foreign version is rejected", SmjFailure);
         yield return ("Recent files stay ordered, capped, deduplicated and separate from document contents", WorkspacePreferences);
@@ -233,7 +234,43 @@ internal static class IntegrationChecks
         var result = await client.UploadAsync([new("1.jpg", [1]), new("2.png", [2])], new());
         Equal("PENDING", result.Status);
         await Reject<ArgumentException>(() => client.UploadAsync([new("one.pdf", [1]), new("two.png", [2])], new()));
+        // BE 2026-11-02: several images share one 100 MB total (413 JOB4009); the app refuses them before sending.
+        var half = new byte[JobClient.MaximumUploadBytes / 2 + 1];
+        await Reject<ArgumentException>(() => client.UploadAsync([new("1.jpg", half), new("2.png", half)], new()));
+        await Reject<ArgumentException>(() => client.UploadAsync([new("1.jpg", [1]), new("2.png", [2])], new(), password: "secret"));
         Equal(1, uploaded);
+    }
+
+    private static async Task JobPassword()
+    {
+        var passwords = new List<string?>();
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("login")) return Tokens();
+            True(request.RequestUri.Query.Length == 0);
+            var form = (MultipartFormDataContent)request.Content!;
+            var part = form.FirstOrDefault(p => p.Headers.ContentDisposition?.Name?.Trim('"') == "password");
+            var password = part is null ? null : await part.ReadAsStringAsync(); passwords.Add(password);
+            Equal(1, form.Count(p => p.Headers.ContentDisposition?.FileName is not null));
+            return password switch
+            {
+                null => Response(HttpStatusCode.BadRequest, new { isSuccess = false, code = "JOB4018", message = "암호가 걸린 PDF입니다." }),
+                "right" => Ok(new { jobId = "job_pdf", totalPages = 3, status = "PENDING" }),
+                _ => Response(HttpStatusCode.BadRequest, new { isSuccess = false, code = "JOB4019", message = "문서 암호가 틀렸습니다." })
+            };
+        }));
+        var api = new SemojumApiClient(http); await api.LoginAsync("test", "pw"); var client = new JobClient(api);
+        UploadFile[] pdf = [new("잠긴.pdf", [37, 80, 68, 70])];
+        var missing = await Reject<SemojumApiException>(() => client.UploadAsync(pdf, new()));
+        Equal("JOB4018", missing.Code);
+        var wrong = await Reject<SemojumApiException>(() => client.UploadAsync(pdf, new(), password: "wrong"));
+        Equal("JOB4019", wrong.Code);
+        Equal("job_pdf", (await client.UploadAsync(pdf, new(), password: "right")).JobId);
+        True(passwords.SequenceEqual([null, "wrong", "right"]));
+        // The password is a PDF-only form part; an empty one or another file type is refused before sending.
+        await Reject<ArgumentException>(() => client.UploadAsync(pdf, new(), password: ""));
+        await Reject<ArgumentException>(() => client.UploadAsync([new("문서.hwp", [1])], new(), password: "right"));
+        Equal(3, passwords.Count);
     }
 
     private static async Task SmjRoundTrip()

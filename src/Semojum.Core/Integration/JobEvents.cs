@@ -38,6 +38,9 @@ public sealed class JobEventWatch : IAsyncDisposable
     private readonly CancellationTokenSource lifetime;
     private readonly SemaphoreSlim changed = new(0, 1);
     private readonly Task loop;
+    private long estimatedWaitSec = -1;
+    /// <summary>The last queue_position estimate for the waiting and running pages (BE 2026-11-02); null before one arrives or when it has none.</summary>
+    public int? EstimatedWaitSec => Interlocked.Read(ref estimatedWaitSec) is var value and >= 0 ? (int)value : null;
     public JobEventWatch(SemojumApiClient api, string jobId, CancellationToken ct)
     {
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -52,6 +55,7 @@ public sealed class JobEventWatch : IAsyncDisposable
             {
                 await foreach (var item in api.EventsAsync(jobId, lifetime.Token).ConfigureAwait(false))
                 {
+                    if (item.Name == "queue_position") Interlocked.Exchange(ref estimatedWaitSec, JobClient.Seconds(item.Data, "estimated_wait_sec") ?? -1);
                     retry = 1; if (changed.CurrentCount == 0) changed.Release();
                     if (item.Name == "job_done") return;
                 }

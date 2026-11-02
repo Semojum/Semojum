@@ -23,7 +23,12 @@ public static class ServerWarnings
     public static int Apply(IEnumerable<EditorBlock> blocks, IEnumerable<QualityIssue> issues)
     {
         var added = 0; var pageBlocks = blocks.Where(b => b.ServerId is not null).ToArray();
-        foreach (var issue in issues.Where(i => i.ElementId is not null))
+        var reported = issues.Where(i => i.ElementId is not null).ToArray();
+        // BE 2026-11-01 review_flag "open" is the same unresolved warning; it adds one only when the report does not already name the block.
+        // "sug" and "note" carry no text or range, so they stay in the block metadata only.
+        var flagged = pageBlocks.Where(b => b.Metadata.ReviewFlag == "open" && !reported.Any(i => i.ElementId == b.ServerId))
+            .Select(b => new QualityIssue("review", "review_flag", b.ServerId, "안 풀린 경고"));
+        foreach (var issue in reported.Concat(flagged))
             foreach (var block in pageBlocks.Where(b => b.ServerId == issue.ElementId))
             {
                 var key = Key(block.ServerId!, issue);
