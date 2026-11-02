@@ -46,6 +46,7 @@ macOS/Linux에서는 핵심 로직 검사와 Windows 교차 빌드만 할 수 �
 | `scripts/editor_composition.py` | 실제 엔진 함수를 재사용하는 앱 조판·셀 좌표 브리지 |
 | `scripts/build-engine.ps1` | 고정 엔진 커밋을 Windows 실행 파일로 묶기 |
 | `scripts/publish.ps1` | .NET과 엔진을 함께 포함한 Windows x64 ZIP(앱 업데이트용)과 MSI 설치 파일 |
+| `scripts/build-braille-font.py` | 빈 점 자리를 작게 그리는 자체 점자 글꼴 `Assets/Fonts/NuridotBraille.ttf` 만들기(`dots` 또는 `rings`) |
 | `installer/` | 앱 폴더를 사용자 계정(`%LocalAppData%\Programs\Nuridot`)에 설치하고 시작 메뉴 바로가기를 만드는 WiX MSI |
 
 ## 검증과 패키징

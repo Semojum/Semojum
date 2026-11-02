@@ -11,7 +11,6 @@ This editor uses the following components. The linked projects contain their com
 | Inter (Regular / SemiBold) | 4.001 | SIL Open Font License 1.1; bundled in licenses/Inter-LICENSE.txt | https://github.com/rsms/inter |
 | Noto Sans KR (Regular / SemiBold) | Regular 2.04 (400 instance); SemiBold 2.004-H2 | SIL Open Font License 1.1; bundled in licenses/NotoSansKR-LICENSE.txt | https://github.com/notofonts/noto-cjk |
 | Roboto Mono (Regular) | 3.001 | SIL Open Font License 1.1; bundled in licenses/RobotoMono-LICENSE.txt | https://github.com/google/fonts/tree/main/ofl/robotomono |
-| SimBraille (Regular) | 1.13 (February 21, 2008) | © Duxbury Systems, Inc. 1991-2008; distributed with the project owner's confirmation; notice in licenses/SimBraille-NOTICE.txt | https://www.duxburysystems.com/ |
 | PDFtoImage | 5.4.0 | MIT | https://github.com/sungaila/PDFtoImage |
 | SkiaSharp | 4.150.1 | MIT and bundled third-party notices | https://github.com/mono/SkiaSharp |
 | bblanchon.PDFium.Win32 / PDFium | 152.0.7961 | NuGet Apache-2.0 metadata; packaging source MIT; PDFium BSD-3-Clause and bundled third-party licenses | https://github.com/bblanchon/pdfium-binaries |

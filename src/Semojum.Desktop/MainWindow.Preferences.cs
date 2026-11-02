@@ -34,7 +34,7 @@ public partial class MainWindow
             var natural = braille ? (FontFamily)FindResource("BrailleFont") : value.FontFamily == "Noto Sans KR" ? (FontFamily)FindResource("InterfaceFont") : new FontFamily(value.FontFamily);
             var spacing = value.LineSpacing / 1.3 * (braille ? 28d / 22 : 2);
             var family = new FontFamily { LineSpacing = spacing, Baseline = natural.Baseline + (spacing - natural.LineSpacing) / 2 };
-            // The braille family is itself composite (SimBraille for cells only), so its maps carry over instead of a single target.
+            // The braille family is itself composite (Nuridot Braille for cells only), so its maps carry over instead of a single target.
             IEnumerable<FontFamilyMap> maps = natural.Source is { } source ? [new FontFamilyMap { Unicode = "0000-10FFFF", Target = source }] : natural.FamilyMaps;
             foreach (var map in maps) family.FamilyMaps.Add(new FontFamilyMap { Unicode = map.Unicode, Target = map.Target });
             editor.FontFamily = family; editor.FontSize = braille ? value.BrailleSize : value.TextSize;
