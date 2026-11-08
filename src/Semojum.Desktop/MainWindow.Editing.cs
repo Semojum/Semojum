@@ -58,6 +58,8 @@ public partial class MainWindow
             QueuePreview(decision != ManualEditDecision.Keep);
         };
         PageEditor.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(PageEditor.Editor);
+        PageEditor.Editor.PreviewMouseDown += (_, _) => { ClearOriginalRegion(); RefreshLinkedSource(); };
+        PageEditor.Editor.PreviewKeyDown += (_, _) => { ClearOriginalRegion(); RefreshLinkedSource(); };
         PageEditor.Editor.TextArea.Caret.PositionChanged += (_, _) =>
         {
             if (session?.ActiveBlock is { } block)

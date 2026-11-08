@@ -19,6 +19,8 @@ public partial class MainWindow
     private const string SpacingReason = "직접 고친 점자의 빈 줄이 조판 빈 줄과 겹치거나 엔진이 쪽 빈 줄을 정하지 못한 블록입니다.";
     private void ConnectGrid(BraillePane pane)
     {
+        pane.GridView.PreviewMouseDown += (_, _) => { if (regionOwner is not null) SetActiveEditor(pane.Editor); };
+        pane.GridView.PreviewKeyDown += (_, _) => { if (regionOwner is not null) SetActiveEditor(pane.Editor); };
         pane.GridView.ShowMemos = MemoToggle.IsChecked; pane.GridView.ShowReviews = ReviewToggle.IsChecked;
         pane.GridView.ManualReviewRequested = ShowReviewList; pane.GridView.HoverBubble = MemoHover;
         async Task<bool> NavigateMarkerAsync(EditorBlock block, int line, DocumentSession owner)
@@ -127,6 +129,7 @@ public partial class MainWindow
 
     private void RefreshLinkedSource()
     {
+        if (RefreshOriginalRegion()) return;
         BlockSpan[] linked = [];
         if (lastEditor == PageEditor.Editor && session?.ActiveBlock is { } block && session.Blocks.Contains(block)
             && block.Source.Length > 0

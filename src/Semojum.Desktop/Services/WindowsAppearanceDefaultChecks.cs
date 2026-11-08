@@ -40,7 +40,7 @@ internal static class WindowsAppearanceDefaultChecks
         }
         bool Blue() => window.PageEditor.Editor.TextArea.TextView.CurrentLineBackground is SolidColorBrush { Color: var c } && c == Color.FromRgb(242, 246, 251);
         bool Yellow() => window.PageEditor.Editor.TextArea.TextView.CurrentLineBackground is SolidColorBrush { Color: var c } && c == Color.FromRgb(255, 245, 163);
-        bool MarksShown() => new[] { window.PageEditor.Editor, window.SourceEditor }.All(e => e.Options.ShowSpaces && e.Options.ShowTabs && e.Options.ShowEndOfLine);
+        bool MarksShown() => new[] { window.PageEditor.Editor, window.SourceEditor }.All(e => e.Options.ShowSpaces && e.Options.ShowTabs && e.TextArea.TextView.ElementGenerators.OfType<Semojum.Desktop.Controls.EnterMarkGenerator>().Any(g => g.Enabled));
         try
         {
             check(new EditorAppearance().ShowFormattingMarks && window.FormattingToggle.IsChecked && MarksShown(),

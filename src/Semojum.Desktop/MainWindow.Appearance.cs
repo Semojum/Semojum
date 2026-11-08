@@ -10,6 +10,7 @@ public partial class MainWindow
 {
     private void SetActiveEditor(TextEditor? editor)
     {
+        ClearOriginalRegion();
         lastGrid = null;
         if (editor is not null) lastEditor = editor;
         var selected = new LinearGradientBrush(new GradientStopCollection

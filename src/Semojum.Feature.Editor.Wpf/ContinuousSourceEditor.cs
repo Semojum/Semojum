@@ -30,6 +30,22 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     public bool ShowReviews { get => showReviews; set { if (showReviews == value) return; showReviews = value; InvalidateReviewPresentation(); } }
     public bool ShowMemos { get => showMemos; set { if (showMemos == value) return; showMemos = value; overview.InvalidateMarkers(); } }
     public bool OverviewHighContrast { get => overview.HighContrast; set { overview.HighContrast = value; overview.InvalidateVisual(); } }
+    private EditorBlock[] linkedRegionBlocks = [];
+    internal IReadOnlyList<(int Start, int Length)> LinkedRegionRanges()
+    {
+        if (ProjectionPending() || model is null || Editor.Text != BlockRange.Text(Blocks(), SearchPanel.Text)) return [];
+        var ranges = new List<(int, int)>(); var offset = 0;
+        foreach (var block in Blocks())
+        {
+            if (linkedRegionBlocks.Contains(block)) ranges.Add((offset, block.Source.Length));
+            offset += block.Source.Length + 1;
+        }
+        return ranges;
+    }
+    internal void SetLinkedRegionBlocks(IEnumerable<EditorBlock> blocks)
+    {
+        linkedRegionBlocks = blocks.ToArray(); Editor.TextArea.TextView.Redraw();
+    }
     private int page;
     public ContinuousSourceEditor()
     {
@@ -44,6 +60,7 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
         Editor.TextArea.TextView.CurrentLineBackground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 245, 163));
         Editor.TextArea.TextView.CurrentLineBorder = null;
         Editor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
+        Editor.TextArea.TextView.LineTransformers.Add(new RegionHighlight(Editor, LinkedRegionRanges));
         Editor.TextArea.TextView.ElementGenerators.Add(new IndentTagGenerator());
         Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(ReviewRanges, () => ShowReviews, () => (Editor.SelectionStart, Editor.SelectionLength)));
         Editor.Document.UndoStack.SizeLimit = 0;
@@ -274,6 +291,6 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     {
         if (model is not null) { model.PropertyChanged -= SessionChanged; model.Blocks.CollectionChanged -= BlocksChanged; }
         foreach (var b in observed) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; b.Memos.CollectionChanged -= MemosChanged; }
-        observed.Clear(); model = null; overview.InvalidateMarkers();
+        linkedRegionBlocks = []; observed.Clear(); model = null; overview.InvalidateMarkers();
     }
 }

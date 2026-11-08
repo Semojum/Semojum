@@ -189,6 +189,7 @@ public partial class MainWindow : Window
 
     private void ShowActiveBlock()
     {
+        ClearOriginalRegion();
         if (session.ActiveBlock is not { } block) return;
         var wasSwitching = switching; switching = true;
         try

@@ -65,7 +65,7 @@ public partial class MainWindow
             && point.X >= r[0] && point.X <= r[2] && point.Y >= r[1] && point.Y <= r[3])
             .OrderBy(b => (b.Metadata.BoundingBox![2] - b.Metadata.BoundingBox[0]) * (b.Metadata.BoundingBox[3] - b.Metadata.BoundingBox[1])).FirstOrDefault();
         if (selected is null) return;
-        try { await NavigateToAsync(new(selected, SearchPanel.Text, selected.SourceCaret)); }
+        try { await SelectOriginalRegionAsync(selected); }
         catch (Exception ex) { ShowError(ex); }
     }
     private long originalGeneration;

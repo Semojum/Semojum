@@ -20,6 +20,10 @@ public sealed partial class BrailleGridView : ListBox
     public double OutlineWidth { get; set; } = 1;
     public bool HighContrast { get; set; }
     public Brush CurrentLineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(242, 246, 251));
+    public bool ShowFormattingMarks { get; set; }
+    public Brush FormattingMarkBrush { get; set; } = Brushes.Gray;
+    internal static bool IsEnterCell(GridCell cell) => cell.Prefix.Length == 0
+        && cell.Offset < cell.Block.Braille.Length && cell.Block.Braille[cell.Offset] is '\r' or '\n';
     public Brush SelectionHighlightBrush { get; set; } = new SolidColorBrush(Color.FromRgb(204, 228, 247));
     public Brush SelectionTextBrush { get; set; } = new SolidColorBrush(Color.FromRgb(31, 31, 31));
     public bool ShowLineNumbers { get; set; } = true;
@@ -245,7 +249,7 @@ public sealed partial class BrailleGridView : ListBox
             var owner = Owner; if (owner is not null) owner.drawSelection = owner.Selection; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length; var textLeft = TextLeft;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : Brushes.White, null, new Rect(RenderSize));
             var braille = new Typeface((FontFamily)Application.Current.FindResource("BrailleFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-            void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, braille, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
+            void Text(string value, Point point, double size, Brush brush, bool symbol = false) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, symbol ? new Typeface("Segoe UI Symbol") : braille, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
             var gutterEdge = GutterEdge;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : owner?.LineNumberBackground ?? Brushes.WhiteSmoke, null, new Rect(0, 0, gutterEdge + 1, RenderSize.Height));
             dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : new SolidColorBrush(Color.FromRgb(234, 234, 234)), 1), new(gutterEdge + .5, 0), new(gutterEdge + .5, RenderSize.Height));
@@ -304,7 +308,9 @@ public sealed partial class BrailleGridView : ListBox
                         var textBrush = highlighted ? owner!.HighContrast ? Brushes.White : owner.SelectionTextBrush
                             : cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick)
                             : owner?.HighContrast == true ? Brushes.White : Brushes.Black;
-                        Text(cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, textBrush);
+                        var enter = owner?.ShowFormattingMarks == true && IsEnterCell(cell);
+                        Text(enter ? "↵" : cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22,
+                            enter ? owner!.HighContrast ? Brushes.Cyan : owner.FormattingMarkBrush : textBrush, enter);
                         if (mark is { Kind: ReviewKind.OpenWarning })
                             ReviewVisuals.Wave(dc, owner?.HighContrast == true ? Brushes.White : ReviewVisuals.Ink(mark.Kind), box.Left, box.Right, box.Bottom - 1);
                         else if (mark is not null && mark.Kind != ReviewKind.HumanConfirmed)

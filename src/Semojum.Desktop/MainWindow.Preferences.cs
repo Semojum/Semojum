@@ -48,7 +48,8 @@ public partial class MainWindow
             view.CurrentLineBorder = null;
             view.NonPrintableCharacterBrush = value.HighContrast ? Brushes.Cyan : C(value.MarkerColor);
             view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
-            editor.Options.ShowSpaces = editor.Options.ShowTabs = editor.Options.ShowEndOfLine = value.ShowFormattingMarks;
+            editor.Options.ShowSpaces = editor.Options.ShowTabs = value.ShowFormattingMarks;
+            EnterMarkGenerator.Configure(editor, value.ShowFormattingMarks);
             editor.ShowLineNumbers = value.ShowLineNumbers;
             ApplyLineNumberAppearance(editor, value, lineNumberColor);
             if (editor == PageEditor.Editor)
@@ -73,6 +74,8 @@ public partial class MainWindow
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
         void ApplyGridAppearance(BrailleGridView grid)
         {
+            grid.ShowFormattingMarks = value.ShowFormattingMarks;
+            grid.FormattingMarkBrush = C(value.MarkerColor);
             grid.LineNumberForeground = value.HighContrast ? Brushes.White : lineNumberColor;
             grid.LineNumberBackground = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground);
             grid.CustomLineNumberForeground = !IsDefaultLineNumberColor(value.LineNumberColor);
