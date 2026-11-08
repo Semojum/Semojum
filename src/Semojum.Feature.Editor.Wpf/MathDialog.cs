@@ -57,7 +57,7 @@ public sealed class MathDialog : CompactDialog
         toolbox.ContextMenu = extra; toolbox.ToolTip = "다른 수식 기호: 마우스 오른쪽 단추";
         var panes = new Grid(); panes.ColumnDefinitions.Add(new() { Width = new(628) }); panes.ColumnDefinitions.Add(new() { Width = new(8) }); panes.ColumnDefinitions.Add(new() { Width = new(300) }); panes.ColumnDefinitions.Add(new());
         body.Children.Add(panes); var left = new StackPanel(); panes.Children.Add(left);
-        var preview = new FormulaControl { FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var preview = new FormulaControl { SystemTextFontName = "Malgun Gothic", FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var formula = new Grid(); formula.Children.Add(preview);
         var previewError = new TextBlock { Text = "수식 미리보기를 표시할 수 없습니다. LaTeX 원문을 확인해 주세요.", Foreground = Brushes.Firebrick, TextWrapping = TextWrapping.Wrap, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
         System.Windows.Automation.AutomationProperties.SetAutomationId(previewError, "MathPreviewError");
@@ -67,7 +67,9 @@ public sealed class MathDialog : CompactDialog
             try
             {
                 if (string.IsNullOrWhiteSpace(Input.Text)) throw new ArgumentException("빈 수식");
-                WpfTeXFormulaParser.Instance.Parse(Input.Text); preview.Formula = Input.Text;
+                WpfTeXFormulaParser.Instance.Parse(Input.Text);
+                preview.Formula = ""; preview.Formula = Input.Text;
+                if (preview.HasError) throw new InvalidOperationException("Formula rendering failed.");
                 preview.Visibility = Visibility.Visible; previewError.Visibility = Visibility.Collapsed;
             }
             catch

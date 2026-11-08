@@ -32,6 +32,18 @@ internal static class WindowsMathSafetyChecks
             check(rendered.Visibility == Visibility.Collapsed && previewError.IsVisible && dialog.BrailleInput.Text == "⠿⠿", "Invalid LaTeX hides the previous formula and preserves manual braille");
             dialog.Input.Text = @"\frac{a+b}{2}"; await dialog.RefreshAsync(); dialog.UpdateLayout();
             check(rendered.Visibility == Visibility.Visible && rendered.Formula == @"\frac{a+b}{2}" && !previewError.IsVisible, "A corrected formula restores the real preview");
+            const string koreanFormula = @"\text{득표율} (\%) = \frac{\text{득표수}}{\text{유효 투표수}} \times 100";
+            dialog.Input.Text = koreanFormula;
+            await Dispatcher.Yield(DispatcherPriority.Background); dialog.UpdateLayout();
+            check(!rendered.HasError && rendered.Formula == koreanFormula && rendered.Visibility == Visibility.Visible && !previewError.IsVisible,
+                "The formula editor renders Korean labels from the social-studies PDF");
+            rendered.SystemTextFontName = "Arial";
+            dialog.Input.Text = "x+1"; dialog.Input.Text = koreanFormula;
+            await Dispatcher.Yield(DispatcherPriority.Background); dialog.UpdateLayout();
+            check(rendered.Formula == "" && rendered.Visibility == Visibility.Collapsed && previewError.IsVisible && dialog.BrailleInput.Text == "⠿⠿",
+                "A font rendering error clears the previous editor drawing and preserves manual braille");
+            rendered.SystemTextFontName = "Malgun Gothic";
+            dialog.Input.Text = @"\frac{a+b}{2}"; await dialog.RefreshAsync();
             check(dialog.BrailleInput.Text == "⠿⠿" && dialog.Edited,
                 "Opening an existing formula displays and marks its manually corrected braille");
             dialog.Input.Text = @"\sqrt{x}";
