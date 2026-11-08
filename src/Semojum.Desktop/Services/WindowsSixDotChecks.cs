@@ -23,14 +23,14 @@ internal static class WindowsSixDotChecks
                 .Where(t => System.Windows.Automation.AutomationProperties.GetName(t).EndsWith("점 키"))
                 .ToArray();
             check(fields.Length == 6 && mode.SelectedIndex == 1, "Six-dot dialog restores legacy two-row preset");
-            check(Children(dialog).OfType<TextBlock>().Any(t => t.Text == "왼손  3 · 2 · 1") &&
+            check(Children(dialog).OfType<TextBlock>().Any(t => t.Text == "왼손  1 · 2 · 3") &&
                 Children(dialog).OfType<TextBlock>().Any(t => t.Text == "오른손  4 · 5 · 6"),
                 "Six-dot labels follow the displayed physical left-to-right dot order");
             check(fields.Select((field, i) => System.Windows.Automation.AutomationProperties.GetName(field) == $"{i + 1}점 키").All(matches => matches) &&
-                Canvas.GetLeft(fields[2]) < Canvas.GetLeft(fields[1]) && Canvas.GetLeft(fields[1]) < Canvas.GetLeft(fields[0]) &&
+                Canvas.GetLeft(fields[0]) < Canvas.GetLeft(fields[1]) && Canvas.GetLeft(fields[1]) < Canvas.GetLeft(fields[2]) &&
                 Canvas.GetLeft(fields[3]) < Canvas.GetLeft(fields[4]) && Canvas.GetLeft(fields[4]) < Canvas.GetLeft(fields[5]),
                 "Six-dot accessible names match each field's dot number and physical position");
-            foreach (var (index, stored, displayed) in new[] { (0, "WERUIO", "REWUIO"), (1, "FDSJKL", "SDFJKL"), (2, "XCVNM,", "VCXNM,") })
+            foreach (var (index, stored, displayed) in new[] { (0, "REWUIO", "REWUIO"), (1, "FDSJKL", "FDSJKL"), (2, "VCXNM,", "VCXNM,") })
             {
                 mode.SelectedIndex = index;
                 var configured = string.Concat(fields.Select(field => field.Text));
@@ -46,9 +46,9 @@ internal static class WindowsSixDotChecks
                     $"Six-dot preset {index + 1} keeps its displayed physical order and saved dot-to-key mapping");
             }
             mode.SelectedIndex = 0;
-            check(string.Concat(fields.Select(x => x.Text)) == "WERUIO", "Six-dot one-row preset maps the six dots");
+            check(string.Concat(fields.Select(x => x.Text)) == "REWUIO", "Six-dot one-row preset maps the six dots");
             mode.SelectedIndex = 2;
-            check(string.Concat(fields.Select(x => x.Text)) == "XCVNM,", "Six-dot three-row preset includes comma");
+            check(string.Concat(fields.Select(x => x.Text)) == "VCXNM,", "Six-dot three-row preset includes comma");
             fields[0].Text = "7";
             check(mode.SelectedIndex == 3, "Editing a preset selects custom six-dot keys");
             fields[0].Focus();
@@ -59,7 +59,7 @@ internal static class WindowsSixDotChecks
         }
         finally { dialog.Close(); }
 
-        foreach (var (index, expected) in new[] { (0, "W E R U I O"), (1, "F D S J K L"), (2, "X C V N M ,") })
+        foreach (var (index, expected) in new[] { (0, "R E W U I O"), (1, "F D S J K L"), (2, "V C X N M ,") })
         {
             var prefix = $"six-dot preset {index + 1}";
             stage($"{prefix}: creating dialog");
@@ -120,7 +120,7 @@ internal static class WindowsSixDotChecks
                 (callbackError is null ? "" : $" (callback error: {callbackError.GetType().Name})"));
         }
 
-        var reopened = new SixDotDialog("X C V N M ,", true, true) { Owner = owner };
+        var reopened = new SixDotDialog("V C X N M ,", true, true) { Owner = owner };
         reopened.Show();
         try
         {
@@ -147,7 +147,7 @@ internal static class WindowsSixDotChecks
                 grid.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, key) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                 grid.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, key) { RoutedEvent = Keyboard.PreviewKeyUpEvent });
             }
-            grid.ConfigureKeys("X C V N M ,");
+            grid.ConfigureKeys("V C X N M ,");
             KeyPress(Key.OemComma);
             check(inserted == "⠠", "Comma inserts dot six in the actual WPF grid");
             grid.ConfigureKeys("Q 1 , 4 - /");

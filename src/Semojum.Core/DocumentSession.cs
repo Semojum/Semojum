@@ -33,14 +33,29 @@ public sealed partial class EditorBlock : ObservableObject
     public int SourceCaret { get; set; }
     public int BrailleCaret { get; set; }
 
+    private bool applyingTranslation;
+
     partial void OnSourceChanging(string? oldValue, string newValue)
     {
         ReanchorReviews(ReviewPanel.Text, oldValue ?? "", newValue);
         // A human's braille confirmation also refers to the corresponding source.
         // Until rechecked, identical cells cannot prove the changed source is correct.
         InvalidateBrailleConfirmations();
+        ServerWarnings.Resolve(this);
     }
-    partial void OnBrailleChanging(string? oldValue, string newValue) => ReanchorReviews(ReviewPanel.Braille, oldValue ?? "", newValue);
+    partial void OnBrailleChanging(string? oldValue, string newValue)
+    {
+        ReanchorReviews(ReviewPanel.Braille, oldValue ?? "", newValue);
+        if (!applyingTranslation) ServerWarnings.Resolve(this);
+    }
+    /// <summary>Sets cells from an automatic (re)translation. Unlike a person's edit it leaves server warnings open, now covering the new cells.</summary>
+    public void ApplyTranslatedBraille(string cells)
+    {
+        var open = ServerWarnings.OpenKeys(this);
+        applyingTranslation = true;
+        try { Braille = cells; } finally { applyingTranslation = false; }
+        ServerWarnings.CoverBraille(this, open);
+    }
     partial void OnSourceChanged(string value) => SourceRevision++;
     partial void OnBrailleChanged(string value) => BrailleRevision++;
     partial void OnMetadataChanged(BlockMetadata value) => MetadataRevision++;
@@ -212,7 +227,7 @@ public sealed partial class DocumentSession : ObservableObject
     public Dictionary<int, double?> OcrConfidence { get; } = [];
     /// <summary>Last "kept locally only" notice shown for this document, so repeated saves do not repeat the same dialog. Not persisted.</summary>
     public string? LastSyncNotice { get; set; }
-    public string WindowTitle => $"{(IsDirty ? "*" : "")}{Title} — 누리닷";
+    public string WindowTitle => $"{(IsDirty ? "*" : "")}{Title} - 누리닷";
     partial void OnIsDirtyChanged(bool value) => OnPropertyChanged(nameof(WindowTitle));
     partial void OnLayoutChanged(PageLayout value) { ChangeVersion++; IsDirty = true; }
     partial void OnOptionsChanged(BrailleOptions value) { ChangeVersion++; IsDirty = true; }
@@ -257,7 +272,14 @@ public sealed record QualityIssue(string Severity, string Type, string? ElementI
 /// </summary>
 public sealed record ConversionProgress(int Total, int Succeeded, int Failed, int Running, string Estimate)
 {
-    public string CompactLabel => $"{Total}쪽 중 {Finished}쪽 · {Estimate}";
+    public string CompactLabel => $"{Total}쪽 중 {Finished}쪽" + (Estimate.Length == 0 ? "" : " · " + Estimate);
+    /// <summary>Figma 「잔여 1시간 12분」 from the server's estimate (BE 2026-11-02); no estimate shows nothing.</summary>
+    public static string RemainingLabel(int? seconds)
+    {
+        if (seconds is not { } value || value < 0) return "";
+        var remaining = TimeSpan.FromMinutes(Math.Max(1, Math.Ceiling(value / 60d)));
+        return remaining.TotalHours >= 1 ? $"잔여 {(int)remaining.TotalHours}시간 {remaining.Minutes}분" : $"잔여 {remaining.Minutes}분";
+    }
     public int Finished => Math.Min(Total, Succeeded + Failed);
     public int Remaining => Math.Max(0, Total - Finished);
     public string Label => $"{Total}쪽 중 {Finished}쪽 처리 · 성공 {Succeeded} · 확인 필요 {Failed}"

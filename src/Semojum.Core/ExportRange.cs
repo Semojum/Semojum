@@ -6,7 +6,8 @@ public sealed record ExportRange(ExportScope Scope = ExportScope.All, int Start 
     public void Validate(int minimum, int maximum)
     {
         if (Scope == ExportScope.All) return;
-        if (Start < minimum || End > maximum || Start > End)
+        if (Start > End) throw new ArgumentException("시작이 끝보다 뒤입니다.");
+        if (Start < minimum || End > maximum)
             throw new ArgumentException($"범위는 {minimum}–{maximum} 안에서 시작 번호가 끝 번호보다 크지 않게 입력해 주세요.");
     }
 }

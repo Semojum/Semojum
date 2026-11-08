@@ -25,12 +25,6 @@ internal static class WindowsTableDraftChecks
             var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
             timer.Tick += (_, _) =>
             {
-                var draft = Application.Current.Windows.OfType<DraftDialog>().FirstOrDefault(d => d.IsVisible && d.Owner == window);
-                if (draft is not null)
-                {
-                    Descendants(draft).OfType<ComboBox>().Single().SelectedIndex = 1;
-                    Descendants(draft).OfType<Button>().Single(b => Equals(b.Content, "확인")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); return;
-                }
                 var manual = Application.Current.Windows.OfType<ManualEditDialog>().FirstOrDefault(d => d.IsVisible && d.Owner == window);
                 if (manual is not null)
                 {
@@ -40,9 +34,16 @@ internal static class WindowsTableDraftChecks
             timer.Start();
             try
             {
-                confirmation = 0; await window.ExecuteAsync("drafts");
+                // Legacy table drafts without source text open in the shared dock; choose the second draft and apply it from the dock.
+                async Task ChooseSecondAsync()
+                {
+                    await window.ExecuteAsync("drafts");
+                    ((RadioButton)window.DraftChoiceGrid.Children[1]).IsChecked = true;
+                    window.DraftDockClose.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                confirmation = 0; await ChooseSecondAsync();
                 check(confirmations == 1 && block.Braille == "⠿" && block.HasManualBraille && block.Metadata.RenderMode == "first", "Keeping manually edited braille leaves the table draft unchanged");
-                confirmation = 1; await window.ExecuteAsync("drafts");
+                confirmation = 1; await ChooseSecondAsync();
                 check(confirmations == 2 && block.Braille == "⠉" && !block.HasManualBraille && block.Metadata is { RenderMode: "second", TableSource: "표 원본" }
                     && block.Translation!.Drafts.SequenceEqual(choices), "Confirmed table draft keeps all alternatives and existing metadata");
                 window.ReplayHistory();
@@ -95,9 +96,5 @@ internal static class WindowsTableDraftChecks
             finally { timer.Stop(); }
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); if (File.Exists(path)) File.Delete(path); }
-    }
-    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) { var child = VisualTreeHelper.GetChild(root, i); yield return child; foreach (var nested in Descendants(child)) yield return nested; }
     }
 }

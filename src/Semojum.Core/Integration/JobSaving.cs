@@ -26,8 +26,11 @@ public sealed partial class JobClient
         var known = manifest.ServerPages ?? [];
         var totalPages = manifest.IsTextJob == true ? manifest.Blocks.Max(b => b.Page) : (int?)null;
         var pages = new List<SavePage>(); var notes = new List<string>();
-        var reviews = manifest.Blocks.Sum(b => b.ReviewMarks?.Length ?? 0);
+        // Server warnings come back from the server's own report; only whether they were resolved is local.
+        var reviews = manifest.Blocks.Sum(b => b.ReviewMarks?.Count(m => m.Kind != ReviewKind.OpenWarning) ?? 0);
         if (reviews > 0) notes.Add($"검토 표시 {reviews}건은 로컬 .smj에만 보존되며 서버에서 다시 열면 표시되지 않습니다.");
+        var resolved = manifest.Blocks.Sum(b => ServerWarnings.Count(b.ReviewMarks ?? [], resolved: true));
+        if (resolved > 0) notes.Add($"풀린 서버 경고 {resolved}건은 로컬 .smj에만 기록되며 서버에서 다시 열면 다시 표시됩니다.");
         var emptied = 0; var skipped = 0;
         foreach (var pageNo in manifest.Blocks.Select(b => b.Page).Concat(known.Keys).Distinct().Order())
         {

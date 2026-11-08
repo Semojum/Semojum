@@ -22,7 +22,8 @@ internal static class RemainingChecks
         yield return ("Appearance rejects invalid colors, nonfinite values and manual correction color", Appearance);
         yield return ("Empty text job sends settings without source or AI input", EmptyTextJob);
         yield return ("Default options PUT retains visual choices, form and page row", Defaults);
-        yield return ("Board edit preserves attachment IDs and never submits invalid prose or six attachments", Board);
+        yield return ("Board edit preserves attachment IDs, sends a chosen category, lists answered posts by server page and never submits invalid prose or six attachments", Board);
+        yield return ("Inquiry follow-ups post the writer's question and posts read status, category and answer origin with old-response defaults", BoardFollowUp);
         yield return ("Account preferences isolate six-dot mappings and snippets by account", Profiles);
         yield return ("Block merge retains bounding box and memo anchors; removed blocks stop dirtying session", Blocks);
         yield return ("Version comparison is numeric and missing metadata is allowed", Versions);
@@ -209,18 +210,52 @@ internal static class RemainingChecks
     }
     private static async Task Board()
     {
-        var posts = 0;
+        var posts = 0; string? category = null; string? query = null;
         using var http = new HttpClient(new Handler(async r =>
         {
             if (r.RequestUri!.AbsolutePath == "/api/auth/login") return Login();
-            posts++; Check(r.Method == HttpMethod.Put); var body = await r.Content!.ReadAsStringAsync();
+            if (r.Method == HttpMethod.Get) { query = r.RequestUri.Query; return Response(new { page = 2, totalCount = 13, notices = Array.Empty<object>(), items = new[] { new { postId = 9, title = "답변 글", category = "USAGE", answerCount = 1, author = "test***", secret = false, hidden = false, createdAt = "2026-10-19", viewCount = 1, status = "ANSWERED" } } }); }
+            posts++; Check(r.Method == HttpMethod.Put); var form = (MultipartFormDataContent)r.Content!; var body = await form.ReadAsStringAsync();
+            category = form.FirstOrDefault(p => p.Headers.ContentDisposition?.Name?.Trim('"') == "category") is { } part ? await part.ReadAsStringAsync() : null;
             Check(body.Contains("keepAttachmentIds") && body.Contains("42") && body.Contains("new.txt"));
-            return Response(new { postId = 7, title = "제목", content = "본문", author = "user", mine = true, secret = true, hidden = false, createdAt = "2026-10-19", updatedAt = "2026-10-19", viewCount = 1, attachments = Array.Empty<object>(), answers = Array.Empty<object>() });
+            return Response(new { postId = 7, title = "제목", content = "본문", category = category ?? "RESULT", author = "user", mine = true, secret = true, hidden = false, createdAt = "2026-10-19", updatedAt = "2026-10-19", viewCount = 1, attachments = Array.Empty<object>(), answers = Array.Empty<object>(), status = "WAITING" });
         }));
         var api = new SemojumApiClient(http); await api.LoginAsync("user", "password"); var client = new BoardClient(api);
-        await client.SaveAsync(7, "제목", "본문", true, [42], [new("new.txt", [1])]); Check(posts == 1);
+        var saved = await client.SaveAsync(7, "제목", "본문", true, [42], [new("new.txt", [1])], "BILLING"); Check(posts == 1 && category == "BILLING" && saved.Post?.Category == "BILLING");
+        // Without a category an edit sends none, so the server keeps the post's own.
+        await client.SaveAsync(7, "제목", "본문", true, [42], [new("new.txt", [1])]); Check(posts == 2 && category is null);
         await Rejected(() => client.SaveAsync(null, "", "본문", false, [], []));
-        await Rejected(() => client.SaveAsync(null, "제목", "본문", false, [1, 2, 3, 4, 5], [new("extra.txt", [1])])); Check(posts == 1);
+        await Rejected(() => client.SaveAsync(null, "제목", "본문", false, [], [], "ONBOARDING"));
+        await Rejected(() => client.SaveAsync(null, "제목", "본문", false, [1, 2, 3, 4, 5], [new("extra.txt", [1])])); Check(posts == 2);
+        var answered = await client.ListAnsweredAsync(2, "TITLE", "분수");
+        Check(query == "?page=2&field=TITLE&keyword=%EB%B6%84%EC%88%98&mine=false&answered=true" && answered.Items.Single() is { PostId: 9, Category: "USAGE" } && answered.TotalCount == 13);
+    }
+    private static async Task BoardFollowUp()
+    {
+        var posted = new List<string>();
+        using var http = new HttpClient(new Handler(async r =>
+        {
+            var path = r.RequestUri!.AbsolutePath;
+            if (path == "/api/auth/login") return Login();
+            if (path == "/api/board/posts/7/follow-ups")
+            {
+                Check(r.Method == HttpMethod.Post); posted.Add(JsonDocument.Parse(await r.Content!.ReadAsStringAsync()).RootElement.GetProperty("content").GetString()!);
+                return Response(new { answerId = 9, content = "12쪽도 같습니다", mine = true, answeredAt = "2026-11-01T21:40:00", updatedAt = "2026-11-01T21:40:00", fromAuthor = true });
+            }
+            if (path == "/api/board/posts/7") return Response(new { postId = 7, title = "제목", content = "본문", category = "BILLING", author = "user", mine = true, secret = false, hidden = false, createdAt = "2026-10-06", updatedAt = "2026-10-06", viewCount = 1, attachments = Array.Empty<object>(), status = "WAITING",
+                answers = new object[] { new { answerId = 8, content = "넣었습니다", mine = false, answeredAt = "2026-10-06", updatedAt = "2026-10-06", fromAuthor = false }, new { answerId = 9, content = "12쪽도 같습니다", mine = true, answeredAt = "2026-10-07", updatedAt = "2026-10-07", fromAuthor = true } } });
+            if (path == "/api/board/posts/8") return Response(new { postId = 8, title = "옛 글", content = "본문", author = "user", mine = true, secret = false, hidden = false, createdAt = "2026-10-06", updatedAt = "2026-10-06", viewCount = 1, attachments = Array.Empty<object>(), answers = new[] { new { answerId = 1, content = "답", mine = false, answeredAt = "2026-10-06", updatedAt = "2026-10-06" } } });
+            return Response(new { page = 1, totalCount = 2, notices = Array.Empty<object>(), items = new object[] { new { postId = 7, title = "제목", category = "BILLING", answerCount = 1, author = "user", secret = false, hidden = false, createdAt = "2026-10-06", viewCount = 1, status = "WAITING" }, new { postId = 8, title = "옛 글", answerCount = 1, author = "user", secret = false, createdAt = "2026-10-06", viewCount = 1 } } });
+        }));
+        var api = new SemojumApiClient(http); await api.LoginAsync("user", "password"); var client = new BoardClient(api);
+        var answer = await client.FollowUpAsync(7, "12쪽도 같습니다");
+        Check(answer.FromAuthor && answer.AnswerId == 9 && posted.SequenceEqual(["12쪽도 같습니다"]));
+        await Rejected(() => client.FollowUpAsync(7, "  ")); await Rejected(() => client.FollowUpAsync(7, new string('가', 10001))); Check(posted.Count == 1);
+        var post = await client.ReadAsync(7); var old = await client.ReadAsync(8);
+        Check(post is { Category: "BILLING", Status: "WAITING" } && post.Answers.Select(a => a.FromAuthor).SequenceEqual([false, true]));
+        Check(old is { Category: null, Status: null } && !old.Answers.Single().FromAuthor);
+        var rows = (await client.ListAsync(1, "TITLE_CONTENT", "", true)).Items;
+        Check(rows[0] is { Category: "BILLING", Status: "WAITING" } && rows[1] is { Category: null, Status: null });
     }
     private static async Task Profiles()
     {
@@ -269,7 +304,38 @@ internal static class RemainingChecks
             await SmjFile.SaveAsync(path, SmjFile.Snapshot(model)); var loaded = await SmjFile.LoadAsync(path);
             var metadata = loaded.Blocks[0].Metadata;
             Check(metadata.OriginalSource == "원문" && metadata.Alternatives![0].TaggedText == "<!주>제목<!/주>" && metadata.Rules![0].RuleId == "r");
+            // An older page has no option number or review flag, and the file does not write them.
+            Check(metadata.Alternatives![0].Option is null && metadata.ReviewFlag is null && metadata.Rules![0].Axis is null);
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(path))
+            using (var reader = new StreamReader(zip.GetEntry("manifest.json")!.Open()))
+            { var manifest = reader.ReadToEnd(); Check(!manifest.Contains("\"option\"") && !manifest.Contains("\"reviewFlag\"")); }
         }
         finally { if (File.Exists(path)) File.Delete(path); }
+        // BE 2026-11-01 proto fields: drafts[].option, review_flag, table_source, table_box_level and rule_trail[].axis ("print").
+        var current = JobClient.ReadPage(JsonDocument.Parse("""
+            {"status":"COMPLETED","result":{"text_list":[
+              {"id":"f","type":"figure","contents":["원문"],"selected_idx":0,"review_flag":"sug","table_source":null,"table_box_level":null,
+               "drafts":[{"label":"기본","text":"기본 설명","tn_text":"<!주>기본<!/주>","option":2},{"label":"줄글","text":"줄글 설명","tn_text":"<!주>줄글<!/주>","option":7}],
+               "rule_trail":[{"rule_id":"MCST-한글-6.13.56","line_no":0,"col_start":0,"col_end":2,"axis":"print"}]},
+              {"id":"t","type":"table","contents":["<!표><!행><!칸>가<!/행><!/표>"],"review_flag":"open","table_source":"<!표><!행><!칸>가<!/행><!/표>","table_box_level":1,"drafts":[],"rule_trail":[]},
+              {"id":"n","type":"text","contents":["메모"],"review_flag":"unknown","drafts":[],"rule_trail":[]}]}}
+            """).RootElement, 2, 1);
+        var (figure, table, note) = (current.Blocks[0].Metadata, current.Blocks[1].Metadata, current.Blocks[2].Metadata);
+        Check(figure.Alternatives!.Select(d => d.Option).SequenceEqual(new int?[] { 2, 7 }) && figure.ReviewFlag == "sug" && figure.Rules![0].Axis == AppliedRules.PrintAxis
+            && figure.TableSource is null && figure.TableBoxLevel == 0);
+        Check(table.ReviewFlag == "open" && table.TableSource == "<!표><!행><!칸>가<!/행><!/표>" && table.TableBoxLevel == 1 && note.ReviewFlag is null);
+        var restoredModel = new DocumentSession(); foreach (var block in current.Blocks) restoredModel.Add(block);
+        try
+        {
+            await SmjFile.SaveAsync(path, SmjFile.Snapshot(restoredModel)); var reloaded = await SmjFile.LoadAsync(path);
+            Check(reloaded.Blocks[0].Metadata.Alternatives!.Select(d => d.Option).SequenceEqual(new int?[] { 2, 7 }) && reloaded.Blocks[0].Metadata.ReviewFlag == "sug"
+                && reloaded.Blocks[1].Metadata is { ReviewFlag: "open", TableBoxLevel: 1 } && reloaded.Blocks[0].Metadata.Rules![0].Axis == "print");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+        // The account's saved choice pairs by option number first: a renamed 「줄글」 draft is still found by its number.
+        var renamed = new EditorBlock { Id = 9, Page = 1, Source = "원문", Metadata = new(Type: "image", SelectedIndex: 0, Alternatives:
+            [new("기본", "기본 설명", "<!주>기본<!/주>", null, null, 2), new("서술형", "줄글 설명", "<!주>줄글<!/주>", null, null, 7)]) };
+        var policies = VisualDescriptions.Defaults(); policies["figure"] = new(["줄글"], "줄글");
+        Check(VisualDraftSelection.ApplyInitial(renamed, new(VisualDescriptions: policies)) && renamed.Metadata.SelectedIndex == 1 && renamed.Source == "<!주>줄글<!/주>");
     }
 }

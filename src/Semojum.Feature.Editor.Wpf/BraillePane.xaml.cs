@@ -62,7 +62,7 @@ public partial class BraillePane : UserControl, IDisposable
         Editor.TextArea.TextView.CurrentLineBorder = null;
         Editor.TextArea.SelectionBrush = new SolidColorBrush(Color.FromRgb(204, 228, 247));
         Editor.Options.ShowColumnRuler = true;
-        Editor.TextArea.TextView.ColumnRulerPen = new Pen(new SolidColorBrush(Color.FromRgb(242, 93, 93)), 1);
+        Editor.TextArea.TextView.ColumnRulerPen = new Pen(new SolidColorBrush(Color.FromRgb(196, 43, 28)), 1);
         PreviewStrip.CloseRequested += (_, _) => PreviewCloseRequested?.Invoke(this, EventArgs.Empty);
         Editor.PreviewKeyDown += HandleKeyDown;
         Editor.PreviewKeyUp += HandleKeyUp;

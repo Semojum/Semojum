@@ -60,7 +60,7 @@ internal static class WindowsAccountChecks
         using (var http = new HttpClient(new Handler(_ => Task.FromResult(Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"accessToken\":\"fresh\"}}")))))
         {
             var api = new SemojumApiClient(http); var result = await AutomaticLogin.RestoreAsync(api, store);
-            check(result.Account is null && result.Message!.Contains("권한") && store.Value is not null && api.Account is null, "Old server cannot grant an unverified role");
+            check(result.Account is null && result.Message is null && store.Value is not null && api.Account is null, "Old server cannot grant an unverified role and the login screen opens without an error");
         }
         store = new MemoryStore();
         using (var http = new HttpClient(new Handler(req => Task.FromResult(req.RequestUri!.AbsolutePath.EndsWith("logout")

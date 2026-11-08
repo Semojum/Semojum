@@ -30,7 +30,7 @@ public sealed class LocalWorkspace(string preferencesPath)
             if (value is null || value.Version != 1) throw new InvalidDataException("지원하지 않는 설정 파일입니다.");
             ArgumentException.ThrowIfNullOrWhiteSpace(value.SixDotKeys);
             new SixDotInput().Configure(value.SixDotKeys);
-            return value with { RecentFiles = NormalizeRecent(value.RecentFiles ?? []) };
+            return value with { RecentFiles = NormalizeRecent(value.RecentFiles ?? []), SixDotKeys = SixDotInput.MigrateLegacyPreset(value.SixDotKeys) };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
         {

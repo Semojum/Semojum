@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-user install of the portable app folder into %LocalAppData%\Programs\Nuridot, with a Start menu shortcut.
+     A double-click install starts the app when it finishes. The app's own updater keeps using the portable zip. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="누리닷" Manufacturer="Semojum" Version="$(var.ProductVersion)" Scope="perUser"
+           Language="1042" Codepage="949" UpgradeCode="A4A063C3-E2CE-48F6-8427-BACBE87C921F">
+    <SummaryInformation Codepage="949" Description="누리닷 설치" />
+    <MajorUpgrade DowngradeErrorMessage="더 새로운 누리닷이 이미 설치되어 있습니다." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Nuridot" />
+      </Directory>
+    </StandardDirectory>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.app)\**" />
+      <Component Id="InstallFolders">
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\Semojum\Nuridot" Name="InstallFolder" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="AppShortcut" Name="누리닷" Target="[INSTALLFOLDER]Semojum.Mockup.exe" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\Semojum\Nuridot" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <!-- Start the app after an interactive install or upgrade; quiet installs (UILevel 2 or 3) do not. -->
+    <CustomAction Id="LaunchApp" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]Semojum.Mockup.exe&quot;" Return="asyncNoWait" Impersonate="yes" Execute="immediate" />
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize" Condition="NOT REMOVE AND UILevel &gt; 3" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

@@ -83,14 +83,18 @@ public sealed class SemojumApiClient
             throw new ArgumentException("API 주소는 HTTPS 서버의 기본 주소여야 합니다.", nameof(baseAddress));
     }
 
-    public async Task<AccountIdentity> LoginAsync(string loginId, string password, CancellationToken cancellationToken = default)
+    public Task<AccountIdentity> LoginAsync(string loginId, string password, CancellationToken cancellationToken = default) =>
+        LoginAsync(loginId, password, false, cancellationToken);
+
+    /// <summary>keepLoggedIn (2026-11-02) asks for a 30-day refresh session instead of the default 12 hours.</summary>
+    public async Task<AccountIdentity> LoginAsync(string loginId, string password, bool keepLoggedIn, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(loginId);
         ArgumentException.ThrowIfNullOrEmpty(password);
         await authGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var result = await SendOnceAsync(HttpMethod.Post, "/api/auth/login", new { loginId, password }, null, cancellationToken).ConfigureAwait(false);
+            var result = await SendOnceAsync(HttpMethod.Post, "/api/auth/login", new { loginId, password, keepLoggedIn }, null, cancellationToken).ConfigureAwait(false);
             var tokens = result.Deserialize<LoginResult>(Json) ?? throw InvalidResponse();
             if (string.IsNullOrWhiteSpace(tokens.AccessToken) || string.IsNullOrWhiteSpace(tokens.RefreshToken)
                 || tokens.Role is not ("ROLE_USER" or "ROLE_ADMIN" or "ROLE_ORG_ADMIN")) throw InvalidResponse();

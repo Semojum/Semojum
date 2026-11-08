@@ -21,7 +21,7 @@ public sealed class AboutDialog : CompactDialog
         engine.Children.Add(new TextBlock { Text = "Semojum V", FontSize = 14 }); EngineVersion.FontSize = 14; engine.Children.Add(EngineVersion);
         Info("점역 엔진", engine);
         Info("운영 기관", new TextBlock { Text = "누리닷", FontSize = 14 });
-        Info("연락처", new TextBlock { Text = "contact@semo-jum.com", FontSize = 14 });
+        Info("연락처", new TextBlock { Text = "contact@nuridot.com", FontSize = 14 });
         OnLoad(async () =>
         {
             try { EngineVersion.Text = await engineVersion(); }

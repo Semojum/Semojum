@@ -15,6 +15,7 @@ internal static class AcceptanceChecks
         yield return ("Credit exhaustion is read without conflating blocked pages with successful pages", CreditStatus);
         yield return ("Six-dot presets support the specified physical keys including comma", SixDotPresets);
         yield return ("Six-dot custom digit and punctuation keys survive account preference reload", SixDotCustomKeys);
+        yield return ("Six-dot legacy reversed presets reload in dot order while custom keys stay", SixDotLegacyPresets);
     }
     private static void Check(bool value) { if (!value) throw new Exception("Acceptance regression failed"); }
     private static HttpResponseMessage Ok(object result) => new(HttpStatusCode.OK)
@@ -97,7 +98,7 @@ internal static class AcceptanceChecks
     private static Task SixDotPresets()
     {
         var input = new SixDotInput();
-        foreach (var keys in new[] { "W E R U I O", "F D S J K L", "X C V N M ," })
+        foreach (var keys in new[] { "R E W U I O", "F D S J K L", "V C X N M ," })
         {
             input.Configure(keys);
             var dots = keys.Where(c => !char.IsWhiteSpace(c)).ToArray();
@@ -132,6 +133,21 @@ internal static class AcceptanceChecks
                 throw new Exception("Invalid six-dot mapping accepted");
             }
             Check(input.Press(',') && input.Release(',') == "⠄");
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    private static async Task SixDotLegacyPresets()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "semojum-sixdot-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new AccountPreferenceStore(dir); var workspace = new LocalWorkspace(Path.Combine(dir, "preferences.json"));
+            foreach (var (stored, loaded) in new[] { ("W E R U I O", "R E W U I O"), ("X C V N M ,", "V C X N M ,"), ("F D S J K L", "F D S J K L"), ("W R E U I O", "W R E U I O") })
+            {
+                await store.SaveAsync("fixture", new(SixDotKeys: stored)); await workspace.SaveAsync(new(SixDotKeys: stored));
+                Check(store.Load("fixture").SixDotKeys == loaded && workspace.Load().SixDotKeys == loaded);
+            }
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }

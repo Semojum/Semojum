@@ -26,8 +26,19 @@ internal static class WindowsRequiredUpdateChecks
         }
         internal static HttpResponseMessage Json(string result) => new(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":" + result + "}", Encoding.UTF8, "application/json") };
     }
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool GetKeyboardState(byte[] state);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool SetKeyboardState(byte[] state);
+    // The fixture stands for a plain F6 press. KeyGesture compares against Keyboard.Modifiers, which reads this thread's key
+    // state, so an Alt, Ctrl, Shift or Windows key left down by real input (such as Alt+Tab away from a smoke window) would
+    // make it another gesture. Release those keys for this thread only before injecting F6.
     private static void F6(MainWindow window)
     {
+        var state = new byte[256];
+        if (GetKeyboardState(state))
+        {
+            foreach (var modifier in new byte[] { 0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5 }) state[modifier] &= 0x7F;
+            SetKeyboardState(state);
+        }
         Keyboard.Focus(window);
         var source = PresentationSource.FromVisual(window) ?? throw new InvalidOperationException("Window has no presentation source");
         var key = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, Key.F6) { RoutedEvent = Keyboard.KeyDownEvent };
@@ -70,7 +81,8 @@ internal static class WindowsRequiredUpdateChecks
             {
                 bool initial = window.SixDotToggle.IsChecked == true;
                 F6(window);
-                check((window.SixDotToggle.IsChecked == true) != initial, "F6 fixture invokes the real editor key binding before startup");
+                check((window.SixDotToggle.IsChecked == true) != initial,
+                    $"F6 fixture invokes the real editor key binding before startup (focus {Keyboard.FocusedElement?.GetType().Name}, active {window.IsActive}, modifiers {Keyboard.Modifiers})");
                 F6(window);
                 var startup = (Task)typeof(MainWindow).GetMethod("StartAccountAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!;
                 await handler.Started.Task;

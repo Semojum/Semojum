@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Semojum.Core;
+using Semojum.Desktop.Dialogs;
 
 namespace Semojum.Desktop.Controls;
 
@@ -14,8 +15,15 @@ public sealed partial class BrailleGridView : ListBox
     public EditorBlock? ActiveBlock { get; set; }
     public int CaretOffset { get; set; }
     public bool ShowOutlines { get; set; } = true;
+    // Figma 263:7003 and 263:7321 draw the 32-cell boundary in #C42B1C; the appearance outline setting can replace it.
+    public Brush OutlineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(196, 43, 28));
+    public double OutlineWidth { get; set; } = 1;
     public bool HighContrast { get; set; }
     public Brush CurrentLineBrush { get; set; } = new SolidColorBrush(Color.FromRgb(242, 246, 251));
+    public bool ShowFormattingMarks { get; set; }
+    public Brush FormattingMarkBrush { get; set; } = Brushes.Gray;
+    internal static bool IsEnterCell(GridCell cell) => cell.Prefix.Length == 0
+        && cell.Offset < cell.Block.Braille.Length && cell.Block.Braille[cell.Offset] is '\r' or '\n';
     public Brush SelectionHighlightBrush { get; set; } = new SolidColorBrush(Color.FromRgb(204, 228, 247));
     public Brush SelectionTextBrush { get; set; } = new SolidColorBrush(Color.FromRgb(31, 31, 31));
     public bool ShowLineNumbers { get; set; } = true;
@@ -34,6 +42,17 @@ public sealed partial class BrailleGridView : ListBox
     public Action<EditorBlock, int>? MemoRequested { get; set; }
     public Action<EditorBlock>? ReviewRequested { get; set; }
     public Action? ManualReviewRequested { get; set; }
+    /// <summary>Shared non-modal memo bubble shown while the pointer is over a memo marker; without one, the marker shows a tooltip.</summary>
+    public MemoHoverBubble? HoverBubble { get; set; }
+    private bool memoHovered;
+    /// <summary>The pointer is over <paramref name="row"/> at <paramref name="x"/> (row -1: it left the face); true while that row's memo bubble is shown.</summary>
+    internal bool HoverMarker(BrailleGridFace face, int row, double x)
+    {
+        if (HoverBubble is { } bubble && row >= 0 && row < face.Rows.Length && x >= MarkerStart && x < MarkerStart + MarkerSize
+            && MarkersFor(face).TryGetValue(row, out var marker) && marker.Memo && bubble.Enter(this, marker.Block, "BRAILLE", marker.Line)) return memoHovered = true;
+        if (memoHovered) { memoHovered = false; HoverBubble?.Leave(); }
+        return false;
+    }
     internal sealed record RowMarker(EditorBlock Block, int Line, bool Memo, bool Review, string Description);
     private Dictionary<BrailleGridFace, Dictionary<int, RowMarker>>? markerCache;
     private sealed record ManualFaceReviews(ReviewKind[][] Kinds, Dictionary<GridCell, ReviewMark> LastByCell);
@@ -85,7 +104,7 @@ public sealed partial class BrailleGridView : ListBox
             var starts = Enumerable.Range(0, marks.Length).OrderBy(i => marks[i].Start).ToArray();
             var ends = Enumerable.Range(0, marks.Length).OrderBy(i => marks[i].Start + marks[i].Length).ToArray();
             var active = new SortedSet<int>();
-            var byKind = new[] { new SortedSet<int>(), new SortedSet<int>(), new SortedSet<int>() };
+            var byKind = Enum.GetValues<ReviewKind>().Select(_ => new SortedSet<int>()).ToArray();
             var positions = new Dictionary<int, (ReviewMark Last, ReviewKind[] Kinds)>();
             var startIndex = 0; var endIndex = 0;
             foreach (var offset in group.Select(cell => cell.Offset).Distinct().OrderBy(offset => offset))
@@ -229,7 +248,8 @@ public sealed partial class BrailleGridView : ListBox
             if (Data is not { } face) return;
             var owner = Owner; if (owner is not null) owner.drawSelection = owner.Selection; var cw = CellWidth; var ch = CellHeight; var cols = face.Rows[0].Length; var textLeft = TextLeft;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : Brushes.White, null, new Rect(RenderSize));
-            void Text(string value, Point point, double size, Brush brush) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Symbol"), size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
+            var braille = new Typeface((FontFamily)Application.Current.FindResource("BrailleFont"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+            void Text(string value, Point point, double size, Brush brush, bool symbol = false) => dc.DrawText(new FormattedText(value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, symbol ? new Typeface("Segoe UI Symbol") : braille, size, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip), point);
             var gutterEdge = GutterEdge;
             dc.DrawRectangle(owner?.HighContrast == true ? Brushes.Black : owner?.LineNumberBackground ?? Brushes.WhiteSmoke, null, new Rect(0, 0, gutterEdge + 1, RenderSize.Height));
             dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : new SolidColorBrush(Color.FromRgb(234, 234, 234)), 1), new(gutterEdge + .5, 0), new(gutterEdge + .5, RenderSize.Height));
@@ -288,8 +308,12 @@ public sealed partial class BrailleGridView : ListBox
                         var textBrush = highlighted ? owner!.HighContrast ? Brushes.White : owner.SelectionTextBrush
                             : cell.Block.HasManualBraille ? (owner?.HighContrast == true ? Brushes.Orange : Brushes.Firebrick)
                             : owner?.HighContrast == true ? Brushes.White : Brushes.Black;
-                        Text(cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22, textBrush);
-                        if (mark is not null && mark.Kind != ReviewKind.HumanConfirmed)
+                        var enter = owner?.ShowFormattingMarks == true && IsEnterCell(cell);
+                        Text(enter ? "↵" : cell.Value.ToString(), new(box.X, box.Y), owner?.FontSize ?? 22,
+                            enter ? owner!.HighContrast ? Brushes.Cyan : owner.FormattingMarkBrush : textBrush, enter);
+                        if (mark is { Kind: ReviewKind.OpenWarning })
+                            ReviewVisuals.Wave(dc, owner?.HighContrast == true ? Brushes.White : ReviewVisuals.Ink(mark.Kind), box.Left, box.Right, box.Bottom - 1);
+                        else if (mark is not null && mark.Kind != ReviewKind.HumanConfirmed)
                         {
                             var lineY = mark.Kind == ReviewKind.SuggestCorrection ? box.Bottom - 2 : box.Top + box.Height / 2;
                             dc.DrawLine(new Pen(owner?.HighContrast == true ? Brushes.White : ReviewVisuals.Ink(mark.Kind), 1), new Point(box.Left, lineY), new Point(box.Right, lineY));
@@ -307,7 +331,7 @@ public sealed partial class BrailleGridView : ListBox
             }
             if (owner?.ShowOutlines == true)
             {
-                dc.DrawLine(new Pen(owner.HighContrast ? Brushes.White : new SolidColorBrush(Color.FromRgb(242, 93, 93)), 1), new(TextLeft + cols * cw, 0), new(TextLeft + cols * cw, face.Rows.Length * ch));
+                dc.DrawLine(new Pen(owner.HighContrast ? Brushes.White : owner.OutlineBrush, owner.OutlineWidth), new(TextLeft + cols * cw, 0), new(TextLeft + cols * cw, face.Rows.Length * ch));
                 dc.DrawLine(new Pen(Brushes.LightGray, 1), new(gutterEdge, face.Rows.Length * ch), new(RenderSize.Width, face.Rows.Length * ch));
             }
         }
@@ -344,7 +368,10 @@ public sealed partial class BrailleGridView : ListBox
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            UpdateMarkerToolTip(e.GetPosition(this));
+            var point = e.GetPosition(this);
+            // Over the memo marker the memo bubble replaces the tooltip.
+            if (Owner is { } markerOwner && Data is { } markerFace && markerOwner.HoverMarker(markerFace, (int)Math.Floor(point.Y / CellHeight), point.X)) ToolTip = null;
+            else UpdateMarkerToolTip(point);
             if (dragBlock is not null && e.LeftButton == MouseButtonState.Pressed && (e.GetPosition(this) - dragStart).Length > 6)
             {
                 var block = dragBlock; dragBlock = null;
@@ -353,6 +380,11 @@ public sealed partial class BrailleGridView : ListBox
             }
             if (Owner is not { } owner || e.LeftButton != MouseButtonState.Pressed || !owner.dragSelecting) return;
             if (Hit(e.GetPosition(this)) is { } cell) owner.Point(cell, true);
+        }
+        protected override void OnMouseLeave(MouseEventArgs e)
+        {
+            if (Owner is { } owner && Data is { } face) owner.HoverMarker(face, -1, 0);
+            base.OnMouseLeave(e);
         }
         protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
         {

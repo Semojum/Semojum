@@ -64,7 +64,7 @@ public sealed class TranslationCoordinator(ITranslationEngine engine)
             }
             // Even an identical new translation requires an explicit human recheck.
             block.InvalidateBrailleConfirmations();
-            block.Braille = result.Cells;
+            block.ApplyTranslatedBraille(result.Cells);
             block.Translation = result with { SourceText = block.Source };
             block.HasManualBraille = false;
             block.IsBrailleLocked = false;

@@ -8,7 +8,7 @@
 
 ## 실행
 
-Windows와 .NET 10 SDK가 필요합니다. 개발 중에는 `semojum-braille` v3.4.41이 설치된 Python 경로를 지정합니다.
+Windows와 .NET 10 SDK가 필요합니다. 개발 중에는 `semojum-braille` v3.4.44이 설치된 Python 경로를 지정합니다.
 
 ```powershell
 $env:SEMOJUM_ENGINE_PYTHON = 'C:\path\to\venv\Scripts\python.exe'
@@ -45,7 +45,9 @@ macOS/Linux에서는 핵심 로직 검사와 Windows 교차 빌드만 할 수 �
 | `tests/Semojum.Live.Tests` | 별도 승인을 받은 계정·검사용 파일로 실행하는 실서버 검사 |
 | `scripts/editor_composition.py` | 실제 엔진 함수를 재사용하는 앱 조판·셀 좌표 브리지 |
 | `scripts/build-engine.ps1` | 고정 엔진 커밋을 Windows 실행 파일로 묶기 |
-| `scripts/publish.ps1` | .NET과 엔진을 함께 포함한 Windows x64 ZIP |
+| `scripts/publish.ps1` | .NET과 엔진을 함께 포함한 Windows x64 ZIP(앱 업데이트용)과 MSI 설치 파일 |
+| `scripts/build-braille-font.py` | 빈 점 자리를 작게 그리는 자체 점자 글꼴 `Assets/Fonts/NuridotBraille.ttf` 만들기(`dots` 또는 `rings`) |
+| `installer/` | 앱 폴더를 사용자 계정(`%LocalAppData%\Programs\Nuridot`)에 설치하고 시작 메뉴 바로가기를 만드는 WiX MSI |
 
 ## 검증과 패키징
 
@@ -56,6 +58,6 @@ dotnet run --project tests/Semojum.Core.Tests -c Release
 ./artifacts/Semojum-win-x64/Semojum.Mockup.exe --smoke-test ./artifacts/smoke
 ```
 
-`SEMOJUM_ENGINE_PYTHON`이 있으면 실제 v3.4.41 테스트를 추가 실행하고, 없으면 그 검사는 SKIP으로 표시합니다. `--smoke-test`는 네트워크와 분리된 고정 샘플로 WPF 창·편집 버퍼·저장을 검사합니다. Windows CI는 실제 엔진 검사와 UI 검사를 별도로 실행합니다. 물리 키보드 동시 입력, 한국어 IME, 보조기기와 여러 DPI는 별도 장비 검증이 필요합니다.
+`SEMOJUM_ENGINE_PYTHON`이 있으면 실제 v3.4.44 테스트를 추가 실행하고, 없으면 그 검사는 SKIP으로 표시합니다. `--smoke-test`는 네트워크와 분리된 고정 샘플로 WPF 창·편집 버퍼·저장을 검사합니다. Windows CI는 실제 엔진 검사와 UI 검사를 별도로 실행합니다. 물리 키보드 동시 입력, 한국어 IME, 보조기기와 여러 DPI는 별도 장비 검증이 필요합니다.
 
 [엔진 계약과 문서 차이](docs/engine-contract.md) · [.smj 규격](docs/smj-format.md) · [외부 라이브러리 고지](THIRD-PARTY-NOTICES.md)

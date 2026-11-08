@@ -107,6 +107,8 @@ public sealed class AccountDialog : Window
         submit.Click += async (_, _) =>
         {
             var keepSignedIn = remember.IsChecked == true;
+            if (login.Text.Trim().Length == 0 || password.Password.Length == 0)
+            { error.Text = "아이디와 비밀번호를 입력해 주세요."; (login.Text.Trim().Length == 0 ? (Control)login : password).Focus(); return; }
             submit.IsEnabled = false; remember.IsEnabled = false; error.Text = "";
             try
             {
@@ -117,7 +119,8 @@ public sealed class AccountDialog : Window
                     catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
                     { error.Text = "저장된 로그인 정보를 확인하지 못했습니다. 다시 시도해 주세요."; return; }
                 }
-                var account = await api.LoginAsync(login.Text.Trim(), password.Password, lifetime.Token);
+                // The same choice that stores the refresh token for automatic login asks the server for the 30-day session.
+                var account = await api.LoginAsync(login.Text.Trim(), password.Password, credentials is not null && keepSignedIn, lifetime.Token);
                 password.Clear();
                 if (lifetime.IsCancellationRequested)
                 {

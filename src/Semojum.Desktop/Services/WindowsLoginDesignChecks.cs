@@ -24,6 +24,9 @@ internal static class WindowsLoginDesignChecks
         if (!hasChoice) { preview.Close(); return; }
         check(preview.WindowStyle == WindowStyle.None && System.Windows.Shell.WindowChrome.GetWindowChrome(preview)?.CaptionHeight == 32 && preview.Title == "누리닷 로그인",
             "Login preserves a draggable 32px Windows title bar and a meaningful title");
+        var blankSubmit = LogicalDescendants(preview).OfType<Button>().Single(b => Equals(b.Content, "로그인")); blankSubmit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(blankSubmit.IsEnabled && LogicalDescendants(preview).OfType<TextBlock>().Any(t => t.Text == "아이디와 비밀번호를 입력해 주세요."),
+            "Blank login is stopped before the server request with a Korean message");
         preview.Close();
         RunChoice(true, null, "editor", check);
         RunChoice(false, null, null, check);
@@ -85,8 +88,8 @@ internal static class WindowsLoginDesignChecks
 
     private static void RunChoice(bool remember, SessionCredential? initial, string? expectedAccount, Action<bool, string> check)
     {
-        var store = new MemoryStore { Value = initial };
-        using var http = new HttpClient(new Handler());
+        var store = new MemoryStore { Value = initial }; var handler = new Handler();
+        using var http = new HttpClient(handler);
         var api = new SemojumApiClient(http);
         var dialog = new AccountDialog(api, store, null);
         var sawChoice = false; var loggedIn = false;
@@ -180,6 +183,7 @@ internal static class WindowsLoginDesignChecks
         if (!sawChoice) return;
         check(loggedIn && api.Account?.LoginId == "editor" && store.Value?.LoginId == expectedAccount,
             $"Keep-signed-in {remember} respects the user's choice and preserves a different account");
+        check(handler.KeepLoggedIn == remember, $"Keep-signed-in {remember} is sent to the server as keepLoggedIn for the matching session length");
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject parent)
@@ -200,9 +204,18 @@ internal static class WindowsLoginDesignChecks
 
     private sealed class Handler : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => Task.FromResult(
-            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
-                "{\"isSuccess\":true,\"result\":{\"accessToken\":\"fixture\",\"refreshToken\":\"new-token\",\"role\":\"ROLE_USER\"}}", Encoding.UTF8, "application/json") });
+        /// <summary>The keepLoggedIn value of the last login request; null when it was not sent.</summary>
+        internal bool? KeepLoggedIn;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            if (request.RequestUri!.AbsolutePath == "/api/auth/login" && request.Content is { } content)
+            {
+                using var body = System.Text.Json.JsonDocument.Parse(await content.ReadAsStringAsync(token));
+                KeepLoggedIn = body.RootElement.TryGetProperty("keepLoggedIn", out var keep) && keep.ValueKind is System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False ? keep.GetBoolean() : null;
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(
+                "{\"isSuccess\":true,\"result\":{\"accessToken\":\"fixture\",\"refreshToken\":\"new-token\",\"role\":\"ROLE_USER\"}}", Encoding.UTF8, "application/json") };
+        }
     }
 
     private sealed class DelayedLogin : HttpMessageHandler

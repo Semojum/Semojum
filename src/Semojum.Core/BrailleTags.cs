@@ -26,4 +26,22 @@ public static class BrailleTags
     public static IReadOnlyList<BrailleTag> Menu { get; } = All.Where(t => t.Name is not ("상자" or "상자끝" or "상자2" or "상자3" or "네모글" or "기울임")).ToArray();
     public static BrailleTag Get(string name) => All.FirstOrDefault(t => t.Name == name)
         ?? throw new ArgumentException("지원하지 않는 점역 태그입니다: " + name, nameof(name));
+
+    /// <summary>
+    /// A header tag carries its alignment as a leading alignment tag inside it (<c>&lt;!머리말&gt;&lt;!오른쪽정렬&gt;…</c>), which the
+    /// engine removes from the text. Center writes no alignment tag, so it stays the older form that every reader takes as center.
+    /// </summary>
+    public static string InsertHeader(string text, string alignment) => Get("머리말").Insert(alignment switch
+    {
+        "left" => "<!왼쪽정렬>", "right" => "<!오른쪽정렬>", "center" => "",
+        _ => throw new ArgumentException("머리말 정렬은 왼쪽·가운데·오른쪽 중 하나입니다.", nameof(alignment))
+    } + text);
+
+    /// <summary>The text and alignment (left, center or right) inside a header tag. A header without an alignment tag is centered.</summary>
+    public static (string Text, string Alignment) ReadHeader(string inner)
+    {
+        var tag = System.Text.RegularExpressions.Regex.Match(inner, "^<!(왼쪽|가운데|오른쪽)정렬>");
+        return !tag.Success ? (inner, "center")
+            : (inner[tag.Length..], tag.Groups[1].Value switch { "왼쪽" => "left", "오른쪽" => "right", _ => "center" });
+    }
 }

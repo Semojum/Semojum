@@ -12,7 +12,7 @@ public static class RawBraillePrinter
     public static async Task PrintAsync(Window owner, string brf, string title)
     {
         if (brf.Any(c => c > 127)) throw new ArgumentException("BRF ASCII 파일만 점자 프린터로 보낼 수 있습니다.");
-        if (MessageBox.Show(owner, "BRF를 직접 지원하는 점자 프린터를 선택해 주세요. 프린터에서 용지 크기·양면 설정을 먼저 확인해야 합니다. 일반 프린터에는 점자로 인쇄되지 않습니다.", "점자 인쇄", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+        if (Dialogs.NoticeDialog.Choose(owner, "BRF를 직접 지원하는 점자 프린터를 선택해 주세요.", "프린터에서 용지 크기·양면 설정을 먼저 확인해야 합니다. 일반 프린터에는 점자로 인쇄되지 않습니다.", ["프린터 선택", "취소"]) != 0) return;
         var dialog = new PrintDialog();
         if (dialog.ShowDialog() != true) return;
         var name = dialog.PrintQueue.FullName;

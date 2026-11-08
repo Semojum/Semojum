@@ -1,7 +1,8 @@
 namespace Semojum.Core;
 
-/// <summary>A local, editor-authored review annotation. Offsets are UTF-16 offsets in one block.</summary>
-public enum ReviewKind { SuggestCorrection, SuggestDeletion, HumanConfirmed }
+/// <summary>A local review annotation. Offsets are UTF-16 offsets in one block.</summary>
+/// <remarks><see cref="OpenWarning"/> is created only from the server quality report (<see cref="ServerWarnings"/>); a stale one records that it was resolved.</remarks>
+public enum ReviewKind { SuggestCorrection, SuggestDeletion, HumanConfirmed, OpenWarning }
 public enum ReviewPanel { Text, Braille }
 
 /// <param name="OriginalText">The text the author actually reviewed, retained even when the annotation is stale.</param>

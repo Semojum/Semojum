@@ -54,7 +54,8 @@ public static class WindowBounds
         if (!GetMonitorInfo(MonitorFromWindow(parent, 2), ref info)) return;
         var width = childRect.Right - childRect.Left; var height = childRect.Bottom - childRect.Top;
         var left = parentRect.Left + (parentRect.Right - parentRect.Left - width) / 2;
-        var top = parentRect.Top + (parentRect.Bottom - parentRect.Top - height) / 2;
+        // Figma M0: the free height is split 45% above / 55% below (window-relative).
+        var top = parentRect.Top + (parentRect.Bottom - parentRect.Top - height) * 45 / 100;
         left = Math.Clamp(left, info.Work.Left, Math.Max(info.Work.Left, info.Work.Right - width));
         top = Math.Clamp(top, info.Work.Top, Math.Max(info.Work.Top, info.Work.Bottom - height));
         SetWindowPos(child, IntPtr.Zero, left, top, 0, 0, 0x0001 | 0x0004 | 0x0010);

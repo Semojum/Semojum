@@ -37,7 +37,7 @@ public sealed class SaveAsDialog : CompactDialog
         name.Template = NameInputTemplate();
         AutomationProperties.SetName(name, "파일 이름"); body.Children.Add(name);
         body.Children.Add(new TextBlock { Text = "저장 설정", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        format = Choices(["누리닷 작업 파일 (*.smj)", "점자 파일 (*.brf)", "원문 텍스트 (*.txt)"]); format.SelectedIndex = 0;
+        format = Choices(["누리닷 작업 파일 (*.smj)", "점자 파일 (*.brf)", "원문 텍스트 (*.txt)"]); format.SelectedIndex = 1;
         var form = new Grid { Margin = new(16, 10, 16, 10) }; form.ColumnDefinitions.Add(new() { Width = new(134) }); form.ColumnDefinitions.Add(new());
         form.Children.Add(new TextBlock { Text = "파일 형식", FontSize = 14, Foreground = Brush("#1A1A1A"), VerticalAlignment = VerticalAlignment.Center });
         var slot = new Grid { Width = 260, Height = 32, HorizontalAlignment = HorizontalAlignment.Left };

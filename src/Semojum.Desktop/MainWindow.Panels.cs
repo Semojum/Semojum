@@ -10,6 +10,8 @@ public partial class MainWindow
 {
     private readonly Dictionary<FrameworkElement, Window> detachedPanels = [];
     private bool panelResizeHooked;
+    private bool? linePreviewWithOriginal;
+    private bool threePanelLinePreview = true;
     internal Window? DetachedSourceWindow => detachedPanels.GetValueOrDefault(SourcePanel);
     internal Window? DetachedOriginalWindow => detachedPanels.GetValueOrDefault(OriginalPanel);
 
@@ -29,8 +31,6 @@ public partial class MainWindow
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("defaults")), new KeyGesture(Key.G, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixdot")), new KeyGesture(Key.K, ModifierKeys.Alt)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("layout")), new KeyGesture(Key.Y, ModifierKeys.Alt)));
-        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("optimize")), new KeyGesture(Key.P, ModifierKeys.Alt)));
-        target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("optimize")), new KeyGesture(Key.O, ModifierKeys.Control | ModifierKeys.Shift)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("symbol")), new KeyGesture(Key.F4)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("sixDotMode")), new KeyGesture(Key.F6)));
         target.InputBindings.Add(new KeyBinding(new AsyncRelayCommand(() => ExecuteAsync("findNext")), new KeyGesture(Key.F3)));
@@ -85,6 +85,13 @@ public partial class MainWindow
         ResizePanelGrid();
         SourcePanelNumber.Text = OriginalToggle.IsChecked ? "2" : "1";
         Braille.PanelNumber.Text = OriginalToggle.IsChecked ? "3" : "2";
+        // Figma's two-panel screen (263:7061) has no line-translation strip; returning to three panels restores the earlier choice.
+        if (linePreviewWithOriginal != OriginalToggle.IsChecked)
+        {
+            if (linePreviewWithOriginal == true) threePanelLinePreview = LinePreviewToggle.IsChecked;
+            linePreviewWithOriginal = OriginalToggle.IsChecked;
+            SetLinePreviewVisible(OriginalToggle.IsChecked && threePanelLinePreview);
+        }
         var column = 0;
         foreach (var item in panels)
         {

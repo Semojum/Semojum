@@ -4,7 +4,7 @@
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabControl">
         <Grid>
           <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <Border Background="#FAFAFA" BorderBrush="#D6D6D6" BorderThickness="0,0,1,0"><TabPanel IsItemsHost="True" Margin="0,14,0,0" VerticalAlignment="Top"/></Border>
+          <Border Background="#F9F9F9" BorderBrush="#EAEAEA" BorderThickness="0,0,1,0"><TabPanel IsItemsHost="True" Margin="0,14,0,0" VerticalAlignment="Top"/></Border>
           <ContentPresenter Grid.Column="1" ContentSource="SelectedContent" TextElement.FontWeight="Normal"/>
         </Grid>
       </ControlTemplate></Setter.Value></Setter>
@@ -13,7 +13,7 @@
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TabItem">
           <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter ContentSource="Header" VerticalAlignment="Center" RecognizesAccessKey="True"/></Border>
         </ControlTemplate></Setter.Value></Setter>
-        <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#EFF6FC"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger></Style.Triggers>
+        <Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#EFF6FC"/><Setter Property="FontWeight" Value="Bold"/></Trigger></Style.Triggers>
       </Style></Setter.Value></Setter>
     </Style>
 </ResourceDictionary>

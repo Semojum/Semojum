@@ -33,12 +33,13 @@ internal static class WindowsRuleDesignChecks
             var braille = Descendants(applied).OfType<TextBlock>().FirstOrDefault(t => AutomationProperties.GetAutomationId(t) == "RulesBraillePreview");
             check(source is not null && braille is not null && source.Text == "원문" && braille.Text == "⠁" && Math.Abs(source.TransformToAncestor(applied).Transform(new Point()).Y - braille.TransformToAncestor(applied).Transform(new Point()).Y) < 2,
                 "Selected original text and braille are preserved side by side");
-            check(Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("위치는 확인되지 않았습니다", StringComparison.Ordinal)),
-                "Unverified server evidence retains its position warning");
-            var warning = Descendants(applied).OfType<TextBlock>().First(t => t.IsVisible && t.Text.Contains("위치는 확인되지 않았습니다", StringComparison.Ordinal));
-            var open = Descendants(applied).OfType<Button>().First(b => Equals(b.Content, "규정 전문 열기"));
-            check(warning.TransformToAncestor(applied).Transform(new Point()).Y < open.TransformToAncestor(applied).Transform(new Point()).Y,
-                "The unverified-position warning remains in the content above the footer actions");
+            check(braille is not null && WindowsBrailleFontChecks.DrawsBrailleFont(braille) && applied.Rules.Columns[1] is DataGridTextColumn { ElementStyle: { } cellStyle }
+                && cellStyle.Setters.OfType<Setter>().Any(s => s.Property == TextBlock.FontFamilyProperty && ReferenceEquals(s.Value, Controls.BundledFonts.Braille)),
+                "Applied rules draws the selected braille and the 점형 column in Nuridot Braille");
+            check(!Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("위치는 확인되지 않았습니다", StringComparison.Ordinal)),
+                "Applied rules shows no unverified-position warning, matching the final Figma");
+            check(Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "원문" && AutomationProperties.GetAutomationId(t) != "RulesSourcePreview") && !Descendants(applied).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.StartsWith("원문 · ", StringComparison.Ordinal)),
+                "The selection group heading reads 「원문」 without the position suffix");
             CheckIcon(applied, "applied-rules-close.svg", check);
             if (Environment.GetEnvironmentVariable("RULES_APPLIED_CAPTURE") is { Length: > 0 } appliedCapture)
                 await WindowsSmoke.RenderElementAsync(applied, appliedCapture);
@@ -55,6 +56,14 @@ internal static class WindowsRuleDesignChecks
             try { match.Show(); await WindowsSmoke.RenderElementAsync(match, matchingCapture); } finally { match.Close(); }
         }
 
+        var excerpt = new RuleDialog(api, [], "원문", "⠁⠃") { ShowInTaskbar = false }; excerpt.Show();
+        try
+        {
+            await Task.Delay(100); excerpt.UpdateLayout();
+            check(Descendants(excerpt).OfType<TextBlock>().SingleOrDefault(t => string.Concat(t.Inlines.OfType<System.Windows.Documents.Run>().Select(r => r.Text)) == "묵자: 원문\n점자: ⠁⠃") is { } selection && WindowsBrailleFontChecks.DrawsBrailleFont(selection),
+                "Rule search keeps the selected text and draws its selected braille in Nuridot Braille");
+        }
+        finally { excerpt.Close(); }
         var dialog = new RuleDialog(api, [], "", "", "검색");
         check(dialog.Width == 720 && dialog.Height == 748 && dialog.Title == "점자 규정 찾아보기", "Rule search requests the final Figma dimensions and title");
         dialog.Show();

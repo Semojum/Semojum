@@ -14,7 +14,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class OpenDocumentDialog : CompactDialog
 {
     internal ComboBox Forms { get; } = new();
-    internal TextBox FileNames { get; } = new() { IsReadOnly = true, Text = "PDF · HWP · HWPX · TXT · JPG · PNG · SMJ" };
+    internal TextBox FileNames { get; } = new() { IsReadOnly = true };
     private readonly ComboBox korean = Choices(["정자(1급)", "약자(2급)"], "약자(2급)"), rule = Choices(["한글 규정", "영어 규정"], "한글 규정"), mixed = Choices(["한국어", "영어"], "한국어");
     private readonly Button start;
     private BrailleOptions current;
@@ -40,17 +40,11 @@ public sealed class OpenDocumentDialog : CompactDialog
         layoutRoot.Children.Add(header);
         var body = new StackPanel { Margin = new(24, 16, 24, 0) }; Grid.SetRow(body, 1); layoutRoot.Children.Add(body);
         body.Children.Add(new TextBlock { Text = "파일", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
-        var browse = Button("찾기…", () =>
-        {
-            var paths = SelectPaths(this);
-            if (paths is not null) SetPaths(paths);
-            return Task.CompletedTask;
-        });
+        // The file explorer chose the files before this dialog; the field only shows their names.
+        var fileField = new Border { Height = 32, CornerRadius = new(4), Background = Brush("#FBFBFB"), BorderBrush = Brush("#EAEAEA"), BorderThickness = new(1), Margin = new(0, 0, 0, 16), Child = FileNames };
         FileNames.IsHitTestVisible = false; FileNames.Focusable = false; FileNames.BorderThickness = new(0); FileNames.Padding = new(11, 0, 11, 0);
         FileNames.VerticalContentAlignment = VerticalAlignment.Center; FileNames.Background = Brushes.Transparent;
-        browse.Content = FileNames; browse.HorizontalContentAlignment = HorizontalAlignment.Stretch; browse.Padding = new(0); browse.Margin = new(0, 0, 0, 16);
-        browse.Height = browse.MinHeight = 32; browse.Background = Brush("#FBFBFB"); browse.BorderBrush = Brush("#EAEAEA"); browse.Template = SurfaceTemplate(4, stretchContent: true); browse.ToolTip = "올릴 파일 선택";
-        AutomationProperties.SetName(browse, "올릴 파일 선택"); body.Children.Add(browse);
+        AutomationProperties.SetName(FileNames, "올릴 파일"); body.Children.Add(fileField);
         body.Children.Add(new TextBlock { Text = "점역 설정", FontSize = 12, Foreground = Brush("#5F5F5F"), Margin = new(0, 0, 0, 4) });
         var form = new Grid { Margin = new(16, 12, 16, 4) }; form.ColumnDefinitions.Add(new() { Width = new(134) }); form.ColumnDefinitions.Add(new());
         for (var i = 0; i < 4; i++) form.RowDefinitions.Add(new() { Height = new(36) });
@@ -80,8 +74,20 @@ public sealed class OpenDocumentDialog : CompactDialog
             try
             {
                 if (Paths.Length == 0) throw new ArgumentException("파일을 선택해 주세요.");
-                if (!IsLocal && Paths.Sum(p => new FileInfo(p).Length) > JobClient.MaximumUploadBytes)
+                string[] oversized = IsLocal ? [] : Paths.Where(p => new FileInfo(p).Length > JobClient.MaximumUploadBytes).Select(p => Path.GetFileName(p)).ToArray();
+                if (oversized.Length > 0)
                 {
+                    // The limit is per file; the Figma notice stays generic, so the status line names the oversized files.
+                    Status.Text = "100 MB를 넘는 파일: " + string.Join(", ", oversized);
+                    var notice = FileNotices.OversizedFile(); notice.Owner = this; notice.ShowDialog();
+                    if (notice.Choice == 0) Semojum.Desktop.Services.CommonWindowServices.ShowHelp(this, "파일 열기");
+                    return Task.CompletedTask;
+                }
+                // Several images also share one 100 MB total (BE 2026-11-02, JOB4009): the same notice, and the status line gives the total.
+                long[] sizes = IsLocal ? [] : Paths.Select(p => new FileInfo(p).Length).ToArray();
+                if (JobClient.ExceedsImageTotal(sizes))
+                {
+                    Status.Text = $"이미지 {Paths.Length}장 합계 {Math.Ceiling(sizes.Sum() / (1024d * 1024d)):0} MB · 여러 장은 합계 100 MB까지 올릴 수 있습니다.";
                     var notice = FileNotices.OversizedFile(); notice.Owner = this; notice.ShowDialog();
                     if (notice.Choice == 0) Semojum.Desktop.Services.CommonWindowServices.ShowHelp(this, "파일 열기");
                     return Task.CompletedTask;
@@ -106,7 +112,10 @@ public sealed class OpenDocumentDialog : CompactDialog
             catch (ArgumentException ex)
             {
                 if (picker.FileNames.All(p => Supported.Contains(Path.GetExtension(p).ToLowerInvariant())))
-                { MessageBox.Show(owner, ex.Message, "파일 선택", MessageBoxButton.OK, MessageBoxImage.Information); continue; }
+                {
+                    if (NoticeDialog.Choose(owner, "선택한 파일을 함께 열 수 없습니다.", ex.Message, ["다시 선택", "취소"]) == 0) continue;
+                    return null;
+                }
                 var notice = FileNotices.UnsupportedFormat(); notice.Owner = owner; notice.ShowDialog();
                 if (notice.Choice != 0) return null;
             }

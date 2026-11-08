@@ -12,9 +12,11 @@ internal static class Qa4Checks
         yield return ("QA4 rules preserve full text and search-only flags, and encode query/filter/page", Rules);
         yield return ("QA4 applied rules use actual engine fields and select only overlapping current cells", Applied);
         yield return ("Server evidence is available without claiming an unknown braille position", AppliedServerEvidence);
+        yield return ("Applied rules read each rule on its axis: print columns name source characters and never land on 32-cell braille lines", AppliedAxis);
         yield return ("Text and braille panel evidence survives page parsing and SMJ round trip", RuleOriginRoundTrip);
         yield return ("QA4 inserting a footer continues to the next start without overlap or loss", Footers);
         yield return ("QA4 initial visual choice retains every alternative and protects saved manual results", VisualChoices);
+        yield return ("Server drafts of any count (2, 4) keep order, labels and selection through parsing, initial choice and SMJ", DraftCounts);
         yield return ("QA4 user forms create, update, copy and delete without changing the built-in form", Forms);
         yield return ("QA4 cancellation distinguishes accepted, finished and already-completed server responses", Cancellation);
     }
@@ -60,9 +62,10 @@ internal static class Qa4Checks
     {
         using var json = JsonDocument.Parse("""{"rule_id":"MCST-1","source":"한국 점자 규정","section":"제1항","rule_name":"기호 규정","contents":"본문\n⠿","line_no":0,"col_start":1,"col_end":3,"tag":"symbol"}""");
         var rule = AppliedRules.Read(json.RootElement);
-        Check(rule.Title == "기호 규정" && rule.Excerpt == "본문\n⠿");
+        Check(rule.Title == "기호 규정" && rule.Excerpt == "본문\n⠿" && rule.Axis is null);
         var block = new EditorBlock { Id = 1, Source = "기호", Braille = "⠁⠃⠉⠙", Translation = BrailleTranslation.Plain("⠁⠃⠉⠙") with { SourceText = "기호", RuleTrail = [rule] } };
-        Check(AppliedRules.Select(block, 2, 0).Single().Cells == "⠃⠉");
+        // An engine column without a source character shows its braille cell position, not a tag category.
+        Check(AppliedRules.Select(block, 2, 0).Single() is { Cells: "⠃⠉", Symbol: "1줄 2~3칸", IsBlockEvidence: false });
         Check(AppliedRules.Select(block, 3, 0).Length == 0 && AppliedRules.Select(block, 0, 2).Length == 1);
         block.HasManualBraille = true; Check(AppliedRules.Select(block, 2, 0).Length == 0);
         block.HasManualBraille = false; block.Source = "바뀜"; Check(AppliedRules.Select(block, 2, 0).Length == 0);
@@ -70,8 +73,9 @@ internal static class Qa4Checks
         block.Translation = BrailleTranslation.Plain(block.Braille) with { SourceText = "기호", RuleTrail = [rule with { LineNo = 0, ColumnStart = 74, ColumnEnd = 76 }] };
         Check(AppliedRules.Select(block, 74, 0).Single().Cells == "⠉⠙" && AppliedRules.Select(block, 73, 0).Length == 0);
         block.Source = "기호"; block.Translation = null; block.Braille = "⠿\n⠁⠃⠉⠙"; block.Metadata = new(Rules: [rule with { LineNo = 1 }]);
+        // Server metadata without an axis counts source characters; line 1 does not exist in the one-line source.
         var originalRule = AppliedRules.Select(block, 3, 0).Single();
-        Check(originalRule.Cells == "" && originalRule.IsBlockEvidence);
+        Check(originalRule is { Symbol: "위치 미확인", Cells: "", IsBlockEvidence: true });
         using var legacy = JsonDocument.Parse("""{"rule_id":"old","title":"제목","excerpt":"옛 본문","line_no":-1}""");
         Check(AppliedRules.Read(legacy.RootElement).Excerpt == "옛 본문");
         return Task.CompletedTask;
@@ -82,17 +86,49 @@ internal static class Qa4Checks
         var block = new EditorBlock { Id = 1, Source = "그림 설명", Braille = "⠁⠃⠉⠙",
             Translation = BrailleTranslation.Plain("⠁⠃⠉⠙") with { SourceText = "그림 설명", RuleTrail = [] },
             Metadata = new(Type: "chart_graph", Rules: [rule]) };
+        // A whole-element rule is shown as the final Figma's 「줄 전체 / —」 row.
         var rows = AppliedRules.Select(block, 0, 0);
-        Check(rows.Length == 1 && rows[0].RuleId == "NISE-6.4.1" && rows[0].Symbol == "기호 (출처 미확인)"
-            && rows[0].Cells == "" && rows[0].IsBlockEvidence);
+        Check(rows.Length == 1 && rows[0] is { RuleId: "NISE-6.4.1", Symbol: "줄 전체", Cells: "—", IsBlockEvidence: false });
         block.Translation = block.Translation! with { RuleTrail = [rule with { RuleId = "local", LineNo = 0, ColumnStart = 1, ColumnEnd = 3 }] };
         rows = AppliedRules.Select(block, 1, 0);
         Check(rows.Length == 2 && rows.Any(r => r.RuleId == "local" && r.Cells == "⠃⠉" && !r.IsBlockEvidence)
-            && rows.Any(r => r.RuleId == "NISE-6.4.1" && r.Cells == "" && r.IsBlockEvidence));
+            && rows.Any(r => r is { RuleId: "NISE-6.4.1", Symbol: "줄 전체", Cells: "—" }));
         rows = AppliedRules.Select(block, 3, 0);
-        Check(rows.Length == 1 && rows[0].RuleId == "NISE-6.4.1" && rows[0].Cells == "");
-        block.HasManualBraille = true; Check(AppliedRules.Select(block, 1, 0).Length == 0);
+        Check(rows.Length == 1 && rows[0] is { RuleId: "NISE-6.4.1", Cells: "—" });
+        // Edited braille hides engine cells, but source-character evidence still refers to the unchanged source.
+        block.HasManualBraille = true; rows = AppliedRules.Select(block, 1, 0);
+        Check(rows.Length == 1 && rows[0].RuleId == "NISE-6.4.1");
         block.HasManualBraille = false; block.Source = "고친 원문"; Check(AppliedRules.Select(block, 1, 0).Length == 0);
+        return Task.CompletedTask;
+    }
+    private static Task AppliedAxis()
+    {
+        // App QA 10-27: a server column counted in source characters (col_end 43) was laid on a 32-cell braille line.
+        var source = new string('가', 42) + "(나)"; var braille = "⠀⠀⠦⠄" + new string('⠁', 26);
+        using var page = JsonDocument.Parse($$$"""
+            {"status":"COMPLETED","result":{"text_list":[{"id":"q","type":"text","contents":["{{{source}}}"],
+              "rule_trail":[{"rule_id":"MCST-33","source":"한국 점자 규정","section":"제33항","rule_name":"소괄호표","contents":"소괄호표는 여는 때 ⠦","line_no":0,"col_start":42,"col_end":43,"axis":"print"}]}],
+              "braille_text_list":[{"id":"q","contents":["{{{braille}}}"]}]}}
+            """);
+        var block = JobClient.ReadPage(page.RootElement, 1, 1).Blocks.Single();
+        var print = block.Metadata.Rules!.Single();
+        Check(block.HasManualBraille && print.Axis == AppliedRules.PrintAxis && print.ColumnEnd == 43 && braille.Length <= 32);
+        // Server braille counts as edited: the source character is shown, no braille slice is invented from columns 42–43.
+        Check(AppliedRules.Select(block, 0, 0).Single() is { Symbol: "(", Cells: "", IsBlockEvidence: false });
+        using var engine = JsonDocument.Parse("""{"rule_id":"MCST-33","rule_name":"소괄호표","contents":"소괄호표","line_no":0,"col_start":2,"col_end":4,"tag":"symbol","axis":"braille"}""");
+        var cells = AppliedRules.Read(engine.RootElement);
+        Check(cells.Axis == AppliedRules.BrailleAxis);
+        // After a local retranslation the engine's braille columns pair with the server's source character.
+        block.HasManualBraille = false; block.Translation = BrailleTranslation.Plain(braille) with { SourceText = source, RuleTrail = [cells] };
+        Check(AppliedRules.Select(block, 2, 0).Single() is { Symbol: "(", Cells: "⠦⠄" });
+        Check(AppliedRules.Select(block, 10, 0).Length == 0);
+        // Older rows without an axis are read by where they came from: engine trail = cells, server metadata = source characters.
+        block.Metadata = block.Metadata with { Rules = [print with { Axis = null }] };
+        block.Translation = block.Translation with { RuleTrail = [cells with { Axis = null }] };
+        Check(AppliedRules.Select(block, 3, 0).Single() is { Symbol: "(", Cells: "⠦⠄" });
+        // A print column wrongly placed on the braille axis is refused instead of running past the 30-cell line.
+        block.Metadata = block.Metadata with { Rules = [] }; block.Translation = block.Translation with { RuleTrail = [print with { Axis = AppliedRules.BrailleAxis }] };
+        Check(AppliedRules.Select(block, 0, 0).Single() is { Symbol: "위치 미확인", Cells: "", IsBlockEvidence: true });
         return Task.CompletedTask;
     }
     private static async Task RuleOriginRoundTrip()
@@ -116,8 +152,8 @@ internal static class Qa4Checks
             Check(evidence.Length == 2 && evidence[0].Origin == RuleEvidenceOrigin.TextPanel
                 && evidence[1].Origin == RuleEvidenceOrigin.BraillePanel);
 
-            // An older v4 document has the same rule fields but no origin. Its
-            // contents remain readable, while positions are treated as unknown.
+            // An older v4 document has the same rule fields but no origin or axis. Its
+            // contents remain readable, and server columns are read as source characters.
             var manifest = JsonSerializer.SerializeToNode(SmjFile.Snapshot(session).Manifest,
                 new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
             foreach (var row in manifest["blocks"]![0]!["metadata"]!["rules"]!.AsArray())
@@ -132,7 +168,8 @@ internal static class Qa4Checks
                 Check(legacy.Metadata.Rules!.All(rule => rule.Origin == RuleEvidenceOrigin.Unknown));
                 legacy.HasManualBraille = false;
                 var legacyRows = AppliedRules.Select(legacy, 0, 0);
-                Check(legacyRows.Length > 0 && legacyRows.All(row => row.IsBlockEvidence && row.Cells == ""));
+                Check(legacy.Metadata.Rules!.All(rule => rule.Axis is null)
+                    && legacyRows.Length == 1 && legacyRows[0] is { Symbol: "그", Cells: "", IsBlockEvidence: false });
             }
             finally { if (File.Exists(oldPath)) File.Delete(oldPath); }
         }
@@ -179,6 +216,37 @@ internal static class Qa4Checks
         {
             await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path);
             Check(restored.Blocks[0].Metadata.Alternatives?.Length == 3 && restored.Blocks[0].Metadata.SelectedIndex == 0 && restored.Options.VisualDescriptions!["chart"].DefaultOption == "개조식");
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+    private static async Task DraftCounts()
+    {
+        // BE proto Draft carries text · label · tn_text; the element's selected_idx is 0-based. The number of drafts varies.
+        static EditorBlock Read(int id, int selected, params string[] labels) => JobClient.ReadPage(JsonSerializer.SerializeToElement(new
+        {
+            status = "COMPLETED", result = new { text_list = new[] { new { id = "x" + id, type = "image", contents = new[] { "원문" }, selected_idx = selected,
+                drafts = labels.Select(label => new { label, text = label + " 설명", tn_text = $"<!주>{label}<!/주>" }).ToArray() } } }
+        }), 1, id).Blocks.Single();
+        var two = Read(1, 1, "짧은 제목", "줄글");
+        var four = Read(2, 0, "생략", "짧은 제목", "개조식", "줄글");
+        Check(two.Metadata.Alternatives!.Select(d => d.Label).SequenceEqual(["짧은 제목", "줄글"]) && two.Metadata.SelectedIndex == 1);
+        Check(four.Metadata.Alternatives!.Select(d => d.Label).SequenceEqual(["생략", "짧은 제목", "개조식", "줄글"]) && four.Metadata.SelectedIndex == 0
+            && four.Metadata.Alternatives![2] is { Text: "개조식 설명", TaggedText: "<!주>개조식<!/주>" });
+        var options = new BrailleOptions(VisualDescriptions: VisualDescriptions.Defaults());
+        // No draft matches the figure default "개조식" among two, so the server's choice stays; among four the exact label wins.
+        Check(!VisualDraftSelection.ApplyInitial(two, options) && two.Metadata.SelectedIndex == 1 && two.Source == "원문");
+        Check(VisualDraftSelection.ApplyInitial(four, options) && four.Metadata.SelectedIndex == 2 && four.Source == "<!주>개조식<!/주>"
+            && four.Metadata.Alternatives!.Length == 4 && four.Metadata.OriginalSource == "원문");
+        four.Metadata = four.Metadata with { SelectedIndex = 3 }; four.Source = "<!주>줄글<!/주>";
+        var session = new DocumentSession(); session.Add(two); session.Add(four);
+        var path = Path.Combine(Path.GetTempPath(), "draft-counts-" + Guid.NewGuid().ToString("N") + ".smj");
+        try
+        {
+            await SmjFile.SaveAsync(path, SmjFile.Snapshot(session)); var restored = await SmjFile.LoadAsync(path);
+            var (savedTwo, savedFour) = (restored.Blocks.Single(b => b.Id == 1), restored.Blocks.Single(b => b.Id == 2));
+            Check(savedTwo.Metadata.Alternatives!.Length == 2 && savedTwo.Metadata.SelectedIndex == 1 && savedTwo.Metadata.Alternatives![1].Label == "줄글");
+            Check(savedFour.Metadata.Alternatives!.Select(d => d.Label).SequenceEqual(["생략", "짧은 제목", "개조식", "줄글"])
+                && savedFour.Metadata.SelectedIndex == 3 && savedFour.Source == "<!주>줄글<!/주>");
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

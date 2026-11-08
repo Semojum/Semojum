@@ -21,6 +21,14 @@ public sealed class SixDotInput
         for (var i = 0; i < 6; i++) mapping[normalized[i]] = 1 << i;
     }
 
+    // Earlier one-row and three-row presets stored the left hand as dots 3·2·1. Custom keys are left as they are.
+    public static string MigrateLegacyPreset(string keys) => string.Concat(keys.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant() switch
+    {
+        "WERUIO" => "R E W U I O",
+        "XCVNM," => "V C X N M ,",
+        _ => keys
+    };
+
     // Shifted punctuation is the same physical key as its unshifted counterpart.
     public static char PhysicalKey(char key) => char.ToUpperInvariant(key) switch
     {

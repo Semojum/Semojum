@@ -22,6 +22,12 @@ internal static class WindowsFileDialogDesignChecks
         check(!open.FileNames.Text.Contains("DOCX", StringComparison.OrdinalIgnoreCase), "The upload picker does not advertise DOCX");
         try { open.SetPaths(["document.docx"]); check(false, "The upload picker rejects DOCX"); }
         catch (ArgumentException) { check(true, "The upload picker rejects DOCX"); }
+        var unsupported = FileNotices.UnsupportedFormat(); var named = unsupported.DetailText.Split(" 만 ")[0].Split(" · "); unsupported.Close();
+        var panelText = LogicalDescendants(new Controls.OriginalUploadView()).OfType<TextBlock>().Single(t => t.Text.StartsWith("업로드 가능한 형식:", StringComparison.Ordinal)).Text;
+        var listed = panelText["업로드 가능한 형식:".Length..].Split([',', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var accepted = named.All(format => { try { open.SetPaths(["document." + format.ToLowerInvariant()]); return true; } catch (ArgumentException) { return false; } });
+        check(accepted && named.Order().SequenceEqual(listed.Order()) && !named.Contains("DOCX"),
+            "Case 1, the upload panel and the file picker name the same supported formats, without DOCX");
         var decomposed = "가나다.txt".Normalize(System.Text.NormalizationForm.FormD);
         open.SetPaths([decomposed]);
         check(open.FileNames.Text == "가나다.txt" && open.Paths.Single() == decomposed,
@@ -47,6 +53,8 @@ internal static class WindowsFileDialogDesignChecks
                 "File options retain the selected filename and editable format settings");
             check(open.FileNames.ActualWidth > 490,
                 "Selected file names fill the file field and align from its left edge");
+            check(open.FileNames is { IsReadOnly: true, IsHitTestVisible: false } && open.FileNames.Parent is Border { Height: 32 } && !Descendants(open).OfType<Button>().Any(b => b.Content == open.FileNames),
+                "The file field is a read-only name box without a browse button, matching the final Figma");
             check(open.FormId == saved.FormId && open.Forms.Items.Contains(general) && open.Forms.Items.Contains(saved),
                 "File options select the saved default and retain individual custom forms");
             var icons = Descendants(open).OfType<SvgViewbox>().Where(i => i.IsVisible && (i.Source?.ToString().EndsWith("open-options-close.svg", StringComparison.Ordinal) == true || i.Source?.ToString().EndsWith("open-options-chevron.svg", StringComparison.Ordinal) == true)).ToArray();
@@ -58,7 +66,7 @@ internal static class WindowsFileDialogDesignChecks
                 "A file that disappears before conversion shows an error without closing the dialog");
         }
         finally { open.Close(); }
-        CheckUploadTotalNotice(general, check);
+        CheckUploadPerFileNotice(general, check);
         var offline = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"), serverSettingsAvailable: false);
         offline.SetPaths(["document.smj"]); offline.Show();
         try
@@ -80,6 +88,9 @@ internal static class WindowsFileDialogDesignChecks
                 "Save as renders the final Figma close and dropdown icons");
             var name = Descendants(save).OfType<TextBox>().Single(t => AutomationProperties.GetName(t) == "파일 이름");
             check(name.Text == "문서", "Save as retains the proposed document name");
+            var format = Descendants(save).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "파일 형식");
+            check(save.Format == 1 && Equals(format.SelectedItem, "점자 파일 (*.brf)") && format.Items.Count == 3,
+                "Save as defaults to the final Figma braille file format while keeping the work file choice");
             check(name.Template.FindName("PART_ContentHost", name) is ScrollViewer && name.Template.FindName("FocusLine", name) is Border,
                 "Save as keeps an editable text host and the Figma focus underline");
             name.SelectAll(); name.SelectedText = "새 이름";
@@ -88,7 +99,7 @@ internal static class WindowsFileDialogDesignChecks
         finally { save.Close(); }
     }
 
-    private static void CheckUploadTotalNotice(BrailleForm general, Action<bool, string> check)
+    private static void CheckUploadPerFileNotice(BrailleForm general, Action<bool, string> check)
     {
         var directory = Path.Combine(Path.GetTempPath(), "semojum-upload-notice-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -96,12 +107,16 @@ internal static class WindowsFileDialogDesignChecks
         var second = Path.Combine(directory, "second.png");
         try
         {
-            const long mib = 1024L * 1024;
-            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(60 * mib);
-            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(60 * mib);
-            CheckNotice([first, second], "Two 60 MiB images report their total size rather than a single oversized file");
+            // BE 2026-11-02: several images also share one 100 MB total; the same notice opens and the status line gives the total.
+            using (var file = new FileStream(first, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes / 2);
+            using (var file = new FileStream(second, FileMode.CreateNew, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes / 2);
+            CheckNotice([first, second], null, "Two images of exactly 100 MiB together pass the total limit without a notice");
+            using (var file = new FileStream(first, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
+            using (var file = new FileStream(second, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes);
+            CheckNotice([first, second], "이미지 2장 합계 200 MB", "Two images of exactly 100 MiB each (200 MiB together) show the notice with the total", "이미지 2장 합계");
             using (var file = new FileStream(first, FileMode.Open, FileAccess.Write)) file.SetLength(JobClient.MaximumUploadBytes + 1);
-            CheckNotice([first], "One oversized file reports the selected total size accurately");
+            CheckNotice([first, second], "first.png", "One oversized image among several shows the notice and names only that file");
+            CheckNotice([first], "first.png", "One oversized file shows the per-file notice");
         }
         finally
         {
@@ -110,7 +125,7 @@ internal static class WindowsFileDialogDesignChecks
             Directory.Delete(directory);
         }
 
-        void CheckNotice(string[] paths, string description)
+        void CheckNotice(string[] paths, string? oversizedName, string description, string statusStart = "100 MB를 넘는 파일")
         {
             var dialog = new OpenDocumentDialog([general], new AccountDefaults(new(), null, "odd"));
             dialog.SetPaths(paths);
@@ -138,8 +153,11 @@ internal static class WindowsFileDialogDesignChecks
                 dialog.UpdateLayout(); timer.Start();
                 Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, "변환 시작"))
                     .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                check(message == "선택한 파일의 총 크기가 100 MB를 넘습니다." &&
-                      detail == "파일 크기를 줄이거나 나누어 다시 올려 주세요." && dialog.IsVisible,
+                var named = Descendants(dialog).OfType<TextBlock>().FirstOrDefault(t => t.Text.StartsWith(statusStart, StringComparison.Ordinal))?.Text ?? "";
+                check(oversizedName is null
+                        ? message is null && named.Length == 0
+                        : message == "파일이 100 MB 를 넘습니다." && detail == "파일을 나누어 올린 뒤 이어 붙일 수 있습니다." && dialog.IsVisible
+                          && named.Contains(oversizedName, StringComparison.Ordinal) && !named.Contains("second.png", StringComparison.Ordinal),
                     description);
             }
             finally { timer.Stop(); dialog.Close(); }
@@ -162,5 +180,12 @@ internal static class WindowsFileDialogDesignChecks
         yield return parent;
         for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
             foreach (var child in Descendants(VisualTreeHelper.GetChild(parent, i))) yield return child;
+    }
+    // An unshown control has no visual tree yet; its built content is reachable through the logical tree.
+    private static IEnumerable<object> LogicalDescendants(object node)
+    {
+        yield return node;
+        if (node is DependencyObject parent)
+            foreach (var child in LogicalTreeHelper.GetChildren(parent)) foreach (var nested in LogicalDescendants(child)) yield return nested;
     }
 }

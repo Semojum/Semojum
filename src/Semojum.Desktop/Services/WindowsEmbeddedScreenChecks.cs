@@ -77,19 +77,6 @@ internal static class WindowsEmbeddedScreenChecks
                 && owner.InputBindings.Count == shortcutCount && owner.WindowState == originalState && owner.Title == originalTitle
                 && owner.Session.ActiveBlock?.Source == "저장 전 작업",
                 "Successful embedded login restores the editor window and its shortcuts");
-
-            using var adminHttp = new HttpClient(new Fixture("ROLE_ORG_ADMIN")); var adminApi = new SemojumApiClient(adminHttp);
-            await adminApi.LoginAsync("admin", "password");
-            var institution = new InstitutionWindow(adminApi, () => Task.FromResult(true));
-            var managing = institution.ShowEmbeddedAsync(owner);
-            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); owner.UpdateLayout();
-            check(!institution.IsVisible && owner.WindowState == WindowState.Maximized && owner.Title == "누리닷 기관 관리"
-                && Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible) == visibleWindows,
-                "Institution management appears maximized inside the same existing window");
-            institution.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            await managing.WaitAsync(TimeSpan.FromSeconds(8));
-            check(institution.LogoutRequested && owner.InputBindings.Count == shortcutCount && owner.WindowState == originalState,
-                "Institution logout closes the embedded view and restores the editor shell");
         }
         finally { owner.PrepareSmokeShutdown(); owner.Close(); }
 
@@ -114,28 +101,79 @@ internal static class WindowsEmbeddedScreenChecks
         }
         finally { if (closingOwner.IsVisible) { closingOwner.PrepareSmokeShutdown(); closingOwner.Close(); } }
 
+        // An administrator cannot use the editor: login → separate 기관 관리 window with the editor hidden → logout → login → editor.
         using var flowHttp = new HttpClient(new InstitutionThenUser()); var flowApi = new SemojumApiClient(flowHttp);
-        var flowOwner = new MainWindow(flowApi); flowOwner.Show();
+        var flowOwner = new MainWindow(flowApi); var flowClosed = false; flowOwner.Closed += (_, _) => flowClosed = true; flowOwner.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            var existingWindows = Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible);
+            var existingWindows = Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible); var editorTitle = flowOwner.Title;
             var flow = flowOwner.EnsureAccountAsync(allowInstitution: true);
             await WaitForAsync(() => Descendants(flowOwner).OfType<PasswordBox>().Any(p => p.IsVisible));
             SubmitLogin(flowOwner, "institution");
-            await WaitForAsync(() => flowOwner.Title == "누리닷 기관 관리");
-            check(flowOwner.WindowState == WindowState.Maximized && Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible) == existingWindows,
-                "An institution login routes to management in the same maximized window");
-            var fileMenu = Descendants(flowOwner).OfType<MenuItem>().Single(m => Equals(m.Header, "파일(_F)") && m.IsEnabled);
-            fileMenu.Items.OfType<MenuItem>().Single(m => Equals(m.Header, "로그아웃")).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await WaitForAsync(() => flowOwner.Institution is { IsVisible: true });
+            var institution = flowOwner.Institution!; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(!flowOwner.IsVisible && !flow.IsCompleted && institution is { Title: "기관 관리 - 누리닷", Owner: null, ShowInTaskbar: true, ResizeMode: ResizeMode.CanResize }
+                && CaptionButtons(institution).SequenceEqual(["최소화", "최대화 / 복원", "닫기"])
+                && Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible) == existingWindows
+                && !Application.Current.Windows.Cast<Window>().Any(w => w.Title == "누리닷 기관 관리"),
+                "An institution login hides the editor and shows only the top-level 기관 관리 - 누리닷 window with minimize, maximize and close");
+            check(Descendants(institution).OfType<Menu>().Single().Items.OfType<MenuItem>().SelectMany(m => m.Items.OfType<MenuItem>()).Select(m => m.Header as string)
+                    .SequenceEqual(["로그아웃", "닫기", "도움말", "마이페이지 · 사용량"]),
+                "The 기관 관리 window offers no editor command, only logout, close, help and my page");
+            // 정보 › 마이페이지 · 사용량 opens my page over the admin window; its admin-only 기관 관리 section brings that window back.
+            UsageDialog? myPage = null; string[] sections = []; var ticks = 0;
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+            timer.Tick += (_, _) =>
+            {
+                if (Application.Current.Windows.OfType<UsageDialog>().FirstOrDefault(d => d.Owner == institution && d.IsLoaded) is { } page)
+                {
+                    timer.Stop(); myPage = page; sections = page.Navigation.Items.Cast<TabItem>().Select(Section).ToArray();
+                    page.Navigation.SelectedItem = page.Navigation.Items.Cast<TabItem>().FirstOrDefault(t => Section(t) == "기관 관리") ?? page.Navigation.Items[0];
+                    if (page.IsVisible) page.DialogResult = false;
+                }
+                else if (++ticks >= 250) { timer.Stop(); foreach (var stray in Application.Current.Windows.OfType<UsageDialog>().Where(d => d.IsVisible).ToArray()) stray.DialogResult = false; }
+            };
+            timer.Start();
+            institution.MyPageItem?.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(myPage is { IsVisible: false, LogoutRequested: false, DialogResult: true } && sections.SequenceEqual(["사용량", "과금 이력", "계정 정보", "기관 관리", "문의 내역", "로그아웃"])
+                && institution.IsVisible && !flowOwner.IsVisible && !flow.IsCompleted,
+                "The administrator's my page lists six sections and its 기관 관리 closes it back to the open 기관 관리 window");
+            institution.LogoutItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             await WaitForAsync(() => Descendants(flowOwner).OfType<PasswordBox>().Any(p => p.IsVisible));
+            check(flowOwner.IsVisible && flowOwner.Title == "누리닷 로그인" && !institution.IsVisible && flowOwner.Institution is null && flowApi.Account is null && !flow.IsCompleted,
+                "Logging out of the 기관 관리 window closes it and returns to the login screen");
             SubmitLogin(flowOwner, "editor");
             check(await flow.WaitAsync(TimeSpan.FromSeconds(8)) && flowApi.Account is { LoginId: "editor", Role: "ROLE_USER" }
-                && Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible) == existingWindows,
-                "Institution logout returns to login and a user enters the editor without opening another window");
+                && flowOwner.IsVisible && flowOwner.Title == editorTitle && Application.Current.Windows.Cast<Window>().Count(w => w.IsVisible) == existingWindows,
+                "After an institution logout a user login enters the editor normally");
         }
-        finally { await flowOwner.ReleaseResourcesAsync(); flowOwner.PrepareSmokeShutdown(); flowOwner.Close(); }
+        finally { if (!flowClosed) { await flowOwner.ReleaseResourcesAsync(); flowOwner.PrepareSmokeShutdown(); flowOwner.Close(); } }
+
+        // A restored administrator session (automatic login) takes the same route; × on the 기관 관리 window ends the app.
+        using var closeHttp = new HttpClient(new InstitutionThenUser()); var closeApi = new SemojumApiClient(closeHttp);
+        await closeApi.LoginAsync("institution", "password");
+        var closeOwner = new MainWindow(closeApi); var ownerClosed = false; closeOwner.Closed += (_, _) => ownerClosed = true; closeOwner.Show();
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var restored = closeOwner.EnsureAccountAsync(allowInstitution: true);
+            await WaitForAsync(() => closeOwner.Institution is { IsVisible: true });
+            var admin = closeOwner.Institution!; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(!closeOwner.IsVisible && !Descendants(closeOwner).OfType<PasswordBox>().Any(p => p.IsVisible),
+                "A restored administrator session opens the 기관 관리 window directly with the editor hidden");
+            Descendants(admin).OfType<Button>().First(b => AutomationProperties.GetName(b) == "닫기").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(!await restored.WaitAsync(TimeSpan.FromSeconds(8)) && !admin.IsVisible && ownerClosed,
+                "Closing the 기관 관리 window with × also closes the hidden editor window, ending the app");
+        }
+        finally { if (!ownerClosed) { await closeOwner.ReleaseResourcesAsync(); closeOwner.PrepareSmokeShutdown(); closeOwner.Close(); } }
     }
+
+    private static string Section(TabItem tab) => tab.Header as string ?? ((Panel)tab.Header).Children.OfType<TextBlock>().Last().Text;
+
+    private static IEnumerable<string?> CaptionButtons(Window window) => Descendants(window).OfType<Button>()
+        .Select(b => AutomationProperties.GetName(b)).Where(name => name is "최소화" or "최대화 / 복원" or "닫기");
 
     private static void SubmitLogin(Window owner, string id)
     {

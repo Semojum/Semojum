@@ -13,11 +13,19 @@ internal sealed class InstitutionRequestDialog : CompactDialog
     internal TextBox Second { get; } = new();
     internal ComboBox Option { get; } = new();
     internal Button Submit { get; }
-    internal string? SubmissionMessage { get; private set; }
+    internal TextBlock EstimateAmount { get; } = new() { Text = "—", FontSize = 14, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center };
+    internal TextBlock EstimateNote { get; } = new() { Text = "부가세 포함", FontSize = 12, Foreground = FigmaDialogElements.Brush("#5F5F5F"), Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+    /// <summary>Typing waits this long before asking for an estimate, so each keystroke does not send a request.</summary>
+    internal static readonly TimeSpan EstimateDelay = TimeSpan.FromMilliseconds(300);
+    private readonly Func<long, CancellationToken, Task<InstitutionCreditEstimate>>? estimate;
+    private CancellationTokenSource? estimateRun;
+    internal Task EstimateTask { get; private set; } = Task.CompletedTask;
 
-    internal InstitutionRequestDialog(bool accountRequest, Func<string, Task> submit)
+    /// <summary>Submits the request window's fields; a credit request shows the server's estimate for the typed amount.</summary>
+    internal InstitutionRequestDialog(bool accountRequest, Func<string?, InstitutionRequestDetails, Task> submit, Func<long, CancellationToken, Task<InstitutionCreditEstimate>>? estimate = null)
         : base(accountRequest ? "계정 발급 요청" : "크레딧 추가 요청", 520, accountRequest ? 344 : 288, popover: true)
     {
+        this.estimate = estimate;
         var title = accountRequest ? "계정 발급 요청" : "크레딧 추가 요청";
         if (Content is Border frame) { frame.CornerRadius = new(8); frame.BorderBrush = FigmaDialogElements.Brush("#EAEAEA"); frame.Background = FigmaDialogElements.Brush("#F3F3F3"); }
         var layout = new Grid(); layout.RowDefinitions.Add(new() { Height = new(55) }); layout.RowDefinitions.Add(new()); layout.RowDefinitions.Add(new() { Height = new(64) }); Body(layout);
@@ -36,12 +44,13 @@ internal sealed class InstitutionRequestDialog : CompactDialog
             var caption = new TextBlock { Text = label, FontSize = 14, VerticalAlignment = VerticalAlignment.Center }; Grid.SetRow(caption, row); form.Children.Add(caption);
             field.Height = 32; field.HorizontalAlignment = HorizontalAlignment.Stretch; AutomationProperties.SetName(field, label); Grid.SetRow(field, row); Grid.SetColumn(field, 1); form.Children.Add(field);
         }
-        First.MaxLength = 150; Second.MaxLength = 254;
+        // The server accepts a 50-character alias and a 100-character recipient address.
+        First.MaxLength = 50; Second.MaxLength = 100;
         if (accountRequest)
         {
             Field(0, "별칭", First); Field(1, "받을 사람 메일", Second);
             Option.ItemsSource = new[] { "기관 할당 공유", "계정별 한도 지정", "크레딧 없음 (읽기만)" }; Option.SelectedIndex = 0; Field(2, "쓸 수 있는 크레딧", Option);
-            body.Children.Add(new TextBlock { Text = "입력한 내용은 운영자에게 요청으로 전달됩니다.", Foreground = FigmaDialogElements.Brush("#5F5F5F"), TextWrapping = TextWrapping.Wrap, Margin = new(0, 12, 0, 0) });
+            body.Children.Add(new TextBlock { Text = "요청하면 운영자 확인 뒤 메일로 첫 비밀번호가 갑니다.", Foreground = FigmaDialogElements.Brush("#8A8A8A"), FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new(0, 24, 0, 0) });
         }
         else
         {
@@ -64,7 +73,11 @@ internal sealed class InstitutionRequestDialog : CompactDialog
             AddSpin(0, 1, "크레딧 1 증가", "institution-credit-spin-up.svg", 9.60063, 5.19934);
             AddSpin(1, -1, "크레딧 1 감소", "institution-credit-spin-down.svg", 16, 16);
             Field(0, "크레딧", number); number.HorizontalAlignment = HorizontalAlignment.Left;
-            Field(1, "예상 금액", new TextBlock { Text = "금액 정보가 제공되지 않았습니다.", Foreground = FigmaDialogElements.Brush("#5F5F5F"), VerticalAlignment = VerticalAlignment.Center });
+            // 「₩780,000 · 부가세 포함」 comes from the server; until it answers for the typed amount the field shows 「—」.
+            var price = new StackPanel { Orientation = Orientation.Horizontal }; price.Children.Add(EstimateAmount); price.Children.Add(EstimateNote);
+            Field(1, "예상 금액", price); price.HorizontalAlignment = HorizontalAlignment.Left;
+            First.TextChanged += (_, _) => EstimateTask = EstimateAsync();
+            Closed += (_, _) => estimateRun?.Cancel();
             Option.ItemsSource = new[] { "기관 명의 발행", "개인 명의 발행", "발행 안 함" }; Option.SelectedIndex = 0; Field(2, "세금계산서", Option);
         }
         Option.Width = 240; Option.HorizontalAlignment = HorizontalAlignment.Left; Option.ItemContainerStyle = ChoiceItemStyle();
@@ -79,19 +92,44 @@ internal sealed class InstitutionRequestDialog : CompactDialog
         var cancel = Button("취소", () => { Close(); return Task.CompletedTask; }); cancel.Width = 88; cancel.Height = 32; actions.Children.Add(cancel);
         Submit = Button("요청 보내기", async () => await RunAsync(async () =>
         {
-            string message;
+            // The window's choices are sent as request fields, not as text in the message.
+            string? message = null; InstitutionRequestDetails details;
             if (accountRequest)
             {
-                if (string.IsNullOrWhiteSpace(First.Text) || !System.Net.Mail.MailAddress.TryCreate(Second.Text.Trim(), out _)) throw new ArgumentException("별칭과 올바른 이메일을 입력해 주세요.");
-                message = $"별칭: {First.Text.Trim()}\n받을 사람 메일: {Second.Text.Trim()}\n쓸 수 있는 크레딧: {Option.SelectedItem}";
+                if (string.IsNullOrWhiteSpace(First.Text) || !InstitutionClient.IsReceiptEmail(Second.Text.Trim())) throw new ArgumentException("별칭과 올바른 이메일을 입력해 주세요.");
+                // The server has no value for 「계정별 한도 지정」 (the limit is set later in 계정 상세), so that choice travels as a note.
+                var scope = Option.SelectedIndex switch { 0 => "SHARED", 2 => "NONE", _ => null };
+                if (scope is null) message = $"쓸 수 있는 크레딧: {Option.SelectedItem}";
+                details = new(AccountAlias: First.Text.Trim(), RecipientEmail: Second.Text.Trim(), CreditScope: scope);
             }
             else
             {
-                if (!int.TryParse(First.Text.Replace(",", "").Trim(), out var amount) || amount <= 0) throw new ArgumentException("요청할 크레딧을 양의 정수로 입력해 주세요.");
-                message = $"요청 크레딧: {amount}\n세금계산서: {Option.SelectedItem}";
+                if (Credits() is not { } amount) throw new ArgumentException("요청할 크레딧을 양의 정수로 입력해 주세요.");
+                details = new(CreditAmount: amount, InvoiceType: Option.SelectedIndex switch { 1 => "PERSONAL", 2 => "NONE", _ => "ORG" });
             }
-            await submit(message); SubmissionMessage = message; DialogResult = true;
+            await submit(message, details); DialogResult = true;
         }), true); Submit.Width = 110; Submit.Height = 32; actions.Children.Add(Submit);
+    }
+    private long? Credits() => int.TryParse(First.Text.Replace(",", "").Trim(), out var amount) && amount > 0 ? amount : null;
+    /// <summary>Waits for typing to pause, cancels the previous estimate and shows only the answer for the current amount; any failure leaves 「—」.</summary>
+    private async Task EstimateAsync()
+    {
+        estimateRun?.Cancel();
+        var run = estimateRun = new CancellationTokenSource();
+        if (estimate is null || Lifetime.IsCancellationRequested || Credits() is not { } credits) { ShowEstimate(null); return; }
+        try
+        {
+            await Task.Delay(EstimateDelay, run.Token);
+            var value = await estimate(credits, run.Token);
+            if (!run.IsCancellationRequested) ShowEstimate(value.Credits == credits && value.AmountKrw >= 0 ? value.AmountKrw : null);
+        }
+        catch (OperationCanceledException) when (run.IsCancellationRequested) { }
+        catch (Exception) { if (!run.IsCancellationRequested) ShowEstimate(null); }
+    }
+    private void ShowEstimate(long? amountKrw)
+    {
+        EstimateAmount.Text = amountKrw is { } amount ? "₩" + amount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) : "—";
+        EstimateNote.Visibility = amountKrw is null ? Visibility.Collapsed : Visibility.Visible;
     }
     private static Style ChoiceItemStyle()
     {

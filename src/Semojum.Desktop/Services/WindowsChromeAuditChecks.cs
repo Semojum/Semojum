@@ -16,7 +16,7 @@ internal static class WindowsChromeAuditChecks
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
-        var editor = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { Width = 960, Height = 600 };
+        var editor = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { Width = 1280, Height = 800 };
         editor.Show();
         try
         {
@@ -28,7 +28,7 @@ internal static class WindowsChromeAuditChecks
             check(true, $"Independent standard window: native-enabled={IsWindowEnabled(new WindowInteropHelper(independent).Handle)}, thread-modal={ComponentDispatcher.IsThreadModal}");
             independent.Close();
             Describe(editor, "editor", check);
-            check(editor.ResizeMode == ResizeMode.CanResize && editor.ActualWidth <= 960 && editor.ActualHeight <= 600, "The editor remains resizable at the 960-pixel split-window size");
+            check(editor.ResizeMode == ResizeMode.CanResize && editor.ActualWidth <= 1281 && editor.ActualHeight <= 801, "The editor remains resizable at its 1280 by 800 minimum size");
             var editorChrome = WindowChrome.GetWindowChrome(editor); var editorHits = CornerHits(editor);
             check(true, $"Actual editor at 8px: {editorHits.Detail}");
             editorChrome.CornerRadius = new CornerRadius(0); await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); var squareHits = CornerHits(editor);

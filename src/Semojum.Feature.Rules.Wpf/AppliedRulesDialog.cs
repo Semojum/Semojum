@@ -25,7 +25,7 @@ public sealed class AppliedRulesDialog : CompactDialog
 
         var body = new DockPanel { Margin = new(16, 6, 16, 0) }; Grid.SetRow(body, 1); layout.Children.Add(body);
         var selection = new StackPanel(); DockPanel.SetDock(selection, Dock.Top); body.Children.Add(selection);
-        selection.Children.Add(new TextBlock { Text = position is null ? "원문" : "원문 · " + position, Height = 22, Foreground = FigmaDialogElements.Brush("#5F5F5F") });
+        selection.Children.Add(new TextBlock { Text = "원문", Height = 22, Foreground = FigmaDialogElements.Brush("#5F5F5F") });
         var preview = new Grid { Margin = new(15, 8, 15, 8) };
         preview.ColumnDefinitions.Add(new()); preview.ColumnDefinitions.Add(new() { Width = new(1) }); preview.ColumnDefinitions.Add(new());
         var source = new StackPanel(); source.Children.Add(new TextBlock { Text = "묵자", Height = 20, Foreground = FigmaDialogElements.Brush("#5F5F5F") });
@@ -34,7 +34,8 @@ public sealed class AppliedRulesDialog : CompactDialog
         var separator = new Border { Background = FigmaDialogElements.Brush("#EAEAEA"), Margin = new(0, 3, 0, 3) }; Grid.SetColumn(separator, 1); preview.Children.Add(separator);
         var braille = new StackPanel { Margin = new(15, 0, 0, 0) }; braille.Children.Add(new TextBlock { Text = "점자", Height = 20, Foreground = FigmaDialogElements.Brush("#5F5F5F") });
         var brailleText = selectedBraille.Length > 0 ? selectedBraille : string.Concat(rows.Select(r => r.Cells));
-        var brailleValue = new TextBlock { Text = brailleText, FontFamily = new("Segoe UI Symbol"), FontSize = 22, Height = 24, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = brailleText };
+        var brailleFont = (FontFamily)FindResource("BrailleFont");
+        var brailleValue = new TextBlock { Text = brailleText, FontFamily = brailleFont, FontSize = 22, Height = 24, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = brailleText };
         AutomationProperties.SetAutomationId(brailleValue, "RulesBraillePreview"); braille.Children.Add(brailleValue); Grid.SetColumn(braille, 2); preview.Children.Add(braille);
         selection.Children.Add(new Border { Height = 72, CornerRadius = new(6), Background = FigmaDialogElements.Brush("#F9F9F9"), BorderBrush = FigmaDialogElements.Brush("#EAEAEA"), BorderThickness = new(1), Child = preview });
         Rules.Margin = new(0, 16, 0, 0); Rules.Style = (Style)FindResource("AppliedRulesGrid"); Rules.MinRowHeight = 56;
@@ -50,7 +51,7 @@ public sealed class AppliedRulesDialog : CompactDialog
         {
             var style = new Style(typeof(TextBlock)); style.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
             style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(field)));
-            if (brailleColumn) { style.Setters.Add(new Setter(TextBlock.FontFamilyProperty, new FontFamily("Segoe UI Symbol"))); style.Setters.Add(new Setter(TextBlock.FontSizeProperty, 22d)); }
+            if (brailleColumn) { style.Setters.Add(new Setter(TextBlock.FontFamilyProperty, brailleFont)); style.Setters.Add(new Setter(TextBlock.FontSizeProperty, 22d)); }
             if (field == "Symbol")
             {
                 style.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d)); style.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
@@ -72,12 +73,7 @@ public sealed class AppliedRulesDialog : CompactDialog
         var textColumn = Column("조항 원문", "Text", 304); textColumn.Width = new DataGridLength(1, DataGridLengthUnitType.Star); Rules.Columns.Add(textColumn);
         Root.Children.Remove(Status); Status.Margin = new(0, 4, 0, 4); DockPanel.SetDock(Status, Dock.Bottom); body.Children.Add(Status);
         Rules.ItemsSource = rows; body.Children.Add(Rules);
-        if (rows.Length > 0)
-        {
-            Rules.SelectedIndex = 0;
-            if (rows.Any(row => row.IsBlockEvidence))
-                Status.Text = "원본 변환에서 전달된 근거가 포함되어 있습니다. 현재 초안이나 선택한 점자 칸에 적용되는 위치는 확인되지 않았습니다.";
-        }
+        if (rows.Length > 0) Rules.SelectedIndex = 0;
         else Status.Text = stale ? "편집 후에는 적용 규정의 위치가 달라질 수 있습니다. 재점역하면 현재 결과의 근거를 확인할 수 있습니다." : "선택한 위치에 전달된 적용 규정이 없습니다.";
         var footer = new Border { BorderBrush = FigmaDialogElements.Brush("#EAEAEA"), BorderThickness = new(0, 1, 0, 0) }; Grid.SetRow(footer, 2); layout.Children.Add(footer);
         var footerLayout = new Grid { Margin = new(16, 0, 24, 0) };

@@ -160,7 +160,7 @@ public sealed class FormDialog : CompactDialog
         var frame = PublicDialogDesign.Frame(this, "점역 양식", "form-main-close.svg", "FormDialogClose", out var actions, "Semojum.Feature.Settings.Wpf"); Body(frame);
         var panel = new StackPanel { Margin = new(16, 12, 16, 0) }; Grid.SetRow(panel, 1); frame.Children.Add(panel);
         panel.Children.Add(new TextBlock { Text = "양식", Height = 18, Foreground = Brush("#5F5F5F") });
-        var picker = new ComboBox { MinHeight = 32, Height = 32, DisplayMemberPath = nameof(BrailleForm.Name), ToolTip = "사용자 양식은 오른쪽 클릭으로 수정·삭제할 수 있습니다.", Padding = new(11, 0, 25, 0) };
+        var picker = new ComboBox { MinHeight = 32, Height = 32, DisplayMemberPath = nameof(BrailleForm.Name), Padding = new(11, 0, 25, 0) };
         AutomationProperties.SetName(picker, "양식");
         var pickerField = new Grid { Height = 32, Margin = new(0, 0, 0, 16) }; pickerField.Children.Add(picker);
         pickerField.Children.Add(new Border { Width = 24, Margin = new(0, 1, 1, 1), Background = Brush("#FBFBFB"), HorizontalAlignment = HorizontalAlignment.Right, IsHitTestVisible = false });
@@ -174,34 +174,30 @@ public sealed class FormDialog : CompactDialog
             row.Children.Add(new TextBlock { Text = label, Width = 94, FontSize = 14 });
             var value = new TextBlock { FontSize = 14, FontWeight = label == "한글" ? FontWeights.SemiBold : FontWeights.Normal, TextTrimming = TextTrimming.CharacterEllipsis }; values[label] = value; row.Children.Add(value);
             if (label == "페이지행") AutomationProperties.SetAutomationId(value, "FormPageRowSummary");
-            panel.Children.Add(new System.Windows.Controls.Border { BorderBrush = (System.Windows.Media.Brush)FindResource("Line"), BorderThickness = new(0, 0, 0, 1), Child = row });
+            panel.Children.Add(new System.Windows.Controls.Border { BorderBrush = Brush("#EAEAEA"), BorderThickness = new(0, 0, 0, 1), Child = row });
         }
-        var edit = new MenuItem { Header = "수정…" }; edit.Click += async (_, _) => await RunAsync(() => EditAsync(false));
-        var delete = new MenuItem { Header = "삭제…" }; delete.Click += async (_, _) =>
-        { if (picker.SelectedItem is BrailleForm f) await RunAsync(() => DeleteAsync(f)); };
-        picker.ContextMenu = new ContextMenu(); picker.ContextMenu.Items.Add(edit); picker.ContextMenu.Items.Add(delete);
         picker.SelectionChanged += (_, _) =>
         {
             var f = picker.SelectedItem as BrailleForm;
-            edit.IsEnabled = delete.IsEnabled = f is { Builtin: false } && f.FormId != "user:new";
-            values["줄·칸"].Text = f is null || f.FormId == "user:new" ? "사용자 양식을 설정해 주세요." : $"{f.Layout.Columns}칸 × {f.Layout.Lines}줄";
+            values["줄·칸"].Text = f is null ? "—" : $"{f.Layout.Columns}칸 × {f.Layout.Lines}줄";
             values["한글"].Text = f is null ? "—" : f.Options.KoreanGrade1 ? "정자(1급)" : "약자(2급)";
             values["줄바꿈"].Text = f is null ? "—" : (f.Options.LineBreakUnit == "word" ? "어절" : "음절") + " 단위";
-            var summary = f is null ? "—" : $"번호: {Policy(f.Layout.PageNumbers)} · 꼬리말 면: {Policy(f.Layout.Footer)}";
+            var summary = f is null ? "—" : Side(f.Layout.PageNumbers) + (HasFooter(f.Layout.Footer) ? " · 꼬리말" : "");
             values["페이지행"].Text = summary;
             values["페이지행"].ToolTip = summary;
             AutomationProperties.SetName(values["페이지행"], "페이지행 " + summary);
         };
-        static string Policy(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+        static string Side(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value == "출력 안 함" ? "번호 없음" : value.Replace("페이지", "쪽");
+        static bool HasFooter(string? value) => !string.IsNullOrWhiteSpace(value) && value != "출력 안 함";
         async Task ReloadAsync(string? id)
         {
             var forms = await client.FormsAsync(Lifetime.Token);
-            picker.ItemsSource = forms.Any(f => !f.Builtin) ? forms : [.. forms, new BrailleForm("user:new", "사용자 양식", false, null, currentLayout, currentOptions)];
+            picker.ItemsSource = forms;
             picker.SelectedItem = picker.Items.Cast<BrailleForm>().FirstOrDefault(f => f.FormId == id); if (picker.SelectedIndex < 0) picker.SelectedIndex = 0;
         }
         async Task DeleteAsync(BrailleForm form)
         {
-            if (form.Builtin || form.FormId == "user:new") return;
+            if (form.Builtin) return;
             if (new DeleteFormDialog(form.Name) { Owner = this }.ShowDialog() != true) return;
             var retainedId = (picker.SelectedItem as BrailleForm)?.FormId;
             await client.DeleteFormAsync(form, Lifetime.Token);
@@ -210,8 +206,7 @@ public sealed class FormDialog : CompactDialog
         async Task EditAsync(bool create)
         {
             var selected = picker.SelectedItem as BrailleForm;
-            var all = picker.Items.Cast<BrailleForm>().Where(f => f.FormId != "user:new").ToArray();
-            if (selected?.FormId == "user:new") selected = null;
+            var all = picker.Items.Cast<BrailleForm>().ToArray();
             var dialog = new FormEditDialog(client, all, create ? null : selected,
                 selected?.Layout ?? currentLayout, selected?.Options ?? currentOptions, selected?.FormId) { Owner = this };
             if (dialog.ShowDialog() == true) await ReloadAsync(dialog.Saved!.FormId);
@@ -224,27 +219,11 @@ public sealed class FormDialog : CompactDialog
             try { await ReloadAsync(selectedId); } catch (OperationCanceledException) { } catch (Exception ex) { Status.Text = ex.Message; }
             finally { loading = false; }
         };
-        var settings = Button("사용자 양식 설정…", () => RunAsync(() => EditAsync(picker.SelectedItem is not BrailleForm { Builtin: false } f || f.FormId == "user:new")));
+        var settings = Button("사용자 양식 설정...", () => RunAsync(() => EditAsync(picker.SelectedItem is not BrailleForm { Builtin: false })));
         PublicDialogDesign.StyleAction(settings); settings.Width = 169; actions.Children.Add(settings);
         var cancel = Button("취소", () => { DialogResult = false; return Task.CompletedTask; }); PublicDialogDesign.StyleAction(cancel); actions.Children.Add(cancel);
-        var confirm = Button("확인", () => { Selected = picker.SelectedItem as BrailleForm; if (Selected is not null && Selected.FormId != "user:new") DialogResult = true; return Task.CompletedTask; }, true);
+        var confirm = Button("확인", () => { Selected = picker.SelectedItem as BrailleForm; if (Selected is not null) DialogResult = true; return Task.CompletedTask; }, true);
         PublicDialogDesign.StyleAction(confirm, true); actions.Children.Add(confirm);
-    }
-}
-
-public sealed class FormNameDialog : CompactDialog
-{
-    internal TextBox NameInput { get; } = new() { MaxLength = 100 };
-    public string Value => NameInput.Text.Trim();
-    public FormNameDialog(string initial = "") : base("새 양식 저장", 360, 170)
-    {
-        MinHeight = 170; NameInput.Text = initial;
-        var panel = new StackPanel { Margin = new(16, 10, 16, 0) };
-        panel.Children.Add(new TextBlock { Text = "양식 이름", Foreground = (System.Windows.Media.Brush)FindResource("Muted"), Height = 20 });
-        NameInput.Height = 32; NameInput.Padding = new(8, 0, 8, 0); panel.Children.Add(NameInput);
-        panel.Children.Add(new TextBlock { Text = "지금 창에 뜬 값을 그대로 담습니다.", Foreground = (System.Windows.Media.Brush)FindResource("Muted"), Margin = new(0, 8, 0, 0) }); Body(panel);
-        Action("저장", () => { if (Value.Length == 0) throw new ArgumentException("양식 이름을 입력해 주세요."); DialogResult = true; }, true);
-        Action("취소", () => DialogResult = false); Loaded += (_, _) => NameInput.Focus();
     }
 }
 
@@ -317,11 +296,6 @@ public sealed class FormEditDialog : CompactDialog
             var updatedOptions = options with { KoreanGrade1 = korean.SelectedIndex == 0, LineBreakUnit = wrap.SelectedIndex == 1 ? "word" : "syllable" };
             Saved = await client.SaveFormAsync(id, title, (basis.SelectedItem as BrailleForm)?.FormId, updatedLayout, updatedOptions, Lifetime.Token); DialogResult = true;
         }
-        var extras = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 8, 0, 8) }; panel.Children.Add(extras);
-        var saveAs = Button("다른 이름으로 저장", () => RunAsync(async () => { var prompt = new FormNameDialog(name.Text) { Owner = this }; if (prompt.ShowDialog() == true) await SaveAsync(null, prompt.Value); }));
-        PublicDialogDesign.StyleAction(saveAs); saveAs.Width = 142; saveAs.Margin = new(0, 0, 8, 0); extras.Children.Add(saveAs);
-        var applyBasis = Button("바탕 양식 값으로", () => { if (basis.SelectedItem is BrailleForm f) { layout = f.Layout; options = f.Options; SetFields(); } return Task.CompletedTask; });
-        PublicDialogDesign.StyleAction(applyBasis); applyBasis.Width = 130; applyBasis.Margin = new(0); extras.Children.Add(applyBasis);
         var cancel = Button("취소", () => { DialogResult = false; return Task.CompletedTask; }); PublicDialogDesign.StyleAction(cancel); actions.Children.Add(cancel);
         var delete = Button("지우기", () => RunAsync(async () =>
         {

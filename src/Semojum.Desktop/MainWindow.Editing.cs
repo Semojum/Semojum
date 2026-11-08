@@ -34,7 +34,7 @@ public partial class MainWindow
             if (resolved.Block is null) return;
             session.ActiveBlock = resolved.Block;
             ShowLineMemos(SearchPanel.Text, resolved.Line);
-        }) { ResolveLine = PageEditor.ResolveLine, ManualReviewRequested = ShowReviewList, ReviewRequested = line =>
+        }) { ResolveLine = PageEditor.ResolveLine, ManualReviewRequested = ShowReviewList, HoverBubble = MemoHover, ReviewRequested = line =>
         {
             if (PageEditor.ResolveLine(line).Block is not { } block) return;
             session.ActiveBlock = block; ShowLocalTranslationReview(block, this);
@@ -58,6 +58,8 @@ public partial class MainWindow
             QueuePreview(decision != ManualEditDecision.Keep);
         };
         PageEditor.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(PageEditor.Editor);
+        PageEditor.Editor.PreviewMouseDown += (_, _) => { ClearOriginalRegion(); RefreshLinkedSource(); };
+        PageEditor.Editor.PreviewKeyDown += (_, _) => { ClearOriginalRegion(); RefreshLinkedSource(); };
         PageEditor.Editor.TextArea.Caret.PositionChanged += (_, _) =>
         {
             if (session?.ActiveBlock is { } block)
@@ -153,15 +155,17 @@ public partial class MainWindow
     private async Task MergeBlocksAsync(EditorBlock first, EditorBlock second, SearchPanel panel)
     {
         if (first.IsBrailleLocked || second.IsBrailleLocked) { session.Status = "점역 중이거나 잠긴 블록은 합칠 수 없습니다."; return; }
-        var decision = ManualEditDecision.Overwrite;
-        if (first.HasManualBraille || second.HasManualBraille)
+        // Figma Case 13 offers only 합치기·취소: merging always re-translates the combined block. Each block with
+        // manual braille is one spot that would be lost; with none, merging loses nothing and does not ask.
+        var spots = new[] { first, second }.Count(b => b.HasManualBraille);
+        if (spots > 0)
         {
-            var merge = new Dialogs.MergeBlocksDialog { Owner = this }; merge.ShowDialog(); decision = merge.Decision;
+            var merge = new Dialogs.MergeBlocksDialog(spots) { Owner = this }; merge.ShowDialog();
+            if (merge.Decision == ManualEditDecision.Cancel) return;
         }
-        if (decision == ManualEditDecision.Cancel) return;
         var caret = panel == SearchPanel.Text ? first.Source.Length : first.Braille.Length;
-        EditStructure(() => BlockEditing.Merge(session, first, second, decision == ManualEditDecision.Keep));
-        if (decision == ManualEditDecision.Overwrite) await TranslateAsync(first, decision);
+        EditStructure(() => BlockEditing.Merge(session, first, second, keepBraille: false));
+        await TranslateAsync(first, ManualEditDecision.Overwrite);
         SearchEditor(panel).CaretOffset = Math.Min(caret, SearchEditor(panel).Document.TextLength);
         SearchEditor(panel).Focus();
     }

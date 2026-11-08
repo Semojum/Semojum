@@ -45,7 +45,7 @@ internal static class WindowsSelectionNavigationChecks
                 "Detached braille panel uses the same physical face numbering");
             await window.NavigateAsync(NavigationTarget.BraillePage, "+1", SearchPanel.Braille);
             check(detached.CaretCoordinates is { Face: 3 }, "Relative navigation follows the detached panel caret");
-            check(window.StatusPage.Text.Contains("3 / 4", StringComparison.Ordinal), "Status displays current and total faces");
+            check(window.StatusPage.Text == "면 3 / 4", $"Status displays current and total faces in the Figma 「면 n / N」 shape (actual {window.StatusPage.Text})");
             window.UpdateLayout();
             var status = window.StatusPage;
             var textWidth = new FormattedText(status.Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,

@@ -13,8 +13,8 @@ internal static class DesktopUsageActions
         var board = new BoardClient(api);
         return new(
             owner => { new PublicInquiryDialog(api) { Owner = owner }.ShowDialog(); },
-            owner => new PostEditorDialog(board, null, workInfo) { Owner = owner }.ShowDialog() == true,
-            (owner, post) => { new PostDialog(board, post, workInfo) { Owner = owner }.ShowDialog(); },
+            owner => { var writing = BoardDialog.Writing(board, workInfo, initiallyMine: true); writing.Owner = owner; writing.ShowDialog(); return writing.Changed; },
+            (owner, post) => { var reading = BoardDialog.Reading(board, post, workInfo, initiallyMine: true); reading.Owner = owner; reading.ShowDialog(); },
             owner => { new BoardDialog(board, workInfo, initiallyMine: true) { Owner = owner }.ShowDialog(); });
     }
 }

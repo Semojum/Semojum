@@ -13,18 +13,22 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class HeaderInputDialog : CompactDialog
 {
     private readonly TextBox input = new() { MaxLength = 200, Width = 298, Height = 32, MinHeight = 0, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly SegmentedChoice alignment = new("왼쪽", "가운데", "오른쪽") { SelectedIndex = 1 };
     public string Result => input.Text;
+    /// <summary>left, center or right; the engine (3.4.42+) places the header line by it.</summary>
+    public string Alignment => alignment.SelectedIndex switch { 0 => "left", 2 => "right", _ => "center" };
     public HeaderInputDialog(string initial) : base("머리말", 520, 252)
     {
-        input.Text = initial; EditorModalDesign.Input(input); System.Windows.Automation.AutomationProperties.SetName(input, "머리말 내용");
-        var alignment = new SegmentedChoice("왼쪽", "가운데", "오른쪽") { SelectedIndex = 1 }; FooterDesign.StyleAlignment(alignment);
-        alignment.SetAvailable(0, false, "현재 머리말은 가운데 정렬만 지원합니다."); alignment.SetAvailable(2, false, "현재 머리말은 가운데 정렬만 지원합니다.");
+        var (text, align) = BrailleTags.ReadHeader(initial);
+        input.Text = text; EditorModalDesign.Input(input); System.Windows.Automation.AutomationProperties.SetName(input, "머리말 내용");
+        alignment.SelectedIndex = align switch { "left" => 0, "right" => 2, _ => 1 }; FooterDesign.StyleAlignment(alignment);
         System.Windows.Automation.AutomationProperties.SetName(alignment, "머리말 정렬");
         var content = new StackPanel(); FooterDesign.Row(content, "내용", input); FooterDesign.Row(content, "정렬", alignment);
         var card = EditorModalDesign.Card(content, new Thickness(24, 16, 24, 0)); card.Padding = new Thickness(16, 12, 16, 8); card.VerticalAlignment = VerticalAlignment.Top; Body(card);
         Action("취소", () => DialogResult = false); Action("확인", () =>
         {
             if (input.Text.Contains("<!머리말>", StringComparison.Ordinal) || input.Text.Contains("<!/머리말>", StringComparison.Ordinal)) throw new ArgumentException("머리말 안에 머리말 태그를 넣을 수 없습니다.");
+            if (System.Text.RegularExpressions.Regex.IsMatch(input.Text, "<!(왼쪽|가운데|오른쪽)정렬>")) throw new ArgumentException("머리말 정렬은 정렬 단추로 골라 주세요.");
             DialogResult = true;
         }, true);
         EditorModalDesign.Frame(this, Root, Actions);
@@ -100,7 +104,7 @@ public sealed class FooterDialog : CompactDialog
         var header = new Style(typeof(System.Windows.Controls.Primitives.DataGridColumnHeader));
         header.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
         header.Setters.Add(new Setter(Control.ForegroundProperty, (Brush)FindResource("Muted")));
-        header.Setters.Add(new Setter(Control.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(181, 181, 181))));
+        header.Setters.Add(new Setter(Control.BorderBrushProperty, EditorModalDesign.Color("#D1D1D1")));
         header.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0, 0, 0, 1)));
         header.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 0, 0, 6))); grid.ColumnHeaderStyle = header;
         var cellStyle = new Style(typeof(DataGridCell)); cellStyle.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
@@ -118,7 +122,7 @@ public sealed class FooterDialog : CompactDialog
             {
                 element.SetValue(ItemsControl.ItemsSourceProperty, new[] { "기본", "왼쪽", "가운데", "오른쪽" }); element.SetValue(Control.BackgroundProperty, EditorModalDesign.Color("#FBFBFB")); element.SetValue(Control.BorderBrushProperty, EditorModalDesign.Color("#EAEAEA"));
                 element.SetValue(FrameworkElement.MarginProperty, new Thickness(0));
-                var wrapper = new FrameworkElementFactory(typeof(Grid)); wrapper.SetValue(FrameworkElement.WidthProperty, 138d); wrapper.SetValue(FrameworkElement.HeightProperty, 24d); wrapper.SetValue(FrameworkElement.MarginProperty, margin); wrapper.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); wrapper.AppendChild(element);
+                var wrapper = new FrameworkElementFactory(typeof(Grid)); wrapper.SetValue(FrameworkElement.WidthProperty, 158d); wrapper.SetValue(FrameworkElement.HeightProperty, 24d); wrapper.SetValue(FrameworkElement.MarginProperty, margin); wrapper.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center); wrapper.AppendChild(element);
                 var overlay = new FrameworkElementFactory(typeof(Border)); overlay.SetValue(FrameworkElement.WidthProperty, 24d); overlay.SetValue(FrameworkElement.MarginProperty, new Thickness(0, 1, 1, 1)); overlay.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Right); overlay.SetValue(Border.BackgroundProperty, EditorModalDesign.Color("#FBFBFB")); overlay.SetValue(UIElement.IsHitTestVisibleProperty, false);
                 var arrow = new FrameworkElementFactory(typeof(SharpVectors.Converters.SvgViewbox)); arrow.SetValue(FrameworkElement.WidthProperty, 16d); arrow.SetValue(FrameworkElement.HeightProperty, 16d); arrow.SetValue(SharpVectors.Converters.SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Feature.Editor.Wpf;component/Assets/Figma/footer-chevron.svg")); arrow.SetValue(System.Windows.Controls.Viewbox.StretchProperty, Stretch.None); overlay.AppendChild(arrow); wrapper.AppendChild(overlay);
                 return new DataTemplate { VisualTree = wrapper };
@@ -133,7 +137,7 @@ public sealed class FooterDialog : CompactDialog
         grid.Columns.Add(new DataGridTemplateColumn { Header = "적용 범위", Width = 170, CellTemplate = new DataTemplate { VisualTree = range } });
         grid.Columns.Add(new DataGridTemplateColumn { Header = "내용", Width = 280,
             CellTemplate = Template(typeof(TextBox), TextBox.TextProperty, nameof(Entry.Text), new(0, 0, 12, 0)) });
-        grid.Columns.Add(new DataGridTemplateColumn { Header = "정렬", Width = 146,
+        grid.Columns.Add(new DataGridTemplateColumn { Header = "정렬", Width = 166,
             CellTemplate = Template(typeof(ComboBox), ComboBox.SelectedItemProperty, nameof(Entry.Alignment), new(0, 0, 8, 0)) });
         var remove = new FrameworkElementFactory(typeof(Button)); remove.SetValue(FrameworkElement.WidthProperty, 32d); remove.SetValue(FrameworkElement.HeightProperty, 24d); remove.SetValue(FrameworkElement.MinHeightProperty, 0d); remove.SetValue(Control.PaddingProperty, new Thickness(0)); remove.SetValue(Control.BorderThicknessProperty, new Thickness(0)); remove.SetValue(Control.BackgroundProperty, Brushes.Transparent); remove.SetValue(Control.TemplateProperty, EditorModalDesign.ButtonTemplate(typeof(Button))); remove.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "이 꼬리말 삭제");
         var trash = new FrameworkElementFactory(typeof(SharpVectors.Converters.SvgViewbox)); trash.SetValue(FrameworkElement.WidthProperty, 16d); trash.SetValue(FrameworkElement.HeightProperty, 16d); trash.SetValue(SharpVectors.Converters.SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Feature.Editor.Wpf;component/Assets/Figma/footer-trash.svg")); trash.SetValue(System.Windows.Controls.Viewbox.StretchProperty, Stretch.None); remove.AppendChild(trash);
@@ -146,15 +150,16 @@ public sealed class FooterDialog : CompactDialog
             var entry = new Entry { Start = (entries.Select(e => int.TryParse(e.Start, out var n) ? n : 0).DefaultIfEmpty(0).Max() + 1).ToString() };
             entries.Add(entry); grid.SelectedItem = entry; grid.ScrollIntoView(entry);
         });
-        var delete = Action("지우기", () => { if (grid.SelectedItem is Entry entry) entries.Remove(entry); });
+        var clear = Action("지우기", () => { grid.CommitEdit(DataGridEditingUnit.Cell, true); grid.CommitEdit(DataGridEditingUnit.Row, true); entries.Clear(); });
         Actions.Children.Remove(add); add.Margin = new(0, 6, 0, 0); add.Height = 32; add.MinHeight = 0;
         add.MinWidth = 0; add.HorizontalAlignment = HorizontalAlignment.Stretch; add.Padding = new(0);
-        add.Foreground = EditorModalDesign.Color("#5F5F5F"); add.Template = FooterDesign.AddRowTemplate();
+        add.Content = EditorModalDesign.Icon("footer-plus", assemblyName: "Semojum.Feature.Editor.Wpf"); add.ToolTip = "줄 더하기"; add.Template = FooterDesign.AddRowTemplate();
         System.Windows.Automation.AutomationProperties.SetName(add, "꼬리말 줄 더하기"); fields.Children.Add(add);
-        Actions.Children.Remove(delete); delete.Width = 32; delete.MinWidth = 0; delete.Height = 24; delete.MinHeight = 0;
-        delete.FontSize = 10; delete.Padding = new(0); delete.Margin = new(0); delete.VerticalAlignment = VerticalAlignment.Top;
-        delete.HorizontalAlignment = HorizontalAlignment.Right; delete.ToolTip = "선택한 꼬리말 지우기";
-        System.Windows.Automation.AutomationProperties.SetName(delete, "선택한 꼬리말 지우기"); table.Children.Add(delete);
+        // The final Figma "모두 지우기" icon (del2) has no drawing yet, so the action keeps its short text label.
+        Actions.Children.Remove(clear); clear.Width = 32; clear.MinWidth = 0; clear.Height = 24; clear.MinHeight = 0;
+        clear.FontSize = 10; clear.Padding = new(0); clear.Margin = new(0); clear.VerticalAlignment = VerticalAlignment.Top;
+        clear.HorizontalAlignment = HorizontalAlignment.Right; clear.ToolTip = "모두 지우기";
+        System.Windows.Automation.AutomationProperties.SetName(clear, "꼬리말 모두 지우기"); table.Children.Add(clear);
         Action("취소", Close);
         Action("확인", () =>
         {

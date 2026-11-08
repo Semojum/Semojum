@@ -133,6 +133,8 @@ public static class SmjFile
         Validate(manifest);
         if (zip.Entries.Count != manifest.Originals.Length + 1) throw new InvalidDataException("작업 파일에 명시되지 않은 항목이 있습니다.");
         var model = Restore(manifest, Path.GetFileName(path));
+        // The saved server report shows as open warnings; marks already in the file, open or resolved, are kept as they are.
+        ServerWarnings.Apply(model);
         foreach (var original in manifest.Originals)
         {
             var entry = zip.GetEntry(original.Entry) ?? throw new InvalidDataException("원본 파일이 누락되었습니다.");

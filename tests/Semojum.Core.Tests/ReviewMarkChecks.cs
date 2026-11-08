@@ -12,6 +12,106 @@ internal static class ReviewMarkChecks
         yield return ("Source edits and applied translation invalidate braille confirmations", BrailleConfirmation);
         yield return ("Block merging retains review annotations in both panels", Merge);
         yield return ("Invalid review annotations and incompatible SMJ versions cannot overwrite a file", Invalid);
+        yield return ("Server quality issues become whole-block open warnings that a person's edit resolves for good", ServerWarningsAsync);
+        yield return ("An AI review_flag of open is the same open warning unless the page report already names the block", ReviewFlagWarnings);
+    }
+
+    private sealed class CellsEngine(string cells) : ITranslationEngine
+    {
+        public Task<string> TranslateAsync(string text, int blockId, CancellationToken token) => Task.FromResult(cells);
+    }
+
+    private static Task ReviewFlagWarnings()
+    {
+        // BE 2026-11-01: review_flag is the line-number signal (open > sug > note). Only "open" has an app equivalent without text or range.
+        using var json = System.Text.Json.JsonDocument.Parse("""
+        {"status":"NEEDS_REVIEW","result":{"text_list":[{"id":"a","contents":["열린 경고"],"review_flag":"open"},{"id":"b","contents":["보고된 경고"],"review_flag":"open"},
+          {"id":"c","contents":["고침 제안"],"review_flag":"sug"},{"id":"d","contents":["메모"],"review_flag":"note"},{"id":"e","contents":["표시 없음"],"review_flag":null}],
+          "quality_report":{"critical_errors":[],"review_flags":[{"type":"R1","element_id":"b","message":"검토"}]}}}
+        """);
+        var page = Semojum.Core.Integration.JobClient.ReadPage(json.RootElement, 1, 1);
+        EditorBlock a = page.Blocks[0], b = page.Blocks[1];
+        Check(ServerWarnings.Apply(page.Blocks, page.Quality!) == 2 && a.ReviewMarks is [{ Kind: ReviewKind.OpenWarning, Panel: ReviewPanel.Text, IsStale: false }]
+            && b.ReviewMarks.Count == 1 && page.Blocks.Skip(2).All(x => x.ReviewMarks.Count == 0),
+            "An open flag adds one open warning, a block the report already names gets no second one, and sug, note or null add none");
+        Check(ServerWarnings.Apply(page.Blocks, page.Quality!) == 0 && a.ReviewMarks.Count == 1, "Reading the same flags again adds nothing");
+        a.Source += " 고침";
+        Check(a.ReviewMarks is [{ IsStale: true }] && ServerWarnings.Apply(page.Blocks, page.Quality!) == 0 && a.ReviewMarks is [{ IsStale: true }],
+            "A person's edit resolves the flagged warning for good");
+        return Task.CompletedTask;
+    }
+
+    private static async Task ServerWarningsAsync()
+    {
+        using var json = System.Text.Json.JsonDocument.Parse("""
+        {"status":"NEEDS_REVIEW","result":{"text_list":[{"id":"t1","contents":["원문 하나"]},{"id":"t2","contents":["점자 없음"]},{"id":"t3","contents":["경고 없음"]}],
+          "braille_text_list":[{"id":"t1","contents":["⠁⠃"]},{"id":"t3","contents":["⠉"]}],
+          "quality_report":{"critical_errors":[{"type":"unsupported_char","element_id":"t1","message":"지원하지 않는 문자"}],
+            "review_flags":[{"type":"low_confidence","element_id":"t1","message":"신뢰도 낮음"},{"type":"low_confidence","element_id":"t2","message":"신뢰도 낮음"},
+              {"type":"low_confidence","element_id":"t1","message":"신뢰도 낮음"},{"element_id":null,"message":"쪽 전체"}]}}}
+        """);
+        var page = Semojum.Core.Integration.JobClient.ReadPage(json.RootElement, 1, 1);
+        var model = new DocumentSession { JobId = "job_w", OwnerLoginId = "test" };
+        Semojum.Core.Integration.JobClient.Remember(model, page);
+        Check(ServerWarnings.Apply(page.Blocks, page.Quality!) == 3, "Each distinct block issue must become one warning; page-wide and repeated issues add none");
+        foreach (var block in page.Blocks) model.Add(block);
+        EditorBlock one = model.Blocks[0], two = model.Blocks[1], three = model.Blocks[2];
+        static ReviewMark[] Open(EditorBlock b, ReviewPanel panel) => b.ReviewMarks.Where(m => m is { Kind: ReviewKind.OpenWarning, IsStale: false } && m.Panel == panel).ToArray();
+        Check(Open(one, ReviewPanel.Text).Length == 2 && Open(one, ReviewPanel.Text).All(m => m.Start == 0 && m.Length == one.Source.Length)
+            && Open(one, ReviewPanel.Braille).Length == 2 && Open(one, ReviewPanel.Braille).All(m => m.Length == one.Braille.Length),
+            "Critical errors and review flags both cover the whole block in the text and braille panels");
+        Check(Open(two, ReviewPanel.Text).Length == 1 && Open(two, ReviewPanel.Braille).Length == 0 && three.ReviewMarks.Count == 0,
+            "A block without cells gets a text warning only; an unflagged block gets none");
+        Check(ServerWarnings.Apply(model) == 0 && one.ReviewMarks.Count == 4 && two.ReviewMarks.Count == 1, "Reading the same report again adds nothing");
+
+        // An automatic translation is not a person's edit: the warning stays open and covers the new cells.
+        Check(await new TranslationCoordinator(new CellsEngine("⠃⠃")).TranslateAsync(two, ManualEditDecision.Keep, TimeSpan.FromSeconds(1)) == TranslationOutcome.Applied
+            && Open(two, ReviewPanel.Text).Length == 1 && Open(two, ReviewPanel.Braille) is [{ Start: 0, Length: 2, OriginalText: "⠃⠃" }],
+            "Automatic translation keeps the warning open over the new braille cells");
+
+        // A person's edit to either text resolves every warning of that block, in both panels.
+        one.Source += " 고침";
+        two.EditBraille("⠉");
+        Check(one.ReviewMarks.Count == 4 && one.ReviewMarks.All(m => m.IsStale) && two.ReviewMarks.All(m => m.IsStale), "Editing the source or braille resolves the block's warnings");
+        Check(ServerWarnings.Apply(model) == 0 && one.ReviewMarks.Count == 4 && one.ReviewMarks.All(m => m.IsStale) && two.ReviewMarks.All(m => m.IsStale),
+            "The same report cannot reopen or duplicate resolved warnings");
+        Check(SmjFile.Snapshot(model).Manifest.Blocks[0].ReviewMarks is { Length: 4 } && ServerWarnings.Count(one.ReviewMarks, resolved: true) == 2,
+            "Resolved warnings stay in the file as stale records");
+        Check(Semojum.Core.Integration.JobClient.PlanSave(SmjFile.Snapshot(model).Manifest).LocalOnly.Any(n => n.Contains("풀린 서버 경고 3건")),
+            "A server save notes that resolved warnings are local only");
+
+        var directory = Path.Combine(Path.GetTempPath(), "semojum-warning-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var path = Path.Combine(directory, "work.smj");
+            await SmjFile.SaveAsync(path, SmjFile.Snapshot(model));
+            var reopened = await SmjFile.LoadAsync(path);
+            Check(!reopened.IsDirty && reopened.Blocks[0].ReviewMarks.Count == 4 && reopened.Blocks[0].ReviewMarks.All(m => m.IsStale)
+                && reopened.Blocks[1].ReviewMarks.All(m => m.IsStale) && reopened.Blocks[2].ReviewMarks.Count == 0,
+                "Saving and reopening keeps warnings resolved without duplicates");
+
+            // A file saved before open warnings existed (report only, no marks) opens with its warnings, still unmodified.
+            var fresh = new DocumentSession { JobId = "job_w", OwnerLoginId = "test" };
+            Semojum.Core.Integration.JobClient.Remember(fresh, page);
+            fresh.Add(new EditorBlock { Id = 1, Page = 1, ServerId = "t1", Source = "원문 하나", Braille = "⠁⠃" });
+            var legacy = SmjFile.Snapshot(fresh);
+            Check(legacy.Manifest.Version == SmjFile.Version && legacy.Manifest.Blocks[0].ReviewMarks is null, "A report without marks keeps the older file version");
+            await SmjFile.SaveAsync(path, legacy);
+            var upgraded = await SmjFile.LoadAsync(path);
+            Check(!upgraded.IsDirty && upgraded.Blocks[0].ReviewMarks.Count(m => m is { Kind: ReviewKind.OpenWarning, IsStale: false }) == 4,
+                "Opening a document with a server report shows its warnings");
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+
+        // Merging edits both blocks, so their warnings are resolved too.
+        var merged = new DocumentSession();
+        var first = new EditorBlock { Id = 1, Page = 1, ServerId = "a", Source = "가", Braille = "⠁" };
+        var second = new EditorBlock { Id = 2, Page = 1, ServerId = "b", Source = "나", Braille = "⠃" };
+        merged.Add(first); merged.Add(second);
+        ServerWarnings.Apply(merged.Blocks, [new("review", "t", "a", "m"), new("review", "t", "b", "m")]);
+        BlockEditing.Merge(merged, first, second, true);
+        Check(first.ReviewMarks.Count == 4 && first.ReviewMarks.All(m => m.IsStale), "Merged blocks resolve the warnings of both blocks");
     }
 
     private static void Check(bool condition, string message)

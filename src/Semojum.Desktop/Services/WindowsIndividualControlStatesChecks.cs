@@ -144,17 +144,17 @@ internal static class WindowsIndividualControlStatesChecks
             check(Equals(System.Windows.Documents.TextElement.GetForeground(detachText), before), "Leaving high contrast restores the normal transparent text color");
         }
         finally { contrastWindow.Close(); }
-        var forms = new[] { new BrailleForm("user:new", "새 양식", false, null, new(), new()), new BrailleForm("user:sample", "내 양식", false, null, new(), new()) };
-        var picker = new FormPickerDialog(forms, null, canEdit: true); picker.Show();
+        var forms = new[] { new BrailleForm("builtin:0", "기본 양식", true, null, new(), new()), new BrailleForm("user:sample", "내 양식", false, null, new(), new()) };
+        var picker = new FormPickerDialog(forms, null, canEdit: true, canDelete: true); picker.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); picker.UpdateLayout();
-            var edits = Descendants(picker).OfType<Button>().Where(b => b.Content is SharpVectors.Converters.SvgViewbox && System.Windows.Automation.AutomationProperties.GetName(b).EndsWith(" 편집", StringComparison.Ordinal)).ToArray();
-            var disabled = edits.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "새 양식 편집");
-            var enabled = edits.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "내 양식 편집");
+            var deletes = Descendants(picker).OfType<Button>().Where(b => b.Content is SharpVectors.Converters.SvgViewbox && System.Windows.Automation.AutomationProperties.GetName(b).EndsWith(" 지우기", StringComparison.Ordinal)).ToArray();
+            var disabled = deletes.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "기본 양식 지우기");
+            var enabled = deletes.Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == "내 양식 지우기");
             static double ContentOpacity(Button b) => ((ContentPresenter)((Border)b.Template.FindName("Surface", b)).Child).Opacity;
-            check(!disabled.IsEnabled && ContentOpacity(disabled) == .4, "The actual non-editable form's SVG button is visibly disabled");
-            check(enabled.IsEnabled && ContentOpacity(enabled) == 1, "The actual editable form's SVG button retains full opacity");
+            check(!disabled.IsEnabled && ContentOpacity(disabled) == .4, "The actual built-in form's SVG delete button is visibly disabled");
+            check(enabled.IsEnabled && ContentOpacity(enabled) == 1, "The actual personal form's SVG delete button retains full opacity");
         }
         finally { picker.Close(); }
         bool? RunEnter(bool edit)

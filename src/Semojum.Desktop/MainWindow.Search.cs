@@ -62,7 +62,7 @@ public partial class MainWindow
             }
         }
         var all = DocumentSearch.FindAll(session.Blocks, panel, query).ToList();
-        return session.Status = $"{all.FindIndex(m => m.Block == match.Block && m.Offset == match.Offset) + 1} / {all.Count} · {match.Block.Page}쪽";
+        return session.Status = $"{all.FindIndex(m => m.Block == match.Block && m.Offset == match.Offset) + 1} / {all.Count}";
     }
 
     internal async Task<string> ReplaceMatchesAsync(string query, string replacement, SearchPanel panel, bool all)

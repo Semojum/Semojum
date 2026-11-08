@@ -59,7 +59,7 @@ public partial class MainWindow
             {
                 // A new choice replaces only the exact same range. Partly overlapping
                 // reviews remain separately available in the list rather than being lost.
-                foreach (var old in span.Block.ReviewMarks.Where(m => !m.IsStale && m.Panel == panel
+                foreach (var old in span.Block.ReviewMarks.Where(m => !m.IsStale && m.Panel == panel && m.Kind != ReviewKind.OpenWarning
                     && m.Start == span.Start && m.Length == span.Length).ToArray()) span.Block.ReviewMarks.Remove(old);
                 span.Block.AddReviewMark(kind, panel, span.Start, span.Length);
             }
@@ -75,7 +75,7 @@ public partial class MainWindow
         {
             foreach (var span in spans)
                 foreach (var mark in span.Block.ReviewMarks.Where(m => !m.IsStale && m.Panel == panel
-                    && m.Start < span.Start + span.Length && span.Start < m.Start + m.Length).ToArray()) span.Block.ReviewMarks.Remove(mark);
+                    && m.Start < span.Start + span.Length && span.Start < m.Start + m.Length).ToArray()) RemoveReview(span.Block, mark);
         });
         session.Status = "선택 범위와 겹친 검토 표시를 지웠습니다. 실행 취소로 복원할 수 있습니다.";
     }
@@ -85,13 +85,22 @@ public partial class MainWindow
         ReviewKind.SuggestCorrection => "고침 제안",
         ReviewKind.SuggestDeletion => "지울 제안",
         ReviewKind.HumanConfirmed => "사람이 확인함",
+        ReviewKind.OpenWarning => "안 풀린 경고",
         _ => "검토 표시"
     };
+
+    // A removed server warning stays as a resolved record so the same server report cannot bring it back.
+    private static void RemoveReview(EditorBlock block, ReviewMark mark)
+    {
+        if (!ServerWarnings.IsServerWarning(mark)) { block.ReviewMarks.Remove(mark); return; }
+        var index = block.ReviewMarks.IndexOf(mark);
+        if (index >= 0) block.ReviewMarks[index] = ServerWarnings.Resolved(mark);
+    }
 
     private sealed record ReviewEntry(EditorBlock Block, ReviewMark Mark)
     {
         public override string ToString() => $"{Block.Page}쪽 · {(Mark.Panel == ReviewPanel.Text ? "텍스트" : "점자")} · {ReviewLabel(Mark.Kind)}"
-            + (Mark.IsStale ? " · 다시 확인 필요" : "") + $"\n{Mark.OriginalText}";
+            + (!Mark.IsStale ? "" : Mark.Kind == ReviewKind.OpenWarning ? " · 블록을 고쳐 풀림" : " · 다시 확인 필요") + $"\n{Mark.OriginalText}";
     }
 
     private void ShowReviewList() => CreateReviewListWindow().ShowDialog();
@@ -117,6 +126,7 @@ public partial class MainWindow
         Button("다시 지정", () =>
         {
             if (list.SelectedItem is not ReviewEntry { Mark.IsStale: true } entry) { info.Text = session.Status = "다시 확인이 필요한 표시를 선택해 주세요."; return; }
+            if (entry.Mark.Kind == ReviewKind.OpenWarning) { info.Text = session.Status = "풀린 서버 경고는 다시 지정할 수 없습니다."; return; }
             if (!ReferenceEquals(capturedSession, session) || capturedSession.ChangeVersion != capturedVersion)
             { info.Text = "문서가 변경되어 기존 선택을 사용할 수 없습니다. 창을 닫고 범위를 다시 선택해 주세요."; return; }
             if (!ValidateReviewSelection(originalSelection, selectedPanel) || selectedPanel != entry.Mark.Panel
@@ -131,7 +141,7 @@ public partial class MainWindow
         {
             if (session.IsReadOnly) { info.Text = "읽기 전용 문서에는 검토 표시를 변경할 수 없습니다."; return; }
             if (list.SelectedItem is not ReviewEntry entry) { info.Text = "삭제할 검토 표시를 선택해 주세요."; return; }
-            ChangeReviews(entry.Block, [entry.Block], () => entry.Block.ReviewMarks.Remove(entry.Mark));
+            ChangeReviews(entry.Block, [entry.Block], () => RemoveReview(entry.Block, entry.Mark));
             info.Text = session.Status = "검토 표시를 지웠습니다. 실행 취소로 복원할 수 있습니다."; Refresh();
         });
         Button("닫기", window.Close);

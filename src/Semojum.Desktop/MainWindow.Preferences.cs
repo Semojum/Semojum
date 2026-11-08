@@ -31,10 +31,12 @@ public partial class MainWindow
         void Apply(TextEditor editor, bool braille)
         {
             // Figma uses a 28 DIP baseline for both 14 DIP source and 22 DIP braille.
-            var natural = braille ? new FontFamily("Segoe UI Symbol") : value.FontFamily == "Noto Sans KR" ? (FontFamily)FindResource("InterfaceFont") : new FontFamily(value.FontFamily);
+            var natural = braille ? (FontFamily)FindResource("BrailleFont") : value.FontFamily == "Noto Sans KR" ? (FontFamily)FindResource("InterfaceFont") : new FontFamily(value.FontFamily);
             var spacing = value.LineSpacing / 1.3 * (braille ? 28d / 22 : 2);
             var family = new FontFamily { LineSpacing = spacing, Baseline = natural.Baseline + (spacing - natural.LineSpacing) / 2 };
-            family.FamilyMaps.Add(new FontFamilyMap { Unicode = "0000-10FFFF", Target = natural.Source });
+            // The braille family is itself composite (Nuridot Braille for cells only), so its maps carry over instead of a single target.
+            IEnumerable<FontFamilyMap> maps = natural.Source is { } source ? [new FontFamilyMap { Unicode = "0000-10FFFF", Target = source }] : natural.FamilyMaps;
+            foreach (var map in maps) family.FamilyMaps.Add(new FontFamilyMap { Unicode = map.Unicode, Target = map.Target });
             editor.FontFamily = family; editor.FontSize = braille ? value.BrailleSize : value.TextSize;
             editor.FontWeight = value.Bold ? FontWeights.Bold : FontWeights.Normal;
             editor.Foreground = braille && !value.HighContrast ? C(value.BrailleColor) : foreground; editor.Background = background;
@@ -46,7 +48,8 @@ public partial class MainWindow
             view.CurrentLineBorder = null;
             view.NonPrintableCharacterBrush = value.HighContrast ? Brushes.Cyan : C(value.MarkerColor);
             view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
-            editor.Options.ShowSpaces = editor.Options.ShowTabs = editor.Options.ShowEndOfLine = value.ShowFormattingMarks;
+            editor.Options.ShowSpaces = editor.Options.ShowTabs = value.ShowFormattingMarks;
+            EnterMarkGenerator.Configure(editor, value.ShowFormattingMarks);
             editor.ShowLineNumbers = value.ShowLineNumbers;
             ApplyLineNumberAppearance(editor, value, lineNumberColor);
             if (editor == PageEditor.Editor)
@@ -71,10 +74,13 @@ public partial class MainWindow
         Braille.RefreshAppearance(); detachedPane?.RefreshAppearance();
         void ApplyGridAppearance(BrailleGridView grid)
         {
+            grid.ShowFormattingMarks = value.ShowFormattingMarks;
+            grid.FormattingMarkBrush = C(value.MarkerColor);
             grid.LineNumberForeground = value.HighContrast ? Brushes.White : lineNumberColor;
             grid.LineNumberBackground = value.HighContrast ? Brushes.Black : C(value.LineNumberBackground);
             grid.CustomLineNumberForeground = !IsDefaultLineNumberColor(value.LineNumberColor);
             grid.CustomLineNumberBackground = !value.LineNumberBackground.Equals(new EditorAppearance().LineNumberBackground, StringComparison.OrdinalIgnoreCase);
+            grid.OutlineBrush = C(value.OutlineColor); grid.OutlineWidth = value.OutlineWidth;
         }
         ApplyGridAppearance(Braille.GridView);
         if (detachedPane is not null) ApplyGridAppearance(detachedPane.GridView);

@@ -11,7 +11,7 @@ namespace Semojum.Desktop.Dialogs;
 public sealed class MathDialog : CompactDialog
 {
     internal TextBox Input { get; } = new() { FontFamily = new("Consolas"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 80, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-    internal TextBox BrailleInput { get; } = new() { FontFamily = new("Segoe UI Symbol"), FontSize = 22, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    internal TextBox BrailleInput { get; } = new() { FontSize = 22, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     internal WrapPanel SymbolButtons { get; } = new();
     public string Latex => Input.Text.Trim();
     public BrailleTranslation? Translation { get; private set; }
@@ -24,9 +24,9 @@ public sealed class MathDialog : CompactDialog
     public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 510)
     {
         this.translate = translate; this.inlinePreview = inlinePreview;
-        Input.FontFamily = (FontFamily)FindResource("MonoFont");
+        Input.FontFamily = (FontFamily)FindResource("MonoFont"); BrailleInput.FontFamily = (FontFamily)FindResource("BrailleFont");
         var body = new DockPanel { Margin = new(8, 8, 8, 0) }; Body(body);
-        var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(250, 250, 250)), BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
+        var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(249, 249, 249)), BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
         DockPanel.SetDock(toolbox, Dock.Top); body.Children.Add(toolbox);
         SymbolButtons.Width = 432; SymbolButtons.HorizontalAlignment = HorizontalAlignment.Left; SymbolButtons.Margin = new(3);
         toolbox.Child = SymbolButtons;
@@ -76,7 +76,7 @@ public sealed class MathDialog : CompactDialog
             }
         }
         formula.Children.Add(new TextBlock { Text = "묵자 수식", Foreground = (Brush)FindResource("Muted"), Margin = new(7, 3, 0, 0), VerticalAlignment = VerticalAlignment.Top });
-        left.Children.Add(new Border { Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(181, 181, 181)), BorderThickness = new(1), Height = 160, Child = formula });
+        left.Children.Add(new Border { Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), BorderThickness = new(1), Height = 160, Child = formula });
         Input.Height = 92; Input.Padding = new(7, 20, 7, 7); Input.FontSize = 12; Input.VerticalContentAlignment = VerticalAlignment.Top; EditorModalDesign.Input(Input);
         var latexHost = new Grid { Margin = new(0, 8, 0, 0) }; latexHost.Children.Add(Input);
         latexHost.Children.Add(new TextBlock { Text = "LaTeX", Foreground = (Brush)FindResource("Muted"), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new(7, 4, 0, 0), IsHitTestVisible = false });

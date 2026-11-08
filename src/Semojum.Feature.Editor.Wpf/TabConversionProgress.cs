@@ -22,6 +22,7 @@ internal sealed class TabConversionProgress : Grid, IDisposable
     private readonly TextBlock counts;
     private readonly TextBlock estimate;
     private readonly Border fill;
+    private readonly Border miniFill;
     private readonly DispatcherTimer closeTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private bool cancelPending;
     private bool suppressFocusOpen;
@@ -29,9 +30,13 @@ internal sealed class TabConversionProgress : Grid, IDisposable
     public TabConversionProgress(DocumentSession model, Func<Task> cancelJob)
     {
         this.model = model;
-        trigger = new Button { Content = "변환 중", FontSize = 11, Width = 48, Height = 20, MinHeight = 20,
-            Padding = new(0), BorderThickness = new(0), Background = Brushes.Transparent,
-            Foreground = (Brush)Application.Current.FindResource("Accent"), VerticalAlignment = VerticalAlignment.Center };
+        // Figma's 16px '아이콘 loading' frame is empty, so the slot keeps the existing progress-bar shape instead of text.
+        var miniTrack = new Grid { Width = 16, Height = 4, ClipToBounds = true };
+        miniTrack.Children.Add(new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(234, 234, 234)), BorderThickness = new(1), CornerRadius = new(2) });
+        miniFill = new Border { HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new(2), Background = (Brush)Application.Current.FindResource("Accent") };
+        miniTrack.Children.Add(miniFill);
+        trigger = new Button { Content = miniTrack, Width = 16, Height = 16, MinWidth = 16, MinHeight = 16,
+            Padding = new(0), BorderThickness = new(0), Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetAutomationId(trigger, "TabConversionProgress");
         title = new TextBlock { FontSize = 14, Height = 20, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis };
         var track = new Grid { Height = 8, Margin = new(0, 8, 0, 8), ClipToBounds = true };
@@ -100,11 +105,12 @@ internal sealed class TabConversionProgress : Grid, IDisposable
         var finished = Math.Clamp(progress.Finished, 0, total);
         var percent = total == 0 ? 0 : (int)Math.Round(100d * finished / total, MidpointRounding.AwayFromZero);
         title.Text = model.Title;
-        counts.Text = $"{finished}쪽 / {total}쪽 처리 ({percent}%)" + (progress.Failed > 0 ? $" · 확인 필요 {progress.Failed}" : "");
-        estimate.Text = progress.Estimate;
-        fill.Width = 288d * percent / 100;
+        counts.Text = $"{finished}쪽 / {total}쪽 완료 ({percent}%)" + (progress.Failed > 0 ? $" · 확인 필요 {progress.Failed}" : "");
+        // The server's remaining-time estimate (BE 2026-11-02); without one the line is hidden.
+        estimate.Text = progress.Estimate; estimate.Visibility = progress.Estimate.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        fill.Width = 288d * percent / 100; miniFill.Width = 16d * percent / 100;
         cancel.IsEnabled = !cancelPending && model.JobId is not null;
-        AutomationProperties.SetName(trigger, $"{model.Title} 변환 진행: {counts.Text}, {progress.Estimate}");
+        AutomationProperties.SetName(trigger, $"{model.Title} 변환 진행: {counts.Text}" + (progress.Estimate.Length == 0 ? "" : ", " + progress.Estimate));
     }
 
     public void Dispose() { closeTimer.Stop(); popup.IsOpen = false; }

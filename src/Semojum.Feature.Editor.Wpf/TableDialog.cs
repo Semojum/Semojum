@@ -21,7 +21,7 @@ public sealed class TableDialog : CompactDialog
         toolbar.Children.Add(Button("선택 열 삭제", () => { if (grid.CurrentColumn is { } c && table.Columns.Count > 1) table.Columns.RemoveAt(c.DisplayIndex); return Task.CompletedTask; }));
         toolbar.Children.Add(new TextBlock { Text = "마지막 빈 줄에서 행을 추가합니다. 행 머리 선택 후 Delete로 삭제합니다.", TextWrapping = TextWrapping.Wrap, Width = 400, Margin = new(8, 0, 0, 0) });
         DockPanel.SetDock(grid, Dock.Top); root.Children.Add(grid);
-        var preview = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = new("Segoe UI Symbol"), FontSize = 22, Margin = new(0, 12, 0, 0) }; root.Children.Add(preview);
+        var preview = new TextBox { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, FontFamily = (System.Windows.Media.FontFamily)FindResource("BrailleFont"), FontSize = 22, Margin = new(0, 12, 0, 0) }; root.Children.Add(preview);
         async Task Translate()
         {
             grid.CommitEdit(DataGridEditingUnit.Cell, true); grid.CommitEdit(DataGridEditingUnit.Row, true);

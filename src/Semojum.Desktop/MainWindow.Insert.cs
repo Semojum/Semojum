@@ -110,7 +110,7 @@ public partial class MainWindow
     private void OpenDraftDock(EditorBlock block, TableDraftSnapshot? table = null)
     {
         CloseDraftDock();
-        var drafts = table is null ? block.Metadata.Alternatives ?? [] : table.Drafts.Select(d => new AlternativeDraft(d.Label, d.SourceText!, null, d.Cells, null)).ToArray();
+        var drafts = table is null ? block.Metadata.Alternatives ?? [] : table.Drafts.Select(d => new AlternativeDraft(d.Label, d.SourceText ?? "", null, d.Cells, null)).ToArray();
         if (drafts.Length == 0) return;
         dockSession = session; dockBlock = block; dockTable = table; dockOptions = session.Options;
         DraftDockTitle.Text = table is null ? $"대체 초안 · 그림 설명 {drafts.Length}안" : $"대체 초안 · 표 점역 {drafts.Length}안";
@@ -137,8 +137,11 @@ public partial class MainWindow
             DraftChoiceGrid.Children.Add(radio);
         }
         DraftDock.Visibility = Visibility.Visible; UpdateDraftDivider();
-        var selectedIndex = table is null ? block.Metadata.SelectedIndex ?? 0 : Array.FindIndex(table.Drafts, d => d.RenderMode == block.Metadata.RenderMode);
-        ((RadioButton)DraftChoiceGrid.Children[Math.Clamp(selectedIndex, 0, drafts.Length - 1)]).IsChecked = true;
+        var selectedIndex = Math.Clamp(table is null ? block.Metadata.SelectedIndex ?? 0 : Array.FindIndex(table.Drafts, d => d.RenderMode == block.Metadata.RenderMode), 0, drafts.Length - 1);
+        // The server decides how many drafts there are: four per row, two rows shown, further rows scroll inside the dock.
+        var chosen = (RadioButton)DraftChoiceGrid.Children[selectedIndex];
+        DraftChoiceScroll.ScrollToVerticalOffset(selectedIndex / DraftChoiceGrid.Columns * chosen.Height);
+        chosen.IsChecked = true;
     }
 
     private static SvgViewbox DraftIconAsset(string name, double size) => new()
@@ -149,9 +152,9 @@ public partial class MainWindow
         if (dockTable is { } table && dockBlock is { } tableBlock)
         {
             if (index < 0 || index >= table.Drafts.Length) return;
-            var tableDraft = table.Drafts[index]; dockSelectedIndex = index; dockSource = tableDraft.SourceText!;
+            var tableDraft = table.Drafts[index]; dockSelectedIndex = index; dockSource = tableDraft.SourceText ?? "";
             dockTranslation = table.Translation with { Cells = tableDraft.Cells, Breaks = tableDraft.Breaks, RenderMode = tableDraft.RenderMode, SourceText = tableBlock.Source };
-            DraftTextPreview.Text = tableDraft.SourceText!; DraftTextPreview.ToolTip = null; DraftBraillePreview.Text = tableDraft.Cells;
+            DraftTextPreview.Text = tableDraft.SourceText ?? ""; DraftTextPreview.ToolTip = null; DraftBraillePreview.Text = tableDraft.Cells;
             return;
         }
         if (dockBlock is not { } block || block.Metadata.Alternatives is not { } drafts || index >= drafts.Length) return;
@@ -341,8 +344,29 @@ public partial class MainWindow
         session.ActiveBlock = block; translatedRevisions[block] = block.SourceRevision;
         owner.Status = decision == ManualEditDecision.Keep ? "수식 원문을 바꾸고 기존 점자를 유지했습니다. 점자를 확인해 주세요." : "수식을 바꾸고 블록 전체를 다시 점역했습니다.";
     }
+    private MemoHoverBubble? memoHover;
+    // The text editors' margins and the braille grids share one hover bubble; clicking a marker still opens the modal thread.
+    internal MemoHoverBubble MemoHover => memoHover ??= new(OpenMemoBubble);
+    private MemoThreadDialog? OpenMemoBubble(EditorBlock block, string code, int line)
+    {
+        if (session.IsReadOnly) return null;
+        var panel = code == "TEXT" ? SearchPanel.Text : SearchPanel.Braille;
+        var text = (panel == SearchPanel.Text ? block.Source : block.Braille).Split('\n').ElementAtOrDefault(line) ?? "";
+        var bubble = new MemoThreadDialog(block, code, line, text, EditStructure, session, author: api.Account?.DisplayName) { Owner = this };
+        bubble.Closed += async (_, _) =>
+        {
+            foreach (var margin in SearchEditor(panel).TextArea.LeftMargins.Concat(PageEditor.Editor.TextArea.LeftMargins).OfType<Controls.MemoMargin>()) margin.InvalidateVisual();
+            if (bubble.Destination is { } destination)
+            {
+                try { await NavigateToAsync(destination); ShowLineMemos(destination.Panel, showResolved: bubble.ShowResolved.IsChecked == true); }
+                catch (Exception ex) { ShowError(ex); }
+            }
+        };
+        return bubble;
+    }
     private async void ShowLineMemos(SearchPanel panel, int? requestedLine = null, bool showResolved = false)
     {
+        memoHover?.Close();
         if (session.IsReadOnly || session.ActiveBlock is not { } block) return;
         var editor = SearchEditor(panel);
         var resolved = panel == SearchPanel.Text && lastEditor == PageEditor.Editor
@@ -392,8 +416,10 @@ public partial class MainWindow
         if (dialog.ShowDialog() != true) return;
         if (!ReferenceEquals(owner, session) || !ReferenceEquals(document, target.Document) || owner.IsReadOnly || SourceEditor.IsReadOnly || owner.ChangeVersion != version)
         { owner.Status = "머리말 편집 중 문서가 바뀌어 적용하지 않았습니다."; return; }
-        target.Select(start, length); target.SelectedText = BrailleTags.Get("머리말").Insert(dialog.Result);
-        target.Select(start + BrailleTags.Get("머리말").Open.Length, dialog.Result.Length); target.Focus();
+        // The alignment rides inside the tag (center keeps the older plain form) and reaches the engine as header_align.
+        var tag = BrailleTags.InsertHeader(dialog.Result, dialog.Alignment);
+        target.Select(start, length); target.SelectedText = tag;
+        target.Select(start + tag.Length - BrailleTags.Get("머리말").Close.Length - dialog.Result.Length, dialog.Result.Length); target.Focus();
     }
     private async Task EditTableAsync()
     {
@@ -424,7 +450,7 @@ public partial class MainWindow
         var groups = new (string Name, string[] Tags)[]
         {
             ("정렬", ["왼쪽정렬", "가운데정렬", "오른쪽정렬"]),
-            ("점자 줄", ["상단줄", "중단줄", "하단줄", "상단굵은줄", "하단굵은줄", "표시작", "표중앙", "표끝", "표구분선", "표지시작", "표지세로", "표지끝"]),
+            ("점자 줄", ["상단줄", "중단줄", "하단줄", "상단굵은줄", "하단굵은줄", "표시작", "표중앙", "표끝", "표구분선"]),
             ("한글 강조", ["강조", "굵은", "색강조", "취소선"])
         };
         MenuItem Item(string name)
@@ -466,17 +492,8 @@ public partial class MainWindow
     {
         if (!CanSelectDraft() || session.ActiveBlock is not { } block) return;
         if (block.Metadata.Alternatives?.Length > 0) OpenDraftDock(block);
-        else if (block.Translation?.Drafts.Length > 0)
-        {
-            var selection = CaptureTableDraft(block);
-            if (HasTableDraftText(selection)) OpenDraftDock(block, selection);
-            else
-            {
-                var dialog = new DraftDialog(selection.Drafts) { Owner = this };
-                if (dialog.ShowDialog() == true) ApplyTableDraft(selection, dialog.SelectedIndex);
-            }
-        }
-        else MessageBox.Show(this, "이 블록에는 대체 초안이 없습니다. 그림·표 등의 초안이 제공된 블록을 선택해 주세요.", "대체 초안");
+        else if (block.Translation?.Drafts.Length > 0) OpenDraftDock(block, CaptureTableDraft(block));
+        else NoticeDialog.Choose(this, "이 블록에는 대체 초안이 없습니다.", "그림·표 등의 초안이 제공된 블록을 선택해 주세요.", ["확인"], width: 440);
         await Task.CompletedTask;
     }
     internal sealed record TableDraftSnapshot(DocumentSession Owner, EditorBlock Block, BrailleTranslation Translation,
@@ -486,20 +503,6 @@ public partial class MainWindow
         var translation = block.Translation ?? throw new InvalidOperationException("표 점역 초안이 없습니다.");
         return new(session, block, translation, block.SourceRevision, block.BrailleRevision, block.MetadataRevision, block.HasManualBraille, session.Options,
             translation.Drafts.Select(d => d with { Breaks = d.Breaks.ToArray() }).ToArray());
-    }
-    private static bool HasTableDraftText(TableDraftSnapshot selection)
-    {
-        if (selection.Block.Metadata.Type != "table" || selection.Drafts.Length == 0 || selection.Translation.SourceText != selection.Block.Source) return false;
-        try
-        {
-            foreach (var draft in selection.Drafts)
-            {
-                if (string.IsNullOrWhiteSpace(draft.SourceText) || string.IsNullOrEmpty(draft.Cells)) return false;
-                _ = TaggedTable.Read(draft.SourceText);
-            }
-            return true;
-        }
-        catch (ArgumentException) { return false; }
     }
     internal void ApplyTableDraft(TableDraftSnapshot selection, int index, Func<EditorBlock, ManualEditDecision>? confirm = null)
     {

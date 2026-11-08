@@ -53,7 +53,7 @@ internal static class WindowsSettingsHelpDesignChecks
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); about.UpdateLayout();
             var labels = Descendants(about).OfType<TextBlock>().Select(t => t.Text).ToArray();
-            check(about.Width == 440 && about.Height == 278 && labels.Contains("V1.2.3") && about.EngineVersion.Text == "0.0.42" && labels.Contains("contact@semo-jum.com"), "About screen shows actual product, engine and contact information"); CheckIcons(about, check);
+            check(about.Width == 440 && about.Height == 278 && labels.Contains("V1.2.3") && about.EngineVersion.Text == "0.0.42" && labels.Contains("contact@nuridot.com"), "About screen shows actual product, engine and contact information"); CheckIcons(about, check);
         }
         finally { about.Close(); }
 
@@ -76,10 +76,14 @@ internal static class WindowsSettingsHelpDesignChecks
             var feedback = reader.Document.Blocks.OfType<BlockUIContainer>().Select(b => b.Child).OfType<StackPanel>()
                 .SelectMany(p => p.Children.OfType<StackPanel>()).FirstOrDefault(p => p.Children.OfType<TextBlock>().Any(t => t.Text == "이 도움말이 도움이 되었나요?"));
             var feedbackButtons = feedback?.Children.OfType<Button>().ToArray() ?? [];
-            check(feedbackButtons.Length == 2 && feedbackButtons.All(b => !b.IsEnabled && AutomationProperties.GetHelpText(b).Contains("사용할 수 없습니다")),
+            check(feedbackButtons.Length == 2 && feedbackButtons.All(b => !b.IsEnabled && AutomationProperties.GetHelpText(b).Contains("사용할 수 없습니다")) && feedbackButtons[0].Width == 60 && feedbackButtons[1].Width == 72,
                 "Help feedback controls are visible but do not pretend unsupported feedback can be submitted");
             var tree = Descendants(help).OfType<TreeView>().Single();
             check(tree.SelectedItem is TreeViewItem { Header: "점자 직접 고치기" }, "Help highlights the currently opened article in the navigation tree");
+            check(tree.Items.OfType<TreeViewItem>().Select(b => b.Header as string).SequenceEqual(["시작하기", "문서 변환하기", "결과 편집하기", "메뉴별 기능", "양식과 꼬리말", "마이페이지와 크레딧", "문제 해결", "단축키 한눈에"]),
+                "Help contents follow the final Figma table of contents");
+            check(Descendants(help).OfType<TextBlock>().Any(t => t.Text == "ND" && t.Parent is Border { Width: 18, Background: SolidColorBrush logo } && logo.Color == Color.FromRgb(15, 123, 15)),
+                "Help title bar uses the final ND logo");
             var selected = (TreeViewItem)tree.SelectedItem;
             check(selected.Template.FindName("TopicSurface", selected) is Border surface && Math.Abs(surface.ActualWidth - tree.ActualWidth) <= 1, "Selected help topic highlight spans the full navigation width");
             var reviewLink = reader.Document.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Hyperlink>())
@@ -102,13 +106,13 @@ internal static class WindowsSettingsHelpDesignChecks
             var tree = Descendants(early).OfType<TreeView>().Single();
             var branch = tree.Items.OfType<TreeViewItem>().Single(b => Equals(b.Header, "메뉴별 기능"));
             branch.IsExpanded = true;
-            var topic = branch.Items.OfType<TreeViewItem>().Single(t => Equals(t.Header, "대체 초안과 규정"));
+            var topic = branch.Items.OfType<TreeViewItem>().Single(t => Equals(t.Header, "삽입 · 설정"));
             topic.IsSelected = true;
             // Let the deferred initial selection and WPF's item layout complete before observing the result.
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); early.UpdateLayout();
             var reader = Descendants(early).OfType<FlowDocumentScrollViewer>().Single();
             var paragraphs = reader.Document.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Run>()).Select(r => r.Text);
-            check(ReferenceEquals(tree.SelectedItem, topic) && paragraphs.Contains("대체 초안과 규정"),
+            check(ReferenceEquals(tree.SelectedItem, topic) && paragraphs.Contains("삽입 · 설정"),
                 "An early help-tree choice survives the deferred initial selection and shows the chosen article");
         }
         finally { early.Close(); }

@@ -16,10 +16,13 @@ public partial class MainWindow
     private Task<ComposedBraille>? composing;
     private static string DescribeSpacingBlocks(int[] ids) => string.Join(", ", ids.Take(10))
         + (ids.Length > 10 ? $" 외 {ids.Length - 10}개" : "");
+    private const string SpacingReason = "직접 고친 점자의 빈 줄이 조판 빈 줄과 겹치거나 엔진이 쪽 빈 줄을 정하지 못한 블록입니다.";
     private void ConnectGrid(BraillePane pane)
     {
+        pane.GridView.PreviewMouseDown += (_, _) => { if (regionOwner is not null) SetActiveEditor(pane.Editor); };
+        pane.GridView.PreviewKeyDown += (_, _) => { if (regionOwner is not null) SetActiveEditor(pane.Editor); };
         pane.GridView.ShowMemos = MemoToggle.IsChecked; pane.GridView.ShowReviews = ReviewToggle.IsChecked;
-        pane.GridView.ManualReviewRequested = ShowReviewList;
+        pane.GridView.ManualReviewRequested = ShowReviewList; pane.GridView.HoverBubble = MemoHover;
         async Task<bool> NavigateMarkerAsync(EditorBlock block, int line, DocumentSession owner)
         {
             if (resourcesReleased || session != owner || !owner.Blocks.Contains(block)) return false;
@@ -78,7 +81,7 @@ public partial class MainWindow
             {
                 var result = await local.ComposeAsync(SmjFile.Snapshot(model, false).Manifest, documentLifetime.Token);
                 if (session == model && result.SpacingUnknownBlockIds is { Length: > 0 } ids)
-                    model.Status = "조판 빈 줄 확인 필요: 블록 " + DescribeSpacingBlocks(ids) + " (확인 정보가 부족합니다).";
+                    model.Status = "조판 빈 줄 확인 필요: 블록 " + DescribeSpacingBlocks(ids) + ". " + SpacingReason;
                 if (session == model && result.AlignmentUnknownBlockIds is { Length: > 0 } alignmentIds)
                     model.Status = "줄별 정렬 확인 필요: 블록 " + DescribeSpacingBlocks(alignmentIds) + " (정렬 위치를 확인할 수 없습니다)."
                         + (result.SpacingUnknownBlockIds is { Length: > 0 } ? " 빈 줄도 확인해 주세요." : "");
@@ -126,6 +129,7 @@ public partial class MainWindow
 
     private void RefreshLinkedSource()
     {
+        if (RefreshOriginalRegion()) return;
         BlockSpan[] linked = [];
         if (lastEditor == PageEditor.Editor && session?.ActiveBlock is { } block && session.Blocks.Contains(block)
             && block.Source.Length > 0

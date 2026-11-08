@@ -71,7 +71,7 @@ internal static class WindowsCreditRecoveryChecks
             for (var choice = 0; choice < 3; choice++)
             {
                 var selected = choice; var ticks = 0; var openedNotice = false; var openedInquiry = false;
-                string? inquiryTitle = null; Exception? error = null;
+                string? inquiryTitle = null, inquiryCategory = null; Exception? error = null;
                 var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
                 timer.Tick += (_, _) =>
                 {
@@ -89,6 +89,8 @@ internal static class WindowsCreditRecoveryChecks
                             openedInquiry = true;
                             inquiryTitle = Descendants(inquiry).OfType<TextBox>().Single(t =>
                                 System.Windows.Automation.AutomationProperties.GetName(t) == "제목").Text;
+                            inquiryCategory = Descendants(inquiry).OfType<ComboBox>().Single(c =>
+                                System.Windows.Automation.AutomationProperties.GetName(c) == "분류").SelectedItem as string;
                             inquiry.Close();
                         }
                         if (++ticks >= 400) throw new TimeoutException("Credit inquiry route did not close");
@@ -103,7 +105,8 @@ internal static class WindowsCreditRecoveryChecks
                 try { await window.ShowJobOutcomeAsync(window.Session, new JobStatus("fixture", 1, 0, "FAILED", new() { [1] = "BLOCKED" }, true)); }
                 finally { timer.Stop(); }
                 check(error is null && openedNotice && openedInquiry == (choice != 2)
-                    && (choice == 0 ? inquiryTitle == "크레딧 구매 문의" : choice == 1 ? inquiryTitle == "" : inquiryTitle is null),
+                    && (choice == 0 ? inquiryTitle == "크레딧 구매 문의" && inquiryCategory == "크레딧 · 결제"
+                        : choice == 1 ? inquiryTitle == "" && inquiryCategory == "계정 · 발급" : inquiryTitle is null),
                     $"Credit notice action {choice} opens its intended inquiry or closes without sending");
             }
             check(fixture.InquiryRequests == 0, "Opening or cancelling credit inquiry actions never submits a message");
@@ -204,6 +207,9 @@ internal static class WindowsCreditRecoveryChecks
                 && model.Blocks.Where(b => b.Page == 3).Select(b => b.ServerId).SequenceEqual(["three-a", "three-b"]), "Within each page server block order remains unchanged");
             check(ReferenceEquals(third, model.Blocks.Single(b => b.ServerId == "three-a")) && third.Source == "수신 중 직접 교정" && third.Memos.Any(m => m.Body == "보존할 메모"),
                 "Inserting an earlier page preserves edits and memos on an already received page");
+            check(new[] { "one-b", "three-b" }.All(id => model.Blocks.Single(b => b.ServerId == id).ReviewMarks.Any(m => m is { Kind: ReviewKind.OpenWarning, Panel: ReviewPanel.Text, IsStale: false }))
+                && model.Blocks.Where(b => b.ServerId is "one-a" or "three-a").All(b => b.ReviewMarks.Count == 0),
+                "Critical errors and review flags of received pages show at once as open warnings on their blocks only");
         }
         finally { fixture.Release(); timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }
@@ -223,7 +229,10 @@ internal static class WindowsCreditRecoveryChecks
             if (path.EndsWith("/pages/1") || path.EndsWith("/pages/3"))
             {
                 var prefix = path.EndsWith("/pages/1") ? "one" : "three";
-                return Task.FromResult(Json("{\"isSuccess\":true,\"result\":{\"status\":\"COMPLETED\",\"original\":{\"type\":\"text\"},\"result\":{\"text_list\":[{\"id\":\"" + prefix + "-a\",\"type\":\"text\",\"contents\":[\"" + prefix + " a\"]},{\"id\":\"" + prefix + "-b\",\"type\":\"text\",\"contents\":[\"" + prefix + " b\"]}],\"braille_text_list\":[],\"bounding_box_list\":[]}}}"));
+                // Page 3 flags a critical error and page 1 a review flag, each on its "-b" block.
+                var issue = "[{\"type\":\"" + (prefix == "one" ? "low_confidence" : "unsupported_char") + "\",\"element_id\":\"" + prefix + "-b\",\"message\":\"" + prefix + " 경고\"}]";
+                var quality = ",\"quality_report\":{\"critical_errors\":" + (prefix == "three" ? issue : "[]") + ",\"review_flags\":" + (prefix == "one" ? issue : "[]") + "}";
+                return Task.FromResult(Json("{\"isSuccess\":true,\"result\":{\"status\":\"COMPLETED\",\"original\":{\"type\":\"text\"},\"result\":{\"text_list\":[{\"id\":\"" + prefix + "-a\",\"type\":\"text\",\"contents\":[\"" + prefix + " a\"]},{\"id\":\"" + prefix + "-b\",\"type\":\"text\",\"contents\":[\"" + prefix + " b\"]}],\"braille_text_list\":[],\"bounding_box_list\":[]" + quality + "}}}"));
             }
             throw new InvalidOperationException("Unexpected fixture path: " + path);
         }

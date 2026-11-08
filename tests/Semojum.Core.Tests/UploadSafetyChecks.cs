@@ -36,10 +36,22 @@ internal static class UploadSafetyChecks
             catch (ArgumentException ex) when (ex.Message.Contains("100")) { }
             if (new FileInfo(path).Length != JobClient.MaximumUploadBytes + 1) throw new Exception("Input altered");
             var second = Path.Combine(root, "second.png");
-            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
             await File.WriteAllBytesAsync(second, [1]);
-            try { await UploadFileReader.ReadAsync([path, second]); throw new Exception("Oversized aggregate accepted"); }
-            catch (ArgumentException ex) when (ex.Message.Contains("100")) { }
+            try { await UploadFileReader.ReadAsync([second, path]); throw new Exception("One oversized file among several accepted"); }
+            catch (ArgumentException ex) when (ex.Message.Contains("100") && ex.Message.Contains("grown.png") && !ex.Message.Contains("second.png")) { }
+            // BE 2026-11-02: several images also share one 100 MB total. Two files at exactly the per-file limit (200 MiB together) are refused
+            // before reading; two halves (exactly 100 MiB together) are read in full.
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            using (var f = new FileStream(second, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            try { await UploadFileReader.ReadAsync([path, second]); throw new Exception("Images over the 100 MB total accepted"); }
+            catch (ArgumentException ex) when (ex.Message.Contains("이미지 2장의 합계") && ex.Message.Contains("100 MB")) { }
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes / 2);
+            using (var f = new FileStream(second, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes / 2);
+            var both = await UploadFileReader.ReadAsync([path, second]);
+            if (both.Count != 2 || both.Any(file => file.Bytes.LongLength != JobClient.MaximumUploadBytes / 2)) throw new Exception("Images within the 100 MB total were rejected");
+            // One file at exactly the limit is still accepted: the total applies only to several images.
+            using (var f = new FileStream(path, FileMode.Open, FileAccess.Write)) f.SetLength(JobClient.MaximumUploadBytes);
+            if ((await UploadFileReader.ReadAsync([path])).Single().Bytes.LongLength != JobClient.MaximumUploadBytes) throw new Exception("A file at the per-file limit was rejected");
         }
         finally { Directory.Delete(root, true); }
     }
@@ -56,7 +68,7 @@ internal static class UploadSafetyChecks
             var exact = (Task<byte[]>)method.Invoke(null, [new MemoryStream(new byte[] { 1, 2, 3 }), 3L, CancellationToken.None])!;
             if (!(await exact).SequenceEqual(new byte[] { 1, 2, 3 })) throw new Exception("Exact byte limit was not accepted");
             var task = (Task<byte[]>)method.Invoke(null, [new MemoryStream(new byte[] { 1, 2, 3, 4 }), 3L, CancellationToken.None])!;
-            try { await task; throw new Exception("Actual bytes beyond remaining aggregate limit accepted"); }
+            try { await task; throw new Exception("Actual bytes beyond the per-file limit accepted"); }
             catch (ArgumentException ex) when (ex.Message.Contains("100")) { }
         }
         finally { Directory.Delete(root, true); }

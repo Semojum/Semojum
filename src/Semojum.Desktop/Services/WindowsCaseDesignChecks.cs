@@ -18,11 +18,12 @@ internal static class WindowsCaseDesignChecks
         try
         {
             invalid.UpdateLayout(); Capture(invalid, "unsupported.png");
-            check(Math.Abs(invalid.Width - 471) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice follows the final Figma dimensions");
-            check(invalid.DetailText.Contains("JPEG", StringComparison.Ordinal) && invalid.DetailText.Contains("SMJ", StringComparison.Ordinal),
-                "Unsupported file notice includes supported JPEG and local SMJ files");
+            // DOCX is not converted, so Case 1 lists the formats the app really opens (JPEG and SMJ too) and widens from 471 to the 520 message size.
+            check(Math.Abs(invalid.Width - 520) <= 1 && Math.Abs(invalid.Height - 196) <= 1, "Unsupported file notice uses the 520x196 message size that fits the real format list");
+            check(invalid.DetailText == "PDF · HWP · HWPX · TXT · JPG · JPEG · PNG · SMJ 만 열 수 있습니다." && invalid.MessageText == "이 형식은 열 수 없습니다.",
+                "Unsupported file notice keeps the Case 1 wording with the actually supported formats and no DOCX");
             var detail = Descendants(invalid).OfType<TextBlock>().Single(t => t.Text == invalid.DetailText);
-            check(detail.ActualHeight <= 21, "Supported formats fit on one line in the Figma-sized notice");
+            check(detail.ActualHeight <= 21, "Supported formats fit on one line in the 520px notice");
             var icon = Descendants(invalid).OfType<SvgViewbox>().Single();
             check(icon.Source?.ToString().EndsWith("case-error.svg", StringComparison.Ordinal) == true && icon.Drawings is { Bounds.IsEmpty: false } && icon.Width == 16 && icon.Height == 16 && icon.ActualWidth > 0 && icon.ActualWidth <= 16 && icon.ActualHeight > 0 && icon.ActualHeight <= 16,
                 "Error notice renders the original Figma warning in its 16px slot");
@@ -35,25 +36,34 @@ internal static class WindowsCaseDesignChecks
         try
         {
             credit.UpdateLayout(); Capture(credit, "no-credits.png");
-            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["구매 문의", "문의하기", "닫기"]),
-                "Credit notice offers separate purchase inquiry, general inquiry and close actions");
-            check(credit.DetailText.Contains("구매 문의", StringComparison.Ordinal) && credit.DetailText.Contains("확인되지 않았습니다", StringComparison.Ordinal)
-                && credit.DetailText.Contains("마이페이지 사용량", StringComparison.Ordinal),
-                "Credit notice identifies the purchase inquiry and unverified resumed-charge policy");
+            check(credit.ActionButtons.Select(button => button.Content as string).SequenceEqual(["크레딧 구매", "문의하기", "닫기"]),
+                "Credit notice offers the final purchase, inquiry and close actions");
+            // Figma Case 16 (263:11231, 2026-11-01) is the mid-conversion stop; the server checks no credits before upload.
+            check(credit.MessageText == "크레딧이 모두 소모되어 변환을 멈췄습니다." && credit.DetailText == "크레딧을 충전한 뒤 상단 알림 창의 「이어서 처리」를 눌러 재개할 수 있습니다."
+                  && Math.Abs(credit.Width - 613) <= 1 && Math.Abs(credit.Height - 226) <= 1,
+                "Credit notice follows the final Case 16 stop wording and points to the resume action in the top notice");
         }
         finally { credit.Close(); }
         var partial = FileNotices.PartialConversion(10, 8, [2, 4]); partial.Show();
         try
         {
             partial.UpdateLayout(); Capture(partial, "partial-credit.png");
-            check(partial.DetailText.Contains("2 · 4쪽", StringComparison.Ordinal) && partial.DetailText.Contains("8쪽", StringComparison.Ordinal)
-                && partial.DetailText.Contains("중복 차감 방지 여부는 확인되지 않았습니다", StringComparison.Ordinal)
-                && partial.DetailText.Contains("마이페이지 사용량", StringComparison.Ordinal),
-                "Partial conversion reports actual pages and the unverified retry-charge policy before retry");
+            check(partial.DetailText == "2 · 4쪽입니다. 나머지 8쪽은 사용할 수 있습니다." && Math.Abs(partial.Height - 196) <= 1,
+                "Partial conversion reports actual pages in the final Case 4 size");
         }
         finally { partial.Close(); }
-        var login = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "아이디 또는 비밀번호가 맞지 않습니다."));
-        check(login.ActionButtons[1].Content as string == "비밀번호 문의", "Login notice describes its inquiry action accurately");
+        var login = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "Bad credentials"));
+        check(login.MessageText == "아이디 또는 비밀번호가 맞지 않습니다." && login.ActionButtons[1].Content as string == "비밀번호 찾기", "Login notice follows the final Case 14 wording");
+        var locked = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4006", "계정이 잠겼습니다."));
+        check(locked.MessageText == "계정이 잠겼습니다.", "A locked-account notice keeps the server message");
+        var policyLogin = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.Unauthorized, "AUTH4001", "Bad credentials", System.Text.Json.JsonSerializer.SerializeToElement(new { remainingAttempts = 1, maxAttempts = 3, lockMinutes = 30 })));
+        var policyLocked = FileNotices.LoginRejected(new(System.Net.HttpStatusCode.TooManyRequests, "AUTH4006", "로그인을 5회 실패해 10분 동안 잠겼습니다.", System.Text.Json.JsonSerializer.SerializeToElement(new { unlockAt = "2026-11-01T22:10:00", maxAttempts = 3, lockMinutes = 30 })));
+        check(policyLogin.DetailText == "남은 횟수 1회입니다. 3회 실패하면 30분 동안 잠깁니다." && policyLocked.MessageText == "로그인을 3회 실패해 30분 동안 잠겼습니다."
+            && policyLocked.DetailText == "다시 시도할 수 있는 시각: 22:10", "Login failure and lock notices state the server's maxAttempts, lockMinutes and unlockAt instead of a fixed policy");
+        var disconnected = FileNotices.Disconnected(47); var oversized = FileNotices.OversizedFile();
+        check(disconnected.DetailText == "47쪽까지 변환한 내용은 보관했습니다." && oversized.MessageText == "파일이 100 MB 를 넘습니다.",
+            "Disconnected and oversized notices follow the final Case 7 and Case 2 wording");
+        foreach (var notice in new[] { login, locked, policyLogin, policyLocked, disconnected, oversized }) notice.Close();
         foreach (var index in new[] { 0, 1, 2 })
         {
             var dialog = FileNotices.NoCredits();

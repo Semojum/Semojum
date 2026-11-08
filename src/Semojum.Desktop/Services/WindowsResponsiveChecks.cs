@@ -14,21 +14,27 @@ internal static class WindowsResponsiveChecks
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(window.MinWidth <= 480 && window.MinHeight <= 360 && window.ResizeMode == ResizeMode.CanResize,
-                "Editor can resize to a 480 by 360 DIP viewport for split-screen use");
-            window.WindowState = WindowState.Normal; window.Width = 960; window.Height = 600; window.UpdateLayout();
-            check(window.ActualWidth <= 961 && window.ActualHeight <= 601, "Editor accepts a 960 by 600 DIP window");
+            var work = SystemParameters.WorkArea;
+            check(window.MinWidth >= Math.Min(1280, work.Width) - 1 && window.MinHeight >= Math.Min(800, work.Height) - 1 && window.ResizeMode == ResizeMode.CanResize,
+                "Editor keeps the final 1280 by 800 DIP minimum (or the whole work area on a smaller monitor)");
+            window.WindowState = WindowState.Normal; window.Width = 1280; window.Height = 800; window.UpdateLayout();
+            check(window.ActualWidth <= 1281 && window.ActualHeight <= 801, "Editor accepts a 1280 by 800 DIP window");
             check(InBounds(window, window.OriginalPanel) && InBounds(window, window.SourcePanel) && InBounds(window, window.BrailleContainer),
-                "All three panels fit in a 960 DIP viewport");
+                "All three panels fit in a 1280 DIP viewport");
             var before = window.Session.ActiveBlock!.Source;
             window.PageEditor.Editor.Document.Insert(0, "가");
-            check(window.Session.ActiveBlock.Source == "가" + before, "The source editor remains usable in a 960 DIP viewport");
+            check(window.Session.ActiveBlock.Source == "가" + before, "The source editor remains usable in a 1280 DIP viewport");
             window.Width = 480; window.Height = 360; window.UpdateLayout();
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(window.ActualWidth <= 481 && window.ActualHeight <= 361, "Editor accepts a smaller 480 by 360 DIP window");
+            check(window.ActualWidth >= window.MinWidth - 1 && window.ActualHeight >= window.MinHeight - 1, "Editor does not shrink below its minimum window size");
             var panelScroll = window.FindName("PanelScroll") as ScrollViewer;
             var toolScroll = window.FindName("EditorToolbarScroll") as ScrollViewer;
             var formatScroll = window.FindName("FormatToolbarScroll") as ScrollViewer;
+            check(panelScroll is { ScrollableWidth: 0 } && toolScroll is { ScrollableWidth: 0 } && formatScroll is { ScrollableWidth: 0 },
+                "Panels and both toolbars need no horizontal scrolling at the minimum window size");
+            // WindowBounds.Fit lowers the minimum to a smaller monitor's work area; narrow viewports must stay reachable there.
+            window.MinWidth = 480; window.MinHeight = 360; window.Width = 480; window.Height = 360; window.UpdateLayout();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             check(panelScroll is { ScrollableWidth: > 0 } && toolScroll is { ScrollableWidth: > 0 } && formatScroll is { ScrollableWidth: > 0 },
                 "Panels and both toolbars offer horizontal scrolling in a narrow viewport");
             check(InBounds(window, window.ApplicationMenu), "The main application menu stays reachable in a narrow viewport");

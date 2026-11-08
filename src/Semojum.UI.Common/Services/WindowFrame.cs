@@ -10,7 +10,7 @@ namespace Semojum.Desktop.Services;
 /// <summary>Figma's 32 DIP title bar, with native Windows move/resize/system commands.</summary>
 public static class WindowFrame
 {
-    public static void Apply(Window window, bool editor = false, bool mainEditor = false)
+    public static void Apply(Window window, bool editor = false, bool mainEditor = false, bool help = false)
     {
         // Other editor-framed windows have their own designs; node 263:6661 is the main editor.
         mainEditor = editor && mainEditor;
@@ -30,16 +30,17 @@ public static class WindowFrame
         root.RowDefinitions.Add(new() { Height = new(32) });
         root.RowDefinitions.Add(new() { Height = new(1, GridUnitType.Star) });
         var heading = new DockPanel { LastChildFill = true };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, mainEditor ? 0 : 4, editor ? 0 : 8, mainEditor ? 0 : 4) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, editor ? 0 : 4, editor ? 0 : 8, editor ? 0 : 4) };
         DockPanel.SetDock(buttons, Dock.Right); heading.Children.Add(buttons);
+        // Every editor-framed window (main, detached braille, help, editor dialogs) uses the Figma 46×32 SVG caption buttons.
         Button Caption(string glyph, string name, Action action, string asset)
         {
-            object icon = mainEditor ? new SvgViewbox
+            object icon = editor ? new SvgViewbox
             {
                 Source = new Uri($"pack://application:,,,/Semojum.UI.Common;component/Assets/Figma/editor-caption-{asset}.svg"),
                 Width = 16, Height = 16, Stretch = Stretch.None
             } : glyph;
-            var button = new Button { Content = icon, Width = mainEditor ? 46 : editor ? 44 : 24, Height = mainEditor ? 32 : editor ? 24 : 20,
+            var button = new Button { Content = icon, Width = editor ? 46 : 24, Height = editor ? 32 : 20,
                 MinHeight = 0, MinWidth = 0, Padding = new(0), FontSize = 12, FontFamily = (FontFamily)window.FindResource("MonoFont"),
                 Style = (Style)window.FindResource(editor ? "ToolButton" : typeof(Button)),
                 Margin = new(0), Background = editor ? Brushes.Transparent : Brushes.White,
@@ -53,11 +54,12 @@ public static class WindowFrame
         {
             Caption("—", "최소화", () => SystemCommands.MinimizeWindow(window), "min");
             Caption("□", "최대화 / 복원", () => { if (window.WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(window); else SystemCommands.MaximizeWindow(window); }, "max");
-            var logo = new Border { Width = mainEditor ? 16 : 18, Height = 16,
-                CornerRadius = mainEditor ? new(4) : new(0),
-                Background = new SolidColorBrush(mainEditor ? Color.FromRgb(0, 95, 184) : Color.FromRgb(16, 124, 65)),
-                Margin = new(12, 0, mainEditor ? 8 : 6, 0),
-                Child = new TextBlock { Text = mainEditor ? "S" : "SJ", FontFamily = mainEditor ? new FontFamily("Segoe UI Symbol") : (FontFamily)window.FindResource("MonoFont"), FontSize = 12,
+            // Figma: the main family shows a 16px rounded "S" (#005FB8); help shows an 18×16 square "ND" (#0F7B0F).
+            var logo = new Border { Width = help ? 18 : 16, Height = 16,
+                CornerRadius = help ? new(0) : new(4),
+                Background = new SolidColorBrush(help ? Color.FromRgb(15, 123, 15) : Color.FromRgb(0, 95, 184)),
+                Margin = new(12, 0, 8, 0),
+                Child = new TextBlock { Text = help ? "ND" : "S", FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = 12,
                     Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center } };
             if (mainEditor) System.Windows.Automation.AutomationProperties.SetAutomationId(logo, "EditorCaptionLogo");
             DockPanel.SetDock(logo, Dock.Left); heading.Children.Add(logo);
@@ -67,9 +69,9 @@ public static class WindowFrame
             Margin = new(editor ? 0 : 12, 0, 8, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         if (mainEditor) title.Foreground = new SolidColorBrush(Color.FromRgb(95, 95, 95));
         title.SetBinding(TextBlock.TextProperty, new Binding(nameof(Window.Title)) { Source = window }); heading.Children.Add(title);
-        // Figma editor frames (1:112, 1:8, 1:2123, 1:1894) rule the title with #D6D6D6; compact dialogs (1:1220, 1:1142 …) use #B5B5B5.
+        // Final Figma rules editor-framed titles (help 263:10632) with #EAEAEA; compact dialogs keep a #D1D1D1 outline.
         root.Children.Add(new Border { Background = new SolidColorBrush(editor ? Color.FromRgb(243, 243, 243) : Color.FromRgb(251, 251, 251)),
-            BorderBrush = new SolidColorBrush(editor ? Color.FromRgb(214, 214, 214) : Color.FromRgb(181, 181, 181)), BorderThickness = new(0, 0, 0, mainEditor ? 0 : 1), Child = heading });
+            BorderBrush = new SolidColorBrush(editor ? Color.FromRgb(234, 234, 234) : Color.FromRgb(209, 209, 209)), BorderThickness = new(0, 0, 0, mainEditor ? 0 : 1), Child = heading });
         if (mainEditor)
         {
             // The close button opts into client hit testing. Reserve the outer resize

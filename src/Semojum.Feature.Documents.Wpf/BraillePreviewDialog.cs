@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit;
+using ICSharpCode.AvalonEdit.Rendering;
 using Microsoft.Win32;
 using Semojum.Core;
 using Semojum.Desktop.Services;
@@ -13,26 +15,33 @@ namespace Semojum.Desktop.Dialogs;
 
 public sealed class BraillePreviewDialog : CompactDialog
 {
-    private readonly TextEditor editor = new() { IsReadOnly = true, ShowLineNumbers = true, FontFamily = new("Segoe UI Symbol"), FontSize = 22, WordWrap = false, Padding = new(12), Background = Brushes.White };
+    private readonly TextEditor editor = new() { IsReadOnly = true, ShowLineNumbers = true, FontFamily = (FontFamily)Application.Current.FindResource("BrailleFont"), FontSize = 22, WordWrap = false, Padding = new(12), Background = Brushes.White };
     private readonly TextBox number = new() { Width = 72, Text = "1", VerticalContentAlignment = VerticalAlignment.Center };
     private readonly TextBlock caption = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new(12, 0, 12, 0) };
     public int Page { get; private set; }
     public BraillePreviewDialog(string[][] pages, string brf, PageLayout layout, string title, int initial = 1,
-        int[]? spacingUnknownBlockIds = null, Func<string, string, MessageBoxResult>? confirmSpacing = null)
+        int[]? spacingUnknownBlockIds = null, Func<NoticeDialog, int>? confirmSpacing = null)
         : this(pages, brf, layout, title, initial, spacingUnknownBlockIds, null, confirmSpacing) { }
+    /// <param name="confirmSpacing">Checks receive the unshown notice and return the chosen action index instead of showing it.</param>
     public BraillePreviewDialog(string[][] pages, string brf, PageLayout layout, string title, int initial,
-        int[]? spacingUnknownBlockIds, int[]? alignmentUnknownBlockIds, Func<string, string, MessageBoxResult>? confirmSpacing = null) : base("점자 면 미리보기 — " + title, 850, 880)
+        int[]? spacingUnknownBlockIds, int[]? alignmentUnknownBlockIds, Func<NoticeDialog, int>? confirmSpacing = null) : base("점자 면 미리보기 — " + title, 850, 880)
     {
         var unknown = spacingUnknownBlockIds ?? [];
         var unknownAlign = alignmentUnknownBlockIds ?? [];
         var blockList = string.Join(", ", unknown.Take(10)) + (unknown.Length > 10 ? $" 외 {unknown.Length - 10}개" : "");
         var alignmentList = string.Join(", ", unknownAlign.Take(10)) + (unknownAlign.Length > 10 ? $" 외 {unknownAlign.Length - 10}개" : "");
         var warnings = new List<string>();
-        if (unknown.Length > 0) warnings.Add("현재 엔진에서 확인 정보를 제공하지 않거나 점자를 직접 수정한 블록의 빈 줄을 확인해 주세요. 블록: " + blockList);
+        if (unknown.Length > 0) warnings.Add("직접 고친 점자의 빈 줄이 조판 빈 줄과 겹치거나 엔진이 쪽 빈 줄을 정하지 못했습니다. 빈 줄을 확인해 주세요. 블록: " + blockList);
         if (unknownAlign.Length > 0) warnings.Add("정렬 태그와 점자 줄의 대응을 확인할 수 없어 해당 정렬을 적용하지 않았습니다. 블록: " + alignmentList);
-        var spacingMessage = string.Join("\n", warnings); var titleWarning = unknownAlign.Length > 0 ? "조판 정보 확인" : "조판 빈 줄 확인";
-        bool ConfirmSpacing() => warnings.Count == 0 || (confirmSpacing?.Invoke(spacingMessage + "\n현재 판면을 출력하시겠습니까?", titleWarning)
-            ?? MessageBox.Show(this, spacingMessage + "\n현재 판면을 출력하시겠습니까?", titleWarning, MessageBoxButton.YesNo, MessageBoxImage.Warning)) == MessageBoxResult.Yes;
+        var spacingMessage = string.Join("\n", warnings);
+        bool ConfirmSpacing()
+        {
+            if (warnings.Count == 0) return true;
+            var notice = new NoticeDialog(unknownAlign.Length > 0 ? "조판 정보를 확인할 수 없는 블록이 있습니다." : "조판 빈 줄을 확인해 주세요.",
+                spacingMessage + "\n현재 판면을 출력하시겠습니까?", ["출력", "취소"], height: warnings.Count > 1 ? 266 : 226);
+            if (confirmSpacing is { } decide) return decide(notice) == 0;
+            notice.Owner = this; notice.ShowDialog(); return notice.Choice == 0;
+        }
         void Show(int page)
         {
             if (page < 1 || page > pages.Length) throw new ArgumentException($"1–{pages.Length}면 안에서 입력해 주세요.");
@@ -51,8 +60,7 @@ public sealed class BraillePreviewDialog : CompactDialog
             var warning = new TextBlock { Text = spacingMessage, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Firebrick, Margin = new(16, 0, 16, 8) };
             DockPanel.SetDock(warning, Dock.Top); Root.Children.Add(warning);
         }
-        editor.Options.ShowColumnRuler = true; editor.Options.ColumnRulerPosition = layout.Columns;
-        editor.TextArea.TextView.ColumnRulerPen = new Pen(Brushes.Gray, 1);
+        editor.TextArea.TextView.BackgroundRenderers.Add(new CellRuler(editor, layout.Columns));
         var paper = new Border { Margin = new(24, 8, 24, 20), BorderBrush = Brushes.Gray, BorderThickness = new(1), Child = editor };
         Body(paper);
         async Task Save(bool txt)
@@ -77,5 +85,17 @@ public sealed class BraillePreviewDialog : CompactDialog
             await RawBraillePrinter.PrintAsync(this, DocumentExport.SelectBraille(brf, range.Result), title);
         });
         Action("닫기", Close, true); Show(initial);
+    }
+    /// <summary>AvalonEdit's own ruler sits at columns × the width of "x"; the page edge belongs after the last braille cell.</summary>
+    internal sealed class CellRuler(TextEditor editor, int columns) : IBackgroundRenderer
+    {
+        public KnownLayer Layer => KnownLayer.Background;
+        internal double Offset => new FormattedText(new string('⠿', columns), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+            new Typeface(editor.FontFamily, editor.FontStyle, editor.FontWeight, editor.FontStretch), editor.FontSize, Brushes.Black, VisualTreeHelper.GetDpi(editor).PixelsPerDip).WidthIncludingTrailingWhitespace;
+        public void Draw(TextView textView, DrawingContext drawingContext)
+        {
+            var x = Math.Round(Offset - textView.ScrollOffset.X) + .5;
+            drawingContext.DrawLine(new Pen(Brushes.Gray, 1), new(x, 0), new(x, Math.Max(textView.DocumentHeight - textView.VerticalOffset, textView.ActualHeight)));
+        }
     }
 }

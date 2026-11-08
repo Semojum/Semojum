@@ -2,7 +2,6 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
 using ICSharpCode.AvalonEdit;
@@ -14,7 +13,7 @@ namespace Semojum.Desktop.Controls;
 /// <summary>Native text selection/IME across a source page, backed by the same block models.</summary>
 public sealed class ContinuousSourceEditor : DockPanel, IDisposable
 {
-    public TextEditor Editor { get; } = new() { ShowLineNumbers = true, WordWrap = true, FontSize = 16, Padding = new(0), VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+    public TextEditor Editor { get; } = new() { ShowLineNumbers = true, WordWrap = true, FontSize = 16, Padding = new(0), VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     public Action<BlockSpan[], string>? Replace { get; set; }
     public Action<bool>? Replay { get; set; }
     public Action? InsertPageBreak { get; set; }
@@ -31,24 +30,37 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     public bool ShowReviews { get => showReviews; set { if (showReviews == value) return; showReviews = value; InvalidateReviewPresentation(); } }
     public bool ShowMemos { get => showMemos; set { if (showMemos == value) return; showMemos = value; overview.InvalidateMarkers(); } }
     public bool OverviewHighContrast { get => overview.HighContrast; set { overview.HighContrast = value; overview.InvalidateVisual(); } }
+    private EditorBlock[] linkedRegionBlocks = [];
+    internal IReadOnlyList<(int Start, int Length)> LinkedRegionRanges()
+    {
+        if (ProjectionPending() || model is null || Editor.Text != BlockRange.Text(Blocks(), SearchPanel.Text)) return [];
+        var ranges = new List<(int, int)>(); var offset = 0;
+        foreach (var block in Blocks())
+        {
+            if (linkedRegionBlocks.Contains(block)) ranges.Add((offset, block.Source.Length));
+            offset += block.Source.Length + 1;
+        }
+        return ranges;
+    }
+    internal void SetLinkedRegionBlocks(IEnumerable<EditorBlock> blocks)
+    {
+        linkedRegionBlocks = blocks.ToArray(); Editor.TextArea.TextView.Redraw();
+    }
     private int page;
     public ContinuousSourceEditor()
     {
-        // Draw the overview over the real vertical scrollbar.  It is not hit-testable:
-        // the underlying native Track/Thumb still handles mouse, keyboard and UIA.
-        var host = new Grid(); host.Children.Add(Editor);
-        overview = new ReviewOverview(Editor, OverviewMarkers) { HorizontalAlignment = HorizontalAlignment.Right, Width = 12, IsHitTestVisible = false };
-        host.Children.Add(overview); Children.Add(host);
-        var scrollStyle = new Style(typeof(ScrollBar));
-        var vertical = new Trigger { Property = ScrollBar.OrientationProperty, Value = Orientation.Vertical };
-        vertical.Setters.Add(new Setter(WidthProperty, 12d)); scrollStyle.Triggers.Add(vertical);
-        Editor.Resources[typeof(ScrollBar)] = scrollStyle;
+        // Figma 훑어보기 띠: an independent 12px column right of the text, visible even when
+        // nothing scrolls. It replaces the hidden native vertical scrollbar for mouse and UIA;
+        // the hidden (not disabled) scroll viewer keeps keyboard, wheel and UIA scrolling.
+        overview = new ReviewOverview(Editor, OverviewMarkers);
+        SetDock(overview, Dock.Right); Children.Add(overview); Children.Add(Editor);
         ColoredLineNumbers.SetReviewProvider(Editor.TextArea.TextView, ReviewKindForLine);
         NativeIme.Attach(Editor);
         Editor.Options.HighlightCurrentLine = true;
         Editor.TextArea.TextView.CurrentLineBackground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 245, 163));
         Editor.TextArea.TextView.CurrentLineBorder = null;
         Editor.TextArea.TextView.LineTransformers.Add(new TagColorizer());
+        Editor.TextArea.TextView.LineTransformers.Add(new RegionHighlight(Editor, LinkedRegionRanges));
         Editor.TextArea.TextView.ElementGenerators.Add(new IndentTagGenerator());
         Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(ReviewRanges, () => ShowReviews, () => (Editor.SelectionStart, Editor.SelectionLength)));
         Editor.Document.UndoStack.SizeLimit = 0;
@@ -127,8 +139,9 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     {
         if (!ShowReviews) return null;
         var kinds = Editor.TextArea.LeftMargins.OfType<MemoMargin>().FirstOrDefault()?.ManualKinds(line) ?? [];
-        // A pending correction/deletion must not be masked by an overlapping confirmation.
-        return kinds.Contains(ReviewKind.SuggestDeletion) ? ReviewKind.SuggestDeletion
+        // A server warning or pending correction/deletion must not be masked by an overlapping confirmation.
+        return kinds.Contains(ReviewKind.OpenWarning) ? ReviewKind.OpenWarning
+            : kinds.Contains(ReviewKind.SuggestDeletion) ? ReviewKind.SuggestDeletion
             : kinds.Contains(ReviewKind.SuggestCorrection) ? ReviewKind.SuggestCorrection
             : kinds.Contains(ReviewKind.HumanConfirmed) ? ReviewKind.HumanConfirmed : null;
     }
@@ -278,6 +291,6 @@ public sealed class ContinuousSourceEditor : DockPanel, IDisposable
     {
         if (model is not null) { model.PropertyChanged -= SessionChanged; model.Blocks.CollectionChanged -= BlocksChanged; }
         foreach (var b in observed) { b.PropertyChanged -= Changed; b.ReviewMarks.CollectionChanged -= ReviewsChanged; b.Memos.CollectionChanged -= MemosChanged; }
-        observed.Clear(); model = null; overview.InvalidateMarkers();
+        linkedRegionBlocks = []; observed.Clear(); model = null; overview.InvalidateMarkers();
     }
 }

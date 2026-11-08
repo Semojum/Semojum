@@ -74,11 +74,13 @@ internal static class WindowsNotificationChecks
             await WaitAsync(() => fixture.PublicLists > publicBefore);
             check(Descendants(retryPublic).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("접근할 수 없습니다")),
                 "Public notice load errors are visible");
+            check(!Descendants(retryPublic).OfType<Button>().Any(b => Equals(b.Content, "새로고침")) && Descendants(retryPublic).OfType<Button>().Count(b => Equals(b.Content, "닫기")) == 1,
+                "Public notices offer only the final close action");
             fixture.DenyPublic = false; fixture.PopulatedPublic = true; publicBefore = fixture.PublicLists;
-            Descendants(retryPublic).OfType<Button>().Single(b => Equals(b.Content, "새로고침")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            retryPublic.Close(); retryPublic = new PublicNoticesDialog(api); retryPublic.Show();
             await WaitAsync(() => fixture.PublicLists > publicBefore && Descendants(retryPublic).OfType<TextBlock>().Any(t => t.Text == "점검 공지"));
             check(Descendants(retryPublic).OfType<TextBlock>().Any(t => t.Text == "점검 공지") && fixture.PublicWasAnonymous,
-                "Public notices can retry without account credentials");
+                "Reopened public notices load without account credentials");
             var cards = Descendants(retryPublic).OfType<Expander>().ToArray();
             check(cards.Length == 3 && cards[0].IsExpanded && !cards[1].IsExpanded && !cards[2].IsExpanded,
                 "Public notice entries display one expanded and another collapsed");
@@ -97,12 +99,6 @@ internal static class WindowsNotificationChecks
                 "Expanding another notice exposes its full body");
             provider.Collapse();
             check(!cards[1].IsExpanded, "The expanded notice can be collapsed");
-            fixture.DenyPublic = true; publicBefore = fixture.PublicLists;
-            Descendants(retryPublic).OfType<Button>().Single(b => Equals(b.Content, "새로고침")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await WaitAsync(() => fixture.PublicLists > publicBefore && Descendants(retryPublic).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("접근할 수 없습니다")));
-            check(Descendants(retryPublic).OfType<Expander>().Count() == 3 && cards[0].IsExpanded,
-                "A failed notice refresh preserves the previously loaded notices");
-            fixture.DenyPublic = false;
         }
         finally { retryPublic.Close(); fixture.PopulatedPublic = false; }
 
@@ -129,7 +125,7 @@ internal static class WindowsNotificationChecks
         var inquiry = new PublicInquiryDialog(unsignedApi); inquiry.Show();
         try
         {
-            var email = Descendants(inquiry).OfType<TextBox>().Single(t => t.MaxLength == 100);
+            var email = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "답 받을 주소");
             var message = Descendants(inquiry).OfType<TextBox>().Single(t => t.AcceptsReturn && t.MaxLength == 2000);
             var organization = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "기관명");
             var title = Descendants(inquiry).OfType<TextBox>().Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == "제목");
@@ -143,13 +139,14 @@ internal static class WindowsNotificationChecks
             check(fixture.InquiryWasAnonymous && message.Text == "작성한 문의" && organization.Text == "테스트 기관" && title.Text == "문의 제목"
                 && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("접근할 수 없습니다")),
                 "A failed anonymous inquiry reports its error and retains all typed fields");
-            check(fixture.InquiryMessage == "기관명: 테스트 기관\n제목: 문의 제목\n\n작성한 문의" && fixture.InquiryName == "",
-                "Organization and title reach the existing anonymous message contract without replacing the sender name");
-            message.Text = new string('가', 1990);
+            check(fixture.Inquiry is { } sent && sent.GetValueOrDefault("message") == "작성한 문의" && sent.GetValueOrDefault("orgName") == "테스트 기관" && sent.GetValueOrDefault("title") == "문의 제목"
+                && sent.GetValueOrDefault("type") == "ACCOUNT" && !sent.ContainsKey("name"),
+                "The default category, organization and title reach the anonymous inquiry as their own fields without a sender name");
+            message.Text = new string('가', 2001);
             submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(50);
-            check(fixture.InquiryPosts == 1 && message.Text.Length == 1990
+            check(fixture.InquiryPosts == 1 && message.Text.Length == 2001
                 && Descendants(inquiry).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("2,000자")),
-                "The combined inquiry length limit rejects the request without losing fields");
+                "The inquiry length limit rejects the request without losing fields");
             message.Text = "작성한 문의";
             var cancel = Descendants(inquiry).OfType<Button>().Single(b => Equals(b.Content, "취소"));
             var sawConfirm = AnswerInquiryClose(inquiry, 0, () => cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)));
@@ -179,10 +176,11 @@ internal static class WindowsNotificationChecks
 
         fixture.HoldNotifications = false; fixture.Populated = true;
         var listWindow = new NotificationsDialog(new BoardClient(api), ""); listWindow.Show();
-        var closePost = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        var closePost = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) }; var openedInBoard = false;
         closePost.Tick += (_, _) =>
         {
-            foreach (var post in Application.Current.Windows.OfType<PostDialog>().Where(p => p.Owner == listWindow && p.IsVisible).ToArray()) post.Close();
+            foreach (var post in Application.Current.Windows.OfType<BoardDialog>().Where(p => p.Owner == listWindow && p.IsVisible).ToArray())
+            { openedInBoard |= post.Title == "게시판 - 누리닷" && Descendants(post).OfType<PostView>().Any(v => v.IsVisible); post.Close(); }
         };
         closePost.Start();
         try
@@ -199,6 +197,7 @@ internal static class WindowsNotificationChecks
             await WaitAsync(() => fixture.PostRequests == 2 && list.Items.Count == 2 && list.Items[0] is BoardNotification { Read: true });
             check(list.Items[0] is BoardNotification { Read: true } && list.Items[1] is BoardNotification { Read: false },
                 "Opening a permitted post refreshes only its server-confirmed read status");
+            check(openedInBoard, "A notification opens its post in the body of a 「게시판 - 누리닷」 window");
             var readAll = Descendants(listWindow).OfType<Button>().Single(b => Equals(b.Content, "모두 읽음"));
             fixture.DenyReadAll = true; readAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitAsync(() => fixture.ReadAllRequests == 1);
@@ -207,8 +206,10 @@ internal static class WindowsNotificationChecks
             fixture.DenyReadAll = false; readAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitAsync(() => fixture.ReadAllRequests == 2 && list.Items[1] is BoardNotification { Read: true });
             check(fixture.MutationAuthorized && list.Items.Cast<BoardNotification>().All(n => n.Read), "Successful authenticated read-all refreshes server-confirmed statuses");
+            check(Descendants(listWindow).OfType<Button>().Where(b => b.Content is string).Select(b => (string)b.Content).SequenceEqual(["모두 읽음", "열기"]),
+                "Notifications offer only the final read-all and open actions");
             fixture.InvalidNotifications = true; var count = fixture.NotificationLists;
-            Descendants(listWindow).OfType<Button>().Single(b => Equals(b.Content, "새로고침")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            readAll.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             await WaitAsync(() => fixture.NotificationLists > count);
             check(list.Items.Count == 2 && Descendants(listWindow).OfType<TextBlock>().Any(t => t.IsVisible && t.Text.Contains("응답을 확인할 수 없습니다")),
                 "A malformed notification response reports an error without clearing the prior list");
@@ -258,8 +259,7 @@ internal static class WindowsNotificationChecks
         public bool PublicWasAnonymous { get; private set; }
         public int InquiryPosts { get; private set; }
         public bool InquiryWasAnonymous { get; private set; }
-        public string? InquiryMessage { get; private set; }
-        public string? InquiryName { get; private set; }
+        public Dictionary<string, string>? Inquiry { get; private set; }
         public bool HoldNotifications { get; set; }
         public bool HoldPublic { get; set; }
         public bool DenyPublic { get; set; }
@@ -329,9 +329,7 @@ internal static class WindowsNotificationChecks
         }
         private async Task<HttpResponseMessage> ReceiveInquiryAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
-            InquiryMessage = payload.RootElement.GetProperty("message").GetString();
-            InquiryName = payload.RootElement.GetProperty("name").GetString();
+            Inquiry = await WindowsPublicInquiryFieldsChecks.FormAsync(request.Content!, cancellationToken);
             return Error();
         }
         private static HttpResponseMessage Error() => new(HttpStatusCode.Forbidden)

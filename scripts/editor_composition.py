@@ -1,9 +1,13 @@
 """Desktop composition with reversible cell coordinates.
 
-Uses the pinned Semojum/braille 3.4.35 helpers for wrapping, rules, numbers,
+Uses the pinned Semojum/braille 3.4.44 helpers for wrapping, rules, numbers,
 alignment and BRF encoding. Pagination follows assist.build_pages; this adapter
 adds coordinates and independent footer/number policies. No translation rules
 are reimplemented here. See tests/engine/test_editor_composition.py for upstream parity.
+
+Layout blank lines arrive per block as `blank_before` / `blank_after` (engine
+translate_page rows) instead of inside `braille`, so they never move the block's
+cell coordinates. They compose exactly like the same newlines inside `braille`.
 """
 from collections import Counter
 import re
@@ -82,6 +86,7 @@ def compose(job):
         show_orig_page=o.get("show_orig_page", True), show_braille_page=o.get("show_braille_page", True),
         cover_pages=int(o.get("cover_orig_page_count", 0)), orig_page_start=o.get("orig_page_first_no"),
         show_change_line=o.get("show_change_line", True), footer_align=o.get("footer_align", "center"),
+        header_align=o.get("header_align") or "center",
         wrap=o.get("wrap", "syllable"), pad_to_even=o.get("pad_to_even", False))
     if not 8 <= opts.cols <= 100 or not 4 <= opts.rows <= 100:
         raise ValueError("지원하지 않는 판면 크기")
@@ -89,6 +94,10 @@ def compose(job):
     footers = {int(k): v for k, v in job.get("footers", {}).items()}
     aligns = {int(k): v for k, v in job.get("footer_aligns", {}).items()}
     headers = {int(k): v for k, v in job.get("headers", {}).items()}
+    # Header alignment per face; faces without one use opts.header_align like upstream build_pages.
+    header_aligns = {int(k): v for k, v in job.get("header_aligns", {}).items()}
+    if any(v not in ("left", "center", "right") for v in header_aligns.values()):
+        raise ValueError("header_aligns는 left|center|right")
     flat = []
     sources = a._renumber(job.get("sources", []), opts)
     for i, source in enumerate(sources):
@@ -99,6 +108,7 @@ def compose(job):
             flat.append((Line(text, [None] * len(text), kind="change"), op, cover))
         for block in sorted(source.get("blocks", []), key=lambda b: b.get("order", 0)):
             raw = block.get("braille", "")
+            flat += [(Line("", [], kind="blank"), op, cover) for _ in range(int(block.get("blank_before") or 0))]
             pattern = "(" + "|".join(re.escape(t) for t in [a.PAGE_BREAK_TAG, a.CHAPTER_TAG, *a.RULE_TAGS]) + ")"
             cursor = 0
             for match in re.finditer(pattern, raw):
@@ -122,6 +132,7 @@ def compose(job):
             if cursor < len(raw):
                 for line in fold(dict(block, braille=raw[cursor:], offset_base=cursor), opts):
                     flat.append((line.substitute(a.ORIG_PAGE_TAG, a._number(op)), op, cover))
+            flat += [(Line("", [], kind="blank"), op, cover) for _ in range(int(block.get("blank_after") or 0))]
     last = -1
     for i, (line, _, _) in enumerate(flat):
         if line.kind == "break" or line.text.strip():
@@ -155,7 +166,7 @@ def compose(job):
             body.append(Line("", [], end=empty_anchor))
         body += [Line("", [], kind="padding") for _ in range(cap - len(body))]
         if head:
-            h = a._header_line(head, op, a._number(bp), opts.cols)
+            h = a._header_line(head, op, a._number(bp), opts.cols, header_aligns.get(bp, opts.header_align))
             body.insert(0, Line(h, [None] * len(h), kind="header"))
         if has_row:
             row_opts = replace(opts, show_orig_page=number and opts.show_orig_page,

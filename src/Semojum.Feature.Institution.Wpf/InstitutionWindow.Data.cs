@@ -10,19 +10,20 @@ public sealed partial class InstitutionWindow
 {
     private InstitutionClient Client => new(api);
     private bool refreshing;
+    internal bool Refreshing => refreshing;
     private string? receiptEmail;
     private void ClearInstitutionData()
     {
         AccountRequest.IsEnabled = CreditRequest.IsEnabled = false;
         Identity.Text = "정보 없음"; Allocated.Text = Balance.Text = Contract.Text = "—"; CreditDetail.Text = "사용량 정보 없음"; UsagePercent.Text = "정보 없음";
         ContractDetail.Text = "계약 정보 없음"; ContractRemaining.Text = "정보 없음"; StatusSummary.Text = "기관 정보 없음"; UsageBar.Value = 0; UsageBar.Visibility = Visibility.Collapsed;
-        RenderMonthlyUsage([]); Accounts.ItemsSource = Requests.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; receiptEmail = null; ReceiptAddress.Text = "증빙 받는 사람 정보 없음";
+        RenderMonthlyUsage([]); Accounts.ItemsSource = Notices.ItemsSource = Orders.ItemsSource = null; PendingRequests.Text = ""; ReceiptAddress.IsEnabled = false; receiptEmail = null; ReceiptAddress.Text = ""; ReceiptHint.Visibility = Visibility.Collapsed;
         SessionIdentity.Text = api.Account?.LoginId ?? "로그인 정보 없음";
     }
     private async Task RefreshAsync()
     {
         if (refreshing) return;
-        refreshing = true; Refresh.IsEnabled = false; ErrorText.Text = "";
+        refreshing = true; ErrorText.Text = "";
         ClearInstitutionData();
         var errors = new List<string>();
         async Task Load(string label, Func<Task> load)
@@ -45,17 +46,29 @@ public sealed partial class InstitutionWindow
                 Contract.Text = ValidDate(value.ContractExpiresAt) ? value.ContractExpiresAt! : "정보 없음";
                 ContractDetail.Text = ValidDate(value.ContractStartedAt) ? "시작 " + value.ContractStartedAt : "시작일 정보 없음";
                 ContractRemaining.Text = InstitutionUsage.RemainingDays(value.ContractExpiresAt, TodayInKorea());
-                StatusSummary.Text = $"기관 {value.OrgName}  |  남은 크레딧 {value.CreditRemaining:N0}  |  계약 만료 {ContractRemaining.Text}";
+                var expiry = ContractRemaining.Text switch { var t when t.EndsWith(" 남음", StringComparison.Ordinal) => t[..^3] + " 전", "오늘 만료" => "오늘", var t => t };
+                StatusSummary.Inlines.Clear();
+                foreach (var part in new[] { "기관 " + value.OrgName, $"남은 크레딧 {value.CreditRemaining:N0}", "계약 만료 " + expiry })
+                {
+                    StatusSummary.Inlines.Add(new System.Windows.Documents.Run(part));
+                    StatusSummary.Inlines.Add(new System.Windows.Documents.InlineUIContainer(new Border { Width = 1, Height = 16, Margin = new(12, 0, 12, 0), Background = FigmaDialogElements.Brush("#EAEAEA") }) { BaselineAlignment = BaselineAlignment.Center });
+                }
                 RenderMonthlyUsage(value.MonthlyUsage);
                 AccountRequest.IsEnabled = CreditRequest.IsEnabled = true; AccountRequest.ToolTip = CreditRequest.ToolTip = "운영자에게 요청을 보냅니다.";
             });
-            await Load("소속 계정", async () => Accounts.ItemsSource = (await Client.AccountsAsync(Lifetime.Token)).Items);
-            await Load("요청 내역", async () => Requests.ItemsSource = await Client.RequestsAsync(Lifetime.Token));
+            InstitutionAccountRow[] members = [];
+            await Load("소속 계정", async () => Accounts.ItemsSource = members = (await Client.AccountsAsync(Lifetime.Token)).Items.Select(a => InstitutionAccountRow.Of(a)).ToArray());
+            // Open account-issue requests are lines of the account table; there is no separate request history.
+            await Load("발급 요청", async () =>
+            {
+                var issues = (await Client.RequestsAsync(Lifetime.Token)).Where(r => r is { Type: "ACCOUNT_ISSUE", Status: "OPEN" }).Select(r => InstitutionAccountRow.Of(r)).ToArray();
+                Accounts.ItemsSource = members.Concat(issues).ToArray(); PendingRequests.Text = issues.Length == 0 ? "" : $"발급 요청 {issues.Length:N0}건 처리 중";
+            });
             await Load("공지", async () => Notices.ItemsSource = await Client.NoticesAsync(Lifetime.Token));
             await Load("주문 내역", async () =>
             {
                 var orders = await Client.OrdersAsync(Lifetime.Token); Orders.ItemsSource = orders.Items; receiptEmail = orders.ReceiptEmail;
-                ReceiptAddress.Text = orders.ReceiptEmail is { Length: > 0 } email ? "증빙 받는 사람: " + email : "증빙 받는 사람 정보 없음";
+                ReceiptAddress.Text = receiptEmail ?? ""; ReceiptAddress.IsEnabled = true;
             });
             if (api.Account?.Role != "ROLE_ORG_ADMIN")
             {
@@ -64,7 +77,7 @@ public sealed partial class InstitutionWindow
             }
             else if (errors.Count > 0) ErrorText.Text = string.Join("\n", errors);
         }
-        finally { refreshing = false; Refresh.IsEnabled = true; }
+        finally { refreshing = false; }
     }
     internal void RenderMonthlyUsage(IReadOnlyList<InstitutionMonthlyUsage> months)
     {
@@ -130,15 +143,25 @@ public sealed partial class InstitutionWindow
     private async Task RequestCreditAsync() => await RequestAsync(false);
     private async Task RequestAsync(bool account)
     {
-        var dialog = new InstitutionRequestDialog(account, async message => { await Client.CreateRequestAsync(account ? "ACCOUNT_ISSUE" : "CREDIT_ADD", message, Lifetime.Token); }) { Owner = ModalOwner };
+        var dialog = new InstitutionRequestDialog(account, async (message, details) => { await Client.CreateRequestAsync(account ? "ACCOUNT_ISSUE" : "CREDIT_ADD", message, details, Lifetime.Token); },
+            account ? null : (credits, ct) => Client.CreditEstimateAsync(credits, ct)) { Owner = ModalOwner };
         if (dialog.ShowDialog() == true) await RefreshAsync();
     }
-    private async Task CancelSelectedRequestAsync()
+    private async Task RunRowControlAsync(InstitutionAccountRow row)
     {
-        if (Requests.SelectedItem is not InstitutionRequest { Status: "OPEN", Type: "CREDIT_ADD" or "ACCOUNT_ISSUE" or "ERROR_REPORT" } request) return;
-        if (NoticeDialog.Choose(ModalOwner, "이 요청을 취소하시겠습니까?", "처리 중인 요청만 취소할 수 있습니다.", ["요청 취소", "돌아가기"]) != 0) return;
-        try { await Client.CancelRequestAsync(request.Id, Lifetime.Token); await RefreshAsync(); }
-        catch (Exception ex) { ErrorText.Text = "요청을 취소하지 못했습니다. " + ex.Message; }
+        if (row.Request is { Type: "ACCOUNT_ISSUE", Status: "OPEN" } request)
+        {
+            if (NoticeDialog.Choose(ModalOwner, "이 요청을 취소하시겠습니까?", "처리 중인 요청만 취소할 수 있습니다.", ["요청 취소", "돌아가기"]) != 0) return;
+            try { await Client.CancelRequestAsync(request.Id, Lifetime.Token); await RefreshAsync(); }
+            catch (Exception ex) { ErrorText.Text = "요청을 취소하지 못했습니다. " + ex.Message; }
+            return;
+        }
+        if (row.Account is not { Self: false, Status: "ACTIVE" or "INACTIVE" } account) return;
+        var unlock = account.Status == "INACTIVE";
+        var message = unlock ? "이 계정의 잠금을 해제하시겠습니까?" : "계정을 잠그면 로그인 세션이 종료되고 진행 중인 작업이 취소될 수 있습니다. 계속하시겠습니까?";
+        if (NoticeDialog.Choose(ModalOwner, message, "변경은 서버에 즉시 적용됩니다.", ["계속", "취소"], error: !unlock) != 0) return;
+        try { await Client.SetLockAsync(account.LoginId, !unlock, Lifetime.Token); await RefreshAsync(); }
+        catch (Exception ex) { ErrorText.Text = "계정 상태를 바꾸지 못했습니다. " + ex.Message; }
     }
     private async Task OpenAccountAsync(InstitutionAccount account)
     {
@@ -155,33 +178,52 @@ public sealed partial class InstitutionWindow
         var dialog = new InstitutionNoticeDialog(notice, CreditRequest.IsEnabled) { Owner = ModalOwner };
         if (dialog.ShowDialog() == true && dialog.CreditRequested) await RequestCreditAsync();
     }
+    private const string ReceiptSaveFailed = "증빙 받는 사람을 바꾸지 못했습니다. ";
+    private bool savingReceipt;
+    internal bool SavingReceipt => savingReceipt;
+    /// <summary>Saves the field when it differs from the server value; a malformed address stays in the field with a hint and is never sent.</summary>
+    internal async Task SaveReceiptEmailAsync()
+    {
+        if (savingReceipt || refreshing || !ReceiptAddress.IsEnabled || Lifetime.IsCancellationRequested) return;
+        var email = ReceiptAddress.Text.Trim();
+        if (email == (receiptEmail ?? "")) { ReceiptAddress.Text = email; return; }
+        if (email.Length > 0 && !InstitutionClient.IsReceiptEmail(email)) { ReceiptHint.Visibility = Visibility.Visible; return; }
+        savingReceipt = true; ReceiptAddress.IsReadOnly = true;
+        try
+        {
+            await Client.SetReceiptEmailAsync(email, Lifetime.Token);
+            receiptEmail = email.Length == 0 ? null : email; ReceiptAddress.Text = email;
+            if (ErrorText.Text.StartsWith(ReceiptSaveFailed, StringComparison.Ordinal)) ErrorText.Text = "";
+        }
+        catch (OperationCanceledException) when (Lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { ReceiptAddress.Text = receiptEmail ?? ""; ErrorText.Text = ReceiptSaveFailed + ex.Message; }
+        finally { savingReceipt = false; ReceiptAddress.IsReadOnly = false; }
+    }
     private Task OpenOrderAsync(InstitutionOrder order)
     {
-        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenReceiptForAsync(order)) { Owner = ModalOwner };
+        var dialog = new InstitutionOrderDialog(order, receiptEmail, () => OpenQuoteForAsync(order)) { Owner = ModalOwner };
         dialog.ShowDialog(); return Task.CompletedTask;
     }
-    private async Task OpenReceiptAsync()
-    {
-        if (Orders.SelectedItem is not InstitutionOrder order || string.IsNullOrWhiteSpace(order.ReceiptFileName)) return;
-        await OpenReceiptForAsync(order);
-    }
     internal Action<string> ReceiptLauncher { get; set; } = url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-    private async Task OpenReceiptForAsync(InstitutionOrder order)
+    private Task OpenReceiptForAsync(InstitutionOrder order) => OpenOrderFileAsync(order.ReceiptFileName, ct => Client.ReceiptAsync(order.Id, ct), "증빙을 열지 못했습니다. ");
+    /// <summary>The quote opens like the receipt: a short-lived presigned URL handed to the shell.</summary>
+    private Task OpenQuoteForAsync(InstitutionOrder order) => OpenOrderFileAsync(order.QuoteFileName, ct => Client.QuoteAsync(order.Id, ct), "견적서를 열지 못했습니다. ");
+    private async Task OpenOrderFileAsync(string? fileName, Func<CancellationToken, Task<InstitutionReceipt>> fetch, string failure)
     {
-        if (string.IsNullOrWhiteSpace(order.ReceiptFileName)) return;
+        if (string.IsNullOrWhiteSpace(fileName)) return;
         var marker = api.SessionMarker;
         var owner = api.Account;
         if (marker is null || marker != institutionSessionMarker || owner?.Role != "ROLE_ORG_ADMIN" || api.SessionMarker != marker) return;
         var lifetime = Lifetime.Token;
         try
         {
-            var receipt = await Client.ReceiptAsync(order.Id, lifetime);
+            var file = await fetch(lifetime);
             // A late response from a closed window or an earlier login must never launch a URL.
             // A token refresh retains the marker; logout and even a same-account login replace it.
             if (lifetime.IsCancellationRequested || !Root.IsVisible || api.SessionMarker != marker || api.Account is not { Role: "ROLE_ORG_ADMIN" } current || current.LoginId != owner.LoginId) return;
-            ReceiptLauncher(receipt.Url);
+            ReceiptLauncher(file.Url);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception ex) { if (!lifetime.IsCancellationRequested && Root.IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = "증빙을 열지 못했습니다. " + ex.Message; }
+        catch (Exception ex) { if (!lifetime.IsCancellationRequested && Root.IsVisible && api.SessionMarker == marker && api.Account is { Role: "ROLE_ORG_ADMIN" } current && current.LoginId == owner.LoginId) ErrorText.Text = failure + ex.Message; }
     }
 }

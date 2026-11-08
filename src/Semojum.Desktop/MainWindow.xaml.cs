@@ -84,8 +84,8 @@ public partial class MainWindow : Window
         }
         StyleSeparators(ApplicationMenu);
         InitializeContinuousEditor();
-        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)) { ManualReviewRequested = ShowReviewList });
-        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { ManualReviewRequested = ShowReviewList });
+        SourceEditor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "TEXT", line => ShowLineMemos(SearchPanel.Text, line)) { ManualReviewRequested = ShowReviewList, HoverBubble = MemoHover });
+        Braille.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { ManualReviewRequested = ShowReviewList, HoverBubble = MemoHover });
         SourceEditor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Text), () => ReviewToggle.IsChecked, () => (SourceEditor.SelectionStart, SourceEditor.SelectionLength)));
         Braille.Editor.TextArea.TextView.BackgroundRenderers.Add(new ReviewRangeRenderer(() => ActiveReviewRanges(ReviewPanel.Braille), () => ReviewToggle.IsChecked, () => (Braille.Editor.SelectionStart, Braille.Editor.SelectionLength)));
         InstallEditingKeys(SourceEditor); InstallEditingKeys(Braille.Editor);
@@ -124,6 +124,7 @@ public partial class MainWindow : Window
         BindCommonKeys(this);
         InitializeDraftAvailability();
         InitializeMathPreview();
+        InitializeInputStatus();
         UpdatePanelLayout(); RefreshEditorStatus();
         Closed += (_, _) => _ = ReleaseResourcesAsync();
     }
@@ -163,7 +164,7 @@ public partial class MainWindow : Window
                 window.DataContext = session;
                 window.Title = $"{window.Tag} — {session.Title}";
             }
-            if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
+            if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title} - 누리닷";
             session.PropertyChanged += SessionChanged;
             PageEditor.Attach(session); PageEditor.Visibility = Visibility.Visible; SourceEditor.Visibility = Visibility.Collapsed;
             Braille.Attach(session, documents); detachedPane?.Attach(session, documents);
@@ -178,18 +179,17 @@ public partial class MainWindow : Window
 
     private void SessionChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(DocumentSession.IsDirty) && session.IsDirty) Welcome.Visibility = Visibility.Collapsed;
         if (e.PropertyName == nameof(DocumentSession.ActiveBlock)) ShowActiveBlock();
         if (e.PropertyName == nameof(DocumentSession.Options))
             foreach (var block in session.Blocks) { translator.Invalidate(block); translatedRevisions[block] = -1; block.State = "옵션 변경 · 재점역 필요"; }
         RefreshEditorStatus();
-        if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title}";
+        if (detachedWindow is not null) detachedWindow.Title = $"점자 — {session.Title} - 누리닷";
         foreach (var window in detachedPanels.Values) window.Title = $"{window.Tag} — {session.Title}";
     }
 
     private void ShowActiveBlock()
     {
-        Welcome.Visibility = Visibility.Collapsed;
+        ClearOriginalRegion();
         if (session.ActiveBlock is not { } block) return;
         var wasSwitching = switching; switching = true;
         try
@@ -276,7 +276,7 @@ public partial class MainWindow : Window
         try
         {
             if (action.StartsWith("tag:")) { InsertTag(action[4..]); return; }
-            if (session.IsReadOnly && (action.StartsWith("tag:") || new[] { "undo", "redo", "cut", "paste", "replace", "addBlock", "deleteBlock", "moveBlockUp", "moveBlockDown", "indent", "unindent", "clearLine", "clearBlock", "table", "memo", "memos", "drafts", "symbol", "math", "footer", "layout", "translationOptions", "translate", "translateAll" }.Contains(action)))
+            if (session.IsReadOnly && (action.StartsWith("tag:") || new[] { "undo", "redo", "cut", "paste", "replace", "addBlock", "deleteBlock", "moveBlockUp", "moveBlockDown", "indent", "unindent", "clearLine", "clearBlock", "table", "memo", "memos", "drafts", "symbol", "math", "footer", "layout", "translate", "translateAll" }.Contains(action)))
                 throw new InvalidOperationException("읽기 전용 문서입니다. 다른 이름으로 저장한 뒤 편집해 주세요.");
             if (action is "copy" or "cut" or "paste")
             {
@@ -332,7 +332,6 @@ public partial class MainWindow : Window
                 case "lastFolder": await OpenWorkFolderAsync(false); break;
                 case "save": await SaveAsync(false); break;
                 case "saveAs": await SaveAsync(true); break;
-                case "optimize": await OptimizeDocumentAsync(); break;
                 case "composition": await ShowCompositionAsync(); break;
                 case "export": await ExportAsync(); break;
                 case "version": await CheckVersionAsync(); break;
@@ -435,10 +434,6 @@ public partial class MainWindow : Window
                         await PersistAccountPreferencesAsync();
                     }
                     break;
-                case "translationOptions":
-                    var options = new TranslationOptionsDialog(autoTranslate, session.Options) { Owner = this };
-                    if (options.ShowDialog() == true) { autoTranslate = options.AutoTranslate; session.Options = options.Result; }
-                    break;
                 case "visualDescriptions":
                     if (await EnsureAccountAsync())
                     {
@@ -525,7 +520,7 @@ public partial class MainWindow : Window
         if (detachedWindow is not null) { detachedWindow.Close(); return; }
         detachedPane = new BraillePane(); ConnectGrid(detachedPane); detachedPane.Attach(session, documents); InstallEditingKeys(detachedPane.Editor);
         InstallEditorMenu(detachedPane.Editor);
-        detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)));
+        detachedPane.Editor.TextArea.LeftMargins.Add(new MemoMargin(() => session?.ActiveBlock, "BRAILLE", line => ShowLineMemos(SearchPanel.Braille, line)) { HoverBubble = MemoHover });
         detachedPane.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(detachedPane?.Editor);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => RefreshEditorStatus();
         detachedPane.HideRequested += (_, _) => detachedWindow?.Close();
@@ -639,7 +634,8 @@ public partial class MainWindow : Window
                         var failures = result.PageResults is { } details
                             ? string.Join(", ", details.Where(p => p.Status == "FAILED").Select(p => $"{p.PageNo}쪽 ({p.ErrorCode ?? "오류"})"))
                             : string.Join(", ", result.FailedPages);
-                        if (MessageBox.Show(this, $"서버 저장 실패: {failures}\n{result.Plan.ExpectedPages}쪽 중 {result.SavedPages}쪽은 저장되었습니다.\n실패한 쪽만 다시 저장하시겠습니까?", "부분 저장", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        if (NoticeDialog.Choose(this, $"{result.Plan.ExpectedPages}쪽 중 {result.SavedPages}쪽만 서버에 저장했습니다.",
+                            $"저장하지 못한 쪽: {failures}. 실패한 쪽만 다시 저장하시겠습니까?", ["실패한 쪽 다시 저장", "취소"], height: 226) != 0)
                             throw new InvalidOperationException("실패한 쪽은 서버에 저장되지 않았습니다: " + failures);
                         result = await jobs.RetryFailedAsync(snapshot, result);
                     }
@@ -648,7 +644,7 @@ public partial class MainWindow : Window
                 {
                     owner.IsDirty = true;
                     owner.Status = "로컬 저장 완료 · 서버 저장 미완료";
-                    MessageBox.Show(this, $"로컬 .smj 파일은 저장했습니다.\n서버에는 저장을 완료하지 못했습니다.\n\n{ex.Message}", "저장 결과", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    NoticeDialog.Choose(this, "서버에 저장하지 못했습니다.", $"로컬 .smj 파일은 저장했습니다. {ex.Message}", ["확인"], error: true, height: 226);
                     return false;
                 }
             }
@@ -661,7 +657,7 @@ public partial class MainWindow : Window
                 if (notice != owner.LastSyncNotice)
                 {
                     owner.LastSyncNotice = notice;
-                    MessageBox.Show(this, "서버 저장은 완료했지만 다음 항목은 현재 서버 계약에 없어 .smj 파일에만 보존됩니다. 서버에서 다시 열면 복원되지 않으니 .smj를 보관하세요.\n\n" + notice, "서버에 저장되지 않은 항목", MessageBoxButton.OK, MessageBoxImage.Information);
+                    NoticeDialog.Choose(this, "일부 항목은 .smj 파일에만 보존됩니다.", "서버 저장은 완료했지만 다음 항목은 현재 서버 계약에 없습니다. 서버에서 다시 열면 복원되지 않으니 .smj를 보관하세요.\n\n" + notice, ["확인"], height: 316);
                 }
             }
             return !owner.IsDirty;

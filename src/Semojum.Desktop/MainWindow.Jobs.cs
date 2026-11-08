@@ -19,7 +19,7 @@ public partial class MainWindow
     private bool HasOtherTabForJob(OpenDocument context) => context.Model.JobId is { } id
         && (openDocuments.Any(other => !ReferenceEquals(other, context) && other.Model.JobId == id) || HasClosedJobRecovery(context));
     // The same window and commands can be exercised against an isolated HTTP service in Windows smoke checks.
-    internal MainWindow(SemojumApiClient service) : this(smoke: true, testWithoutAccount: true)
+    internal MainWindow(SemojumApiClient service, bool startEmpty = false) : this(smoke: true, testWithoutAccount: true, startEmpty: startEmpty)
     { api = service; api.RefreshedIdentityAllowed = account => AutomaticLogin.IsSameDesktopArea(api.Account, account); api.RefreshRequiresIdentity = account => account.Role == "ROLE_ORG_ADMIN"; jobs = new(service); }
 
     private void CreditNotice_Close(object sender, RoutedEventArgs e) => session.CreditNotice = "";
@@ -63,17 +63,38 @@ public partial class MainWindow
                 }
                 if (api.Account is { Role: "ROLE_ORG_ADMIN" })
                 {
-                    if (!allowInstitution) return false;
-                    var institution = new InstitutionWindow(api, LogoutInstitutionAsync);
-                    await institution.ShowEmbeddedAsync(this);
-                    if (institution.LogoutRequested) continue;
-                    return false;
+                    if (!allowInstitution || !await ShowInstitutionAsync()) return false;
+                    continue;
                 }
                 RefreshAccount();
                 return api.Account is { } account && AutomaticLogin.IsEditorAllowed(account);
             }
         }
         finally { accountScreenGate.Release(); }
+    }
+
+    internal InstitutionWindow? Institution { get; private set; }
+    // An administrator cannot use the editor: after login the editor window is hidden and only the top-level
+    // 「기관 관리 - 누리닷」 window is shown. Its × ends the app; its logout returns to the login screen (true).
+    private async Task<bool> ShowInstitutionAsync()
+    {
+        var maximized = WindowState == WindowState.Maximized;
+        var institution = Institution = new InstitutionWindow(api, LogoutInstitutionAsync, OpenInstitutionMyPage) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
+        if (maximized) institution.WindowState = WindowState.Maximized;
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        institution.Closed += (_, _) => closed.TrySetResult();
+        institution.Show(); institution.Activate(); Hide();
+        await closed.Task; Institution = null;
+        if (resourcesReleased) return false;
+        if (institution.LogoutRequested) { Show(); return true; }
+        allowClose = true; Close(); return false;
+    }
+
+    private void OpenInstitutionMyPage(InstitutionWindow institution)
+    {
+        var workInfo = $"누리닷 {CurrentVersion.ToString(3)}\n운영체제: {Environment.OSVersion}";
+        var usage = new UsageDialog(api, workInfo, DesktopUsageActions.Create(api, workInfo) with { OpenInstitution = _ => institution.Activate() }) { Owner = institution };
+        if (usage.ShowDialog() == true && usage.LogoutRequested) _ = institution.LogoutAsync();
     }
 
     private async Task<bool> LogoutInstitutionAsync()
@@ -87,7 +108,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or System.IO.IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show("저장된 로그인 정보를 삭제하지 못해 로그아웃하지 않았습니다.\n" + ex.Message, "로그아웃");
+            NoticeDialog.Choose(Institution ?? (Window)this, "로그아웃하지 못했습니다.", "저장된 로그인 정보를 삭제하지 못했습니다. " + ex.Message, ["확인"], error: true);
             return false;
         }
     }
@@ -131,13 +152,31 @@ public partial class MainWindow
             {
                 var files = await UploadFileReader.ReadAsync(orderedFiles, documentLifetime.Token);
                 session.Status = "파일 업로드 중…";
-                var job = await jobs.UploadAsync(files, settings, documentLifetime.Token, dialog.FormId);
+                if (await UploadJobAsync(files, settings, dialog.FormId) is not { } job) return;
                 await LoadJobAsync(job.JobId, Path.GetFileNameWithoutExtension(orderedFiles[0]) + ".smj", files, uploadSettings: settings);
                 if (openDocument?.Model.JobId == job.JobId) openDocument.UploadPaths = orderedFiles;
             }
             finally { fileBusy = false; }
         }
         finally { uploadFlowBusy = false; }
+    }
+
+    // BE 2026-11-01: an encrypted PDF is refused without a job (JOB4018 no password, JOB4019 wrong password). Figma Case 3 asks for
+    // the document password and the same request is sent again with it. The password stays in memory only; cancelling stops the upload.
+    private async Task<JobCreated?> UploadJobAsync(IReadOnlyList<UploadFile> files, DocumentSession settings, string? formId)
+    {
+        string? password = null;
+        while (true)
+        {
+            try { return await jobs.UploadAsync(files, settings, documentLifetime.Token, formId, password); }
+            catch (SemojumApiException ex) when (ex.Code is "JOB4018" or "JOB4019" && files is [var pdf] && Path.GetExtension(pdf.FileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var prompt = FileNotices.EncryptedPdf(wrongPassword: ex.Code == "JOB4019"); prompt.Owner = this; prompt.ShowDialog();
+                password = prompt.TakePassword();
+                if (password is null) { session.Status = "암호가 걸린 PDF 올리기를 취소했습니다."; return null; }
+                session.Status = "파일 업로드 중…";
+            }
+        }
     }
 
     private async Task LoadJobAsync(string id, string title, IReadOnlyList<UploadFile>? originals = null, int? restorePage = null, DocumentSession? uploadSettings = null)
@@ -195,7 +234,6 @@ public partial class MainWindow
         }
         model.ErrorNotice = model.HasPendingServerPages || model.HasPendingRestart ? "서버 재개 결과 또는 요청 상태를 먼저 확인해 주세요. 확인 전에는 서버 저장을 할 수 없습니다." : "";
         var jobTranslator = new TranslationCoordinator(sidecar is null ? engine : new LocalBrailleEngine(sidecar, () => model.Options));
-        var started = System.Diagnostics.Stopwatch.StartNew(); var initialFinished = status.FinishedPages;
         void RememberRevision(EditorBlock b, int revision)
         {
             context.Translated[b] = revision;
@@ -213,13 +251,10 @@ public partial class MainWindow
                 ct.ThrowIfCancellationRequested();
                 if (!JobClient.ApplyReceivedStatus(model, status))
                     throw new InvalidDataException("현재 문서와 다른 작업의 상태는 적용할 수 없습니다.");
-                model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 변환 완료)" : "";
-                // Server completedPages already includes failed pages; the rate uses finished pages so failures neither
-                // count twice nor shorten the estimate a second time (C-02).
-                var finishedSinceOpen = status.FinishedPages - initialFinished;
-                var remainingSeconds = finishedSinceOpen > 0 ? started.Elapsed.TotalSeconds / finishedSinceOpen * status.RemainingPages : 0;
-                model.Progress = status.IsTerminal ? null : status.ToProgress(
-                    remainingSeconds > 0 ? $"잔여 약 {Math.Max(1, Math.Ceiling(remainingSeconds / 60))}분 (처리 속도 기준)" : "남은 시간 계산 중");
+                model.CreditNotice = status.CreditExhausted ? $"크레딧이 소진되었습니다. ({status.SucceededPages}/{status.TotalPages}쪽 완료)" : "";
+                // BE 2026-11-02: the server estimates the time left for the waiting and running pages (status estimatedRemainingSec,
+                // SSE queue_position.estimated_wait_sec). Progress inside a page is unknown, so the bar stays per page; no estimate hides the line.
+                model.Progress = status.IsTerminal ? null : status.ToProgress(ConversionProgress.RemainingLabel(status.EstimatedRemainingSec ?? events.EstimatedWaitSec));
                 model.Status = $"AI 변환 {status.FinishedPages}/{status.TotalPages}쪽 처리 · 성공 {status.SucceededPages} · 확인 필요 {status.FailedPages} · {status.Label}";
                 foreach (var page in status.Pages.Where(p => JobStatus.IsSucceededPage(p.Value) || JobStatus.IsFailedPage(p.Value)).OrderBy(p => p.Key))
                 {
@@ -285,6 +320,8 @@ public partial class MainWindow
                         foreach (var old in model.Blocks.Where(b => b.Page == page.Key).ToArray()) { if (model.ActiveBlock == old) model.ActiveBlock = null; model.Blocks.Remove(old); }
                         insertAt = model.Blocks.TakeWhile(b => b.Page < page.Key).Count();
                     }
+                    // The page's server report shows on its blocks as open warnings (blocks only; page-wide issues stay in the page status).
+                    ServerWarnings.Apply(result.Blocks, result.Quality ?? []);
                     foreach (var block in result.Blocks)
                     {
                         if (insertAt is { } at) { model.Blocks.Insert(at, block); insertAt = at + 1; model.ActiveBlock ??= block; } else model.Add(block);
@@ -413,8 +450,8 @@ public partial class MainWindow
 
     private void ShowCreditInquiry(NoticeDialog notice)
     {
-        if (notice.Choice is 0 or 1)
-            new PublicInquiryDialog(api, notice.Choice == 0 ? "크레딧 구매 문의" : null) { Owner = this }.ShowDialog();
+        if (notice.Choice == 0) new PublicInquiryDialog(api, "크레딧 구매 문의", PublicInquiryCategory.CreditPayment) { Owner = this }.ShowDialog();
+        else if (notice.Choice == 1) new PublicInquiryDialog(api) { Owner = this }.ShowDialog();
     }
 
     private async void ReviewPendingServerPages_Click(object sender, RoutedEventArgs e)
