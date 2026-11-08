@@ -16,6 +16,29 @@ internal static class WindowsMathDockChecks
 {
     internal static async Task RunAsync(Action<bool, string> check, string directory)
     {
+        // Actual expressions returned for the social-studies PDF. A successful parse alone did not detect missing Korean glyphs.
+        const string numeric = @"  \frac{3,420}{8,550} \times 100 = 40.0\%";
+        const string korean = @"  \text {득표율} (\%) = \frac {\text {득표수}}{\text {유효 투표수}} \times 100";
+        var fixture = new Semojum.Desktop.Controls.MathPreviewDock();
+        var renderer = (FormulaControl)typeof(Semojum.Desktop.Controls.MathPreviewDock)
+            .GetField("formula", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture)!;
+        foreach (var source in new[] { numeric, korean, numeric, korean, korean })
+        {
+            fixture.ShowFormula(source, true);
+            check(renderer.Formula == source && !renderer.HasError && renderer.Visibility == Visibility.Visible,
+                "The selected numeric or Korean formula renders successfully, including repeated selection");
+        }
+        // Force the original failure: Arial has no Korean glyph. The previous numeric drawing must be removed.
+        fixture.ShowFormula(numeric, true); renderer.SystemTextFontName = "Arial";
+        foreach (var attempt in new[] { 1, 2 })
+        {
+            fixture.ShowFormula(korean, true);
+            check(renderer.Visibility == Visibility.Collapsed && renderer.Formula == "",
+                $"A glyph-rendering failure clears the previous formula (attempt {attempt})");
+        }
+        renderer.SystemTextFontName = "Malgun Gothic"; fixture.ShowFormula(korean, true);
+        check(!renderer.HasError && renderer.Visibility == Visibility.Visible && renderer.Formula == korean,
+            "A supported Korean font restores the current formula after a rendering failure");
         var path = Path.Combine(directory, "math-dock-" + Guid.NewGuid().ToString("N") + ".smj");
         var model = new DocumentSession();
         model.Add(new EditorBlock { Id = 1, Page = 1, Source = "일반 문단" });

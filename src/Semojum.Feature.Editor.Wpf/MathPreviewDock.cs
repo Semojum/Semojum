@@ -11,7 +11,7 @@ namespace Semojum.Desktop.Controls;
 /// <summary>Read-only rendering of the selected formula; editing remains in the formula dialog.</summary>
 public sealed class MathPreviewDock : Border
 {
-    private readonly FormulaControl formula = new() { FontSize = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+    private readonly FormulaControl formula = new() { SystemTextFontName = "Malgun Gothic", FontSize = 40, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock error = new() { Text = "수식을 표시할 수 없습니다. LaTeX 원문을 확인해 주세요.", Foreground = Brushes.Firebrick, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed, HorizontalAlignment = HorizontalAlignment.Center };
     private readonly TextBox latex = new() { IsReadOnly = true, Height = 32, MinHeight = 32, Padding = new(11, 0, 11, 0), VerticalContentAlignment = VerticalAlignment.Center, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden };
     private readonly Button edit = new() { Content = "편집", Width = 44, Height = 24, MinWidth = 0, MinHeight = 0, Padding = new(0), ToolTip = "수식 편집기로 열기" };
@@ -44,7 +44,11 @@ public sealed class MathPreviewDock : Border
         try
         {
             WpfTeXFormulaParser.Instance.Parse(value);
-            formula.Formula = value; formula.Visibility = Visibility.Visible; error.Visibility = Visibility.Collapsed;
+            // Rendering errors are reported through HasError, not necessarily thrown by the parser.
+            // Clear first so a failed or repeated expression cannot retain the previous drawing.
+            formula.Formula = ""; formula.Formula = value;
+            if (formula.HasError) throw new InvalidOperationException("Formula rendering failed.");
+            formula.Visibility = Visibility.Visible; error.Visibility = Visibility.Collapsed;
         }
         catch (Exception)
         {
