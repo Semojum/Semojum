@@ -109,9 +109,11 @@ internal static class WindowsRequiredUpdateChecks
                 await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); if (window.IsVisible) window.Close();
             }
         }
+        // Cover the production response that blocked 0.9.2 before login: minimum 1.0.0, no download URL.
+        foreach (var metadata in new[] { "null", "{\"latestVersion\":\"1.0.0\",\"minSupportedVersion\":\"1.0.0\",\"downloadUrl\":null}" })
         {
             var handler = new Handler();
-            handler.Version.TrySetResult(Handler.Json("null"));
+            handler.Version.TrySetResult(Handler.Json(metadata));
             using var http = new HttpClient(handler);
             var window = new MainWindow(new SemojumApiClient(http)); window.Show();
             var loginUsable = false;
@@ -128,7 +130,7 @@ internal static class WindowsRequiredUpdateChecks
                 timer.Start();
                 var startup = (Task)typeof(MainWindow).GetMethod("StartAccountAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!;
                 await startup.WaitAsync(TimeSpan.FromSeconds(8));
-                check(loginUsable, "Startup displays a usable maximized login in the existing window");
+                check(loginUsable, $"Startup displays a usable maximized login in the existing window (metadata: {metadata})");
             }
             finally { timer.Stop(); await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); if (window.IsVisible) window.Close(); }
         }
