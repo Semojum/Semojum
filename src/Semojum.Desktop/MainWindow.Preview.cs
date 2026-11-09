@@ -75,6 +75,8 @@ public partial class MainWindow
         var generation = ++originalGeneration; var owner = session;
         OriginalEmpty.Visibility = Visibility.Visible;
         OriginalImage.Source = null; OriginalText.Text = "원본 미리보기 없음";
+        OriginalText.Visibility = Visibility.Visible;
+        OriginalImageGrid.Visibility = Visibility.Collapsed;
         OriginalSelection.Visibility = Visibility.Collapsed;
         if (!session.OriginalPages.TryGetValue(page, out var original)) return;
         if (original.Type == "text") { OriginalText.Text = string.Join("\n", original.Lines ?? []); FinishOriginalWheelTransition(owner, page, OriginalScroll); return; }
@@ -90,7 +92,9 @@ public partial class MainWindow
                 bitmap.DecodePixelWidth = 1800; bitmap.StreamSource = stream; bitmap.EndInit(); bitmap.Freeze(); image = bitmap;
             }
             if (generation != originalGeneration || owner != session) return;
-            OriginalImage.Source = image; OriginalText.Text = $"원본 {page}쪽";
+            OriginalImage.Source = image;
+            OriginalText.Text = ""; OriginalText.Visibility = Visibility.Collapsed;
+            OriginalImageGrid.Visibility = Visibility.Visible;
             var width = original.Width > 0 ? original.Width : image.PixelWidth;
             var height = original.Height > 0 ? original.Height : image.PixelHeight;
             OriginalImageGrid.Width = width; OriginalImageGrid.Height = height;

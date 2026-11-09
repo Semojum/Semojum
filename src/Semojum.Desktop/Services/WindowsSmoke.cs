@@ -496,7 +496,7 @@ internal static class WindowsSmoke
         window.Session.IsDirty = false;
         File.WriteAllLines(Path.Combine(directory, "checks.txt"), checks);
     }
-    private static byte[] PdfFixture()
+    internal static byte[] PdfFixture()
     {
         var b = new System.Text.StringBuilder("%PDF-1.4\n"); var offsets = new List<int> { 0 };
         var objects = new[] { "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R >>", "<< /Length 24 >>\nstream\n1 0 0 rg 0 0 200 200 re f\nendstream" };

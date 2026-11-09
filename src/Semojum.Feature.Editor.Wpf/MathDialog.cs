@@ -8,7 +8,7 @@ using WpfMath.Parsers;
 
 namespace Semojum.Desktop.Dialogs;
 
-public sealed class MathDialog : CompactDialog
+public sealed partial class MathDialog : CompactDialog
 {
     internal TextBox Input { get; } = new() { FontFamily = new("Consolas"), AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 80, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     internal TextBox BrailleInput { get; } = new() { FontSize = 22, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 90, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -21,41 +21,15 @@ public sealed class MathDialog : CompactDialog
     private int revision;
     private bool manuallyEdited, settingBraille;
     private readonly bool inlinePreview;
-    public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 510)
+    public MathDialog(Func<string, CancellationToken, Task<BrailleTranslation>> translate, string? latex = null, string? manualBraille = null, bool inlinePreview = false) : base("수식 편집기", 980, 600)
     {
         this.translate = translate; this.inlinePreview = inlinePreview;
         Input.FontFamily = (FontFamily)FindResource("MonoFont"); BrailleInput.FontFamily = (FontFamily)FindResource("BrailleFont");
-        var body = new DockPanel { Margin = new(8, 8, 8, 0) }; Body(body);
-        var toolbox = new Border { Height = 76, Background = new SolidColorBrush(Color.FromRgb(249, 249, 249)), BorderBrush = new SolidColorBrush(Color.FromRgb(209, 209, 209)), BorderThickness = new(1), Margin = new(0, 0, 0, 8) };
+        var body = new DockPanel { Margin = new(8, 8, 8, 0) };
+        Body(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        var toolbox = BuildToolbox();
         DockPanel.SetDock(toolbox, Dock.Top); body.Children.Add(toolbox);
-        SymbolButtons.Width = 432; SymbolButtons.HorizontalAlignment = HorizontalAlignment.Left; SymbolButtons.Margin = new(3);
-        toolbox.Child = SymbolButtons;
-        var symbols = new[] {
-            ("⅟", "분수", @"\frac{a}{b}"), ("√", "제곱근", @"\sqrt{x}"), ("x²", "거듭제곱", @"x^{2}"), ("x₂", "아래 첨자", @"x_{2}"),
-            ("∑", "합", @"\sum_{i=1}^{n} i"), ("∏", "곱", @"\prod_{i=1}^{n} i"), ("∫", "적분", @"\int_{a}^{b} x dx"), ("lim", "극한", @"\lim_{x\to 0} x"),
-            ("( )", "소괄호", @"\left(x\right)"), ("[ ]", "대괄호", @"\left[x\right]"), ("{", "중괄호", @"\left\{x\right\}"), ("≣", "행렬", @"\begin{pmatrix}a&b\\c&d\end{pmatrix}"),
-            ("±", "플러스마이너스", @"\pm"), ("≤", "작거나 같음", @"\leq"), ("∈", "원소", @"\in"), ("→", "오른쪽 화살표", @"\to"),
-            ("α", "알파", @"\alpha"), ("sin", "사인", @"\sin x"), ("∠", "각", @"\angle"), ("v⃗", "벡터", @"\vec{v}"),
-            ("⋯", "줄임표", @"\cdots"), ("㎡", "제곱미터", @"\mathrm{m}^{2}"), ("H₂O", "화학식", @"\mathrm{H}_{2}\mathrm{O}") };
-        void Insert(string value) { Input.SelectedText = value; Input.Focus(); }
-        foreach (var (label, description, value) in symbols)
-        {
-            var button = new Button { Content = label, Width = 34, Height = 32, Margin = new(0, 0, 2, 4), Padding = new(0), ToolTip = description,
-                Background = Brushes.White, BorderBrush = EditorModalDesign.Color("#D1D1D1") };
-            if (description == "벡터") button.FontFamily = new("Cambria Math");
-            System.Windows.Automation.AutomationProperties.SetName(button, description);
-            button.Click += (_, _) =>
-            {
-                foreach (Button other in SymbolButtons.Children) { other.Background = Brushes.White; other.BorderBrush = EditorModalDesign.Color("#D1D1D1"); }
-                button.Background = EditorModalDesign.Color("#EFF6FC"); button.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 95, 184)); Insert(value);
-            };
-            SymbolButtons.Children.Add(button);
-        }
-        var extra = new ContextMenu();
-        foreach (var (label, value) in new[] { ("로그", @"\log_{2} x"), ("cos", @"\cos x"), ("tan", @"\tan x"), ("π", @"\pi"), ("θ", @"\theta"), ("∞", @"\infty"), ("×", @"\times"), ("÷", @"\div"), ("≥", @"\geq"), ("≠", @"\neq") })
-        { var item = new MenuItem { Header = label }; item.Click += (_, _) => Insert(value); extra.Items.Add(item); }
-        toolbox.ContextMenu = extra; toolbox.ToolTip = "다른 수식 기호: 마우스 오른쪽 단추";
-        var panes = new Grid(); panes.ColumnDefinitions.Add(new() { Width = new(628) }); panes.ColumnDefinitions.Add(new() { Width = new(8) }); panes.ColumnDefinitions.Add(new() { Width = new(300) }); panes.ColumnDefinitions.Add(new());
+        var panes = new Grid(); panes.ColumnDefinitions.Add(new() { Width = new(2, GridUnitType.Star) }); panes.ColumnDefinitions.Add(new() { Width = new(8) }); panes.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
         body.Children.Add(panes); var left = new StackPanel(); panes.Children.Add(left);
         var preview = new FormulaControl { SystemTextFontName = "Malgun Gothic", FontSize = 28, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var formula = new Grid(); formula.Children.Add(preview);
