@@ -109,7 +109,7 @@ public partial class MainWindow
             FinishOriginalWheelTransition(owner, page, OriginalScroll);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is NotSupportedException or IOException or ArgumentException or System.Runtime.InteropServices.COMException)
+        catch (Exception ex) when (ex is NotSupportedException or IOException or InvalidDataException or ArgumentException or System.Runtime.InteropServices.COMException)
         { if (generation == originalGeneration && owner == session) { OriginalText.Text = "원본을 표시할 수 없습니다: " + ex.Message; FinishOriginalWheelTransition(owner, page, OriginalScroll); } }
     }
 }
