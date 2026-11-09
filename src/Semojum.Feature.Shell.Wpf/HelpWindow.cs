@@ -40,7 +40,7 @@ public sealed class HelpWindow : Window
             var assets = new[] { "help-min", "help-max", "help-close" };
             foreach (var (button, asset) in captionButtons.Children.OfType<Button>().Zip(assets))
             { button.Width = 46; button.Height = 32; button.Content = HelpIcon(asset); button.Background = Brushes.Transparent; button.BorderThickness = new Thickness(0); button.Template = EditorModalDesign.ButtonTemplate(typeof(Button)); }
-            if (heading.Children.OfType<Border>().FirstOrDefault() is { Child: TextBlock } logo) logo.Margin = new(12, 0, 6, 0);
+            if (heading.Children.OfType<Border>().FirstOrDefault() is { Child: SharpVectors.Converters.SvgViewbox } logo) logo.Margin = new(12, 0, 6, 0);
         }
         var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(12, 4, 0, 4) };
         var toolbarLayout = new DockPanel { LastChildFill = false };

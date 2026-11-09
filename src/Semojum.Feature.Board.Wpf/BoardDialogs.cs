@@ -26,8 +26,6 @@ internal static class BoardDesign
                 buttons.Margin = new(0);
                 foreach (var (button, asset) in buttons.Children.OfType<Button>().Zip(new[] { "caption-min", "caption-max", "caption-close" })) { button.Width = 46; button.Height = 32; button.Content = Icon(asset); }
             }
-            if (heading.Children.OfType<Border>().FirstOrDefault() is { } logo)
-            { logo.Width = 16; logo.CornerRadius = new(4); logo.Background = Brush("#005FB8"); logo.Margin = new(12, 0, 8, 0); if (logo.Child is TextBlock label) { label.Text = "S"; label.FontFamily = new FontFamily("Segoe UI Symbol"); } }
         }
         var shell = new DockPanel { Background = Brush("#F4F6F9") }; root.Children.Add(shell);
         var menu = new Menu { Height = 32, Background = Brush("#F3F3F3"), Padding = new(4, 0, 0, 0) };

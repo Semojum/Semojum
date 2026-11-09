@@ -213,8 +213,6 @@ public sealed partial class InstitutionWindow : CompactDialog
             foreach (var (button, name) in buttons.Children.OfType<Button>().Zip(new[] { "min", "max", "close" }))
             { button.Width = 46; button.Height = 32; button.Content = FigmaDialogElements.DesignIcon($"institution-caption-{name}.svg", 16, 16, "Semojum.Feature.Institution.Wpf"); }
         }
-        if (heading.Children.OfType<Border>().FirstOrDefault() is { } logo)
-        { logo.Width = 16; logo.CornerRadius = new(4); logo.Background = FigmaDialogElements.Brush("#005FB8"); logo.Margin = new(12, 0, 8, 0); if (logo.Child is TextBlock text) { text.Text = "S"; text.FontFamily = new FontFamily("Segoe UI Symbol"); } }
     }
     private static Border Card(string title, params UIElement[] children)
     {

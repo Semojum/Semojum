@@ -38,9 +38,9 @@ internal static class WindowsCaptionChecks
                     $"Editor {name} uses the exact Figma icon in its 46×32 caption button (actual {position.X:F1},{position.Y:F1}; icon {icon?.ActualWidth:F1}×{icon?.ActualHeight:F1}; bounds {icon?.Drawings?.Bounds})");
             }
             var logo = Descendants(window).OfType<Border>().FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == "EditorCaptionLogo");
-            check(logo is { Width: 16, Height: 16, CornerRadius.TopLeft: 4, Child: TextBlock { Text: "S" } }
-                && logo.Background is SolidColorBrush { Color: var color } && color == Color.FromRgb(0, 95, 184),
-                "Editor caption shows the 16px blue Figma S logo");
+            check(logo is { Width: 24, Height: 16, Child: SvgViewbox { Drawings.Bounds.IsEmpty: false } brand }
+                && brand.Source.ToString().EndsWith("/nuridot-symbol.svg", StringComparison.Ordinal) && window.Icon is not null,
+                "Editor caption renders the Nuridot symbol and the window has its app icon");
             window.Title = "문서 - 누리닷";
             check(Descendants(window).OfType<TextBlock>().Any(t => t.Text == "문서 - 누리닷"),
                 "Editor caption retains the real document title and app name");

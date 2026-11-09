@@ -110,7 +110,7 @@ internal static class WindowsLoginDesignChecks
                 if (remember)
                 {
                     var icons = children.OfType<SharpVectors.Converters.SvgViewbox>().ToArray();
-                    foreach (var (asset, size) in new[] { ("login-logo.svg", 96d), ("login-check.svg", 16d), ("login-bell.svg", 16d), ("login-mail.svg", 16d),
+                    foreach (var (asset, size) in new[] { ("login-check.svg", 16d), ("login-bell.svg", 16d), ("login-mail.svg", 16d),
                         ("login-caption-min.svg", 16d), ("login-caption-max.svg", 16d), ("login-caption-close.svg", 16d) })
                     {
                         var icon = icons.SingleOrDefault(i => i.Source?.ToString().EndsWith("/" + asset, StringComparison.Ordinal) == true);
@@ -118,6 +118,10 @@ internal static class WindowsLoginDesignChecks
                             && icon.ActualWidth > 0 && icon.ActualWidth <= size && icon.ActualHeight > 0 && icon.ActualHeight <= size,
                             $"Login renders final Figma asset in its intended size: {asset}");
                     }
+                    var brand = icons.SingleOrDefault(icon => icon.Source?.ToString().EndsWith("/nuridot-logo.svg", StringComparison.Ordinal) == true);
+                    check(brand is { Drawings.Bounds.IsEmpty: false, Width: 280, Height: 80, Stretch: Stretch.Uniform }
+                        && brand.ActualWidth > 0 && brand.ActualHeight > 0 && AutomationProperties.GetName(brand) == "누리닷 로고",
+                        "Login renders the supplied Nuridot wordmark at its original aspect ratio");
                     foreach (var (id, label) in new[] { ("LoginCaptionmin", "최소화"), ("LoginCaptionmax", "최대화 / 복원"), ("LoginCaptionclose", "닫기") })
                     {
                         var caption = children.OfType<Button>().SingleOrDefault(b => AutomationProperties.GetAutomationId(b) == id);

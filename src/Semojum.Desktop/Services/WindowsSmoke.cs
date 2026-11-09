@@ -100,9 +100,9 @@ internal static class WindowsSmoke
         window.DetachedPane.Editor.Document.Insert(0, "⠿");
         Check(block.Braille.StartsWith("⠿") && block.HasManualBraille, "Detached edits update model and manual-correction state");
         Check(window.DetachedWindow!.Title.EndsWith(" - 누리닷", StringComparison.Ordinal)
-            && Descendants(window.DetachedWindow).OfType<Border>().Any(b => b.Child is TextBlock { Text: "S" } && b.Width == 16)
+            && Descendants(window.DetachedWindow).OfType<Border>().Any(b => b.Child is SharpVectors.Converters.SvgViewbox icon && icon.Source.ToString().EndsWith("/nuridot-symbol.svg", StringComparison.Ordinal) && b.Width == 24)
             && Descendants(window.DetachedWindow).OfType<Button>().Count(b => b.Content is SharpVectors.Converters.SvgViewbox && b.Width == 46 && b.Height == 32) >= 3,
-            "Detached braille keeps its '- 누리닷' title after edits and uses the Figma S logo with 46×32 caption icons");
+            "Detached braille keeps its '- 누리닷' title after edits and uses the Nuridot symbol with 46×32 caption icons");
         window.ToggleDetached();
         Check(window.Braille.Editor.Text.StartsWith("⠿"), "Reattached panel retains detached edits");
         var versionBeforeDetach = window.Session.ChangeVersion;
