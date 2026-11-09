@@ -69,6 +69,8 @@ internal static class WindowsFocusedChecks
                     await WindowsRequiredUpdateChecks.RunAsync(Check);
                     break;
                 case "editor":
+                    await WindowsMathTemplateChecks.RunAsync(Check);
+                    await WindowsOriginalWheelChecks.RunAsync(Check);
                     await WindowsRegionSelectionChecks.RunAsync(Check, directory);
                     await WindowsMenuDesignChecks.RunAsync(directory, Check);
                     await WindowsReviewMarginChecks.RunAsync(Check);

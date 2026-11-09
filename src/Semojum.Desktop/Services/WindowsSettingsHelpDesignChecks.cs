@@ -82,8 +82,9 @@ internal static class WindowsSettingsHelpDesignChecks
             check(tree.SelectedItem is TreeViewItem { Header: "점자 직접 고치기" }, "Help highlights the currently opened article in the navigation tree");
             check(tree.Items.OfType<TreeViewItem>().Select(b => b.Header as string).SequenceEqual(["시작하기", "문서 변환하기", "결과 편집하기", "메뉴별 기능", "양식과 꼬리말", "마이페이지와 크레딧", "문제 해결", "단축키 한눈에"]),
                 "Help contents follow the final Figma table of contents");
-            check(Descendants(help).OfType<TextBlock>().Any(t => t.Text == "ND" && t.Parent is Border { Width: 18, Background: SolidColorBrush logo } && logo.Color == Color.FromRgb(15, 123, 15)),
-                "Help title bar uses the final ND logo");
+            check(Descendants(help).OfType<SharpVectors.Converters.SvgViewbox>().Any(icon =>
+                icon.Source?.ToString().EndsWith("/nuridot-symbol.svg", StringComparison.Ordinal) == true && icon.Drawings is { Bounds.IsEmpty: false }),
+                "Help title bar renders the Nuridot symbol");
             var selected = (TreeViewItem)tree.SelectedItem;
             check(selected.Template.FindName("TopicSurface", selected) is Border surface && Math.Abs(surface.ActualWidth - tree.ActualWidth) <= 1, "Selected help topic highlight spans the full navigation width");
             var reviewLink = reader.Document.Blocks.OfType<Paragraph>().SelectMany(p => p.Inlines.OfType<Hyperlink>())

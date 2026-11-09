@@ -117,13 +117,13 @@ internal static class WindowsFooterFormulaDesignChecks
         try
         {
             math.UpdateLayout(); math.RefreshAsync().GetAwaiter().GetResult();
-            check(math.Width == 980 && math.Height == 510 && math.BrailleInput.Text == "⠿" && math.Edited, "Math editor Figma size preserves manual braille");
+            check(math.Width == 980 && math.Height == 600 && math.BrailleInput.Text == "⠿" && math.Edited, "Expanded math editor preserves manual braille");
             math.Input.Text = "x+2"; math.RefreshAsync().GetAwaiter().GetResult();
             check(math.BrailleInput.Text == "⠿" && math.Edited, "Changing LaTeX does not replace manual braille"); CheckIcons(math, check);
             var fraction = math.SymbolButtons.Children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "분수");
             var root = math.SymbolButtons.Children.OfType<Button>().Single(b => AutomationProperties.GetName(b) == "제곱근");
             static bool ColorIs(Brush? brush, byte r, byte g, byte b) => brush is SolidColorBrush solid && solid.Color == Color.FromRgb(r, g, b);
-            check(math.SymbolButtons.Parent is Border toolbox && ColorIs(toolbox.Background, 249, 249, 249) && ColorIs(toolbox.BorderBrush, 209, 209, 209),
+            check(math.SymbolButtons.Parent is StackPanel { Parent: Border toolbox } && ColorIs(toolbox.Background, 249, 249, 249) && ColorIs(toolbox.BorderBrush, 209, 209, 209),
                 "The math toolbox uses the final Figma #F9F9F9 fill and #D1D1D1 border");
             check(ColorIs(fraction.Background, 255, 255, 255) && ColorIs(fraction.BorderBrush, 209, 209, 209), "An unselected math symbol uses the Figma white fill and gray border");
             fraction.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

@@ -65,9 +65,13 @@ public sealed class AccountDialog : Window
         {
             Grid.SetRow(child, row); if (inset && child is FrameworkElement element) element.Margin = new(59, 0, 59, 0); fields.Children.Add(child);
         }
-        var logo = DesignIcon("login-logo.svg", 96); logo.HorizontalAlignment = HorizontalAlignment.Center;
-        AutomationProperties.SetName(logo, "누리닷 로고"); Place(logo, 1, false);
-        Place(new TextBlock { Text = "누리닷", FontSize = 28, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center }, 3, false);
+        var logo = new SvgViewbox
+        {
+            Source = new Uri("pack://application:,,,/Semojum.UI.Common;component/Assets/Brand/nuridot-logo.svg"),
+            Width = 280, Height = 80, Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+        };
+        AutomationProperties.SetName(logo, "누리닷 로고"); Place(logo, 1, false); Grid.SetRowSpan(logo, 3);
         Place(new TextBlock { Text = "아이디", FontSize = 12, Foreground = Brush("#5F5F5F") }, 5);
         var login = new TextBox { BorderThickness = new(0), Background = Brushes.Transparent, Padding = new(11, 0, 11, 0), VerticalContentAlignment = VerticalAlignment.Center };
         AutomationProperties.SetName(login, "아이디"); Place(InputField(login), 7);

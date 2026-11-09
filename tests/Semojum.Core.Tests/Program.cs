@@ -4,6 +4,7 @@ if (args.Contains("--sidecar-fixture")) return await IntegrationChecks.RunFixtur
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("Math templates wrap selections, select editable slots and delimit commands", MathTemplateChecks.RunAsync),
     ("Board feature retains its last loaded state on failure and cancellation and builds the notice and answered lists", FeatureBoardChecks.RunAsync),
     ("Decomposed Korean filenames display composed while keeping their actual path", FileNameNormalizationChecks.RunAsync),
     ("Navigation validates absolute, relative, missing and overflow page numbers", () => Sync(() =>

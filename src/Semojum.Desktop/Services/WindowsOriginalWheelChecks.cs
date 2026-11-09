@@ -124,6 +124,29 @@ internal static class WindowsOriginalWheelChecks
             check(previous.Handled && model.ActiveBlock?.Page == 1 && window.OriginalText.Text.StartsWith("첫째 쪽 원본", StringComparison.Ordinal)
                 && window.OriginalScroll.VerticalOffset >= window.OriginalScroll.ScrollableHeight - 1,
                 "Actual original rendering opens the previous page at its bottom after wheel navigation");
+
+            model.OriginalFiles["preview.pdf"] = WindowsSmoke.PdfFixture();
+            model.OriginalPages[1] = new OriginalPage("pdf", "preview.pdf");
+            void Show(int page) => typeof(MainWindow).GetMethod("ShowOriginal", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(window, [page]);
+            Show(1);
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (window.OriginalImage.Source is null && DateTime.UtcNow < deadline) await Task.Delay(25);
+            await SettleAsync(window);
+            var imageBounds = window.OriginalImage.TransformToAncestor(window.OriginalScroll)
+                .TransformBounds(new Rect(0, 0, window.OriginalImage.ActualWidth, window.OriginalImage.ActualHeight));
+            check(window.OriginalImage.Source is not null && window.OriginalText.Visibility == Visibility.Collapsed &&
+                window.OriginalText.Text.Length == 0 && Math.Abs(imageBounds.Width - window.OriginalScroll.ViewportWidth) < 2,
+                "PDF fills the original viewport width without a redundant page caption or caption margin");
+            Show(2); await SettleAsync(window);
+            check(window.OriginalText.IsVisible && window.OriginalText.Text.StartsWith("둘째 쪽 원본", StringComparison.Ordinal) &&
+                window.OriginalImageGrid.Visibility == Visibility.Collapsed,
+                "Switching from PDF to text restores the original text without a stale image area");
+            model.OriginalFiles["broken.pdf"] = "invalid PDF"u8.ToArray();
+            model.OriginalPages[1] = new OriginalPage("pdf", "broken.pdf");
+            Show(1); deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!window.OriginalText.Text.StartsWith("원본을 표시할 수 없습니다", StringComparison.Ordinal) && DateTime.UtcNow < deadline) await Task.Delay(25);
+            check(window.OriginalText.IsVisible && window.OriginalText.Text.StartsWith("원본을 표시할 수 없습니다", StringComparison.Ordinal),
+                "A failed PDF still displays its error after removal of the page caption");
         }
         finally { await window.ReleaseResourcesAsync(); window.PrepareSmokeShutdown(); window.Close(); }
     }

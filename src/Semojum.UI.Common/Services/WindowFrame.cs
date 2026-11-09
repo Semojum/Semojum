@@ -54,13 +54,13 @@ public static class WindowFrame
         {
             Caption("—", "최소화", () => SystemCommands.MinimizeWindow(window), "min");
             Caption("□", "최대화 / 복원", () => { if (window.WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(window); else SystemCommands.MaximizeWindow(window); }, "max");
-            // Figma: the main family shows a 16px rounded "S" (#005FB8); help shows an 18×16 square "ND" (#0F7B0F).
-            var logo = new Border { Width = help ? 18 : 16, Height = 16,
-                CornerRadius = help ? new(0) : new(4),
-                Background = new SolidColorBrush(help ? Color.FromRgb(15, 123, 15) : Color.FromRgb(0, 95, 184)),
-                Margin = new(12, 0, 8, 0),
-                Child = new TextBlock { Text = help ? "ND" : "S", FontFamily = new FontFamily("Segoe UI Symbol"), FontSize = 12,
-                    Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center } };
+            var logo = new Border { Width = 24, Height = 16, Margin = new(12, 0, 8, 0),
+                Child = new SvgViewbox
+                {
+                    Source = new Uri("pack://application:,,,/Semojum.UI.Common;component/Assets/Brand/nuridot-symbol.svg"),
+                    Width = 24, Height = 16, Stretch = Stretch.Uniform
+                } };
+            System.Windows.Automation.AutomationProperties.SetName(logo, "누리닷 로고");
             if (mainEditor) System.Windows.Automation.AutomationProperties.SetAutomationId(logo, "EditorCaptionLogo");
             DockPanel.SetDock(logo, Dock.Left); heading.Children.Add(logo);
         }

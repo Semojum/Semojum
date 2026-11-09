@@ -527,11 +527,6 @@ public sealed class UsageDialog : CompactDialog
                 button.Width = 46; button.Height = 32; button.Content = new SvgViewbox { Source = new Uri($"pack://application:,,,/Semojum.Feature.Usage.Wpf;component/Assets/Figma/account-caption-{name}.svg"), Width = 16, Height = 16, Stretch = Stretch.None };
             }
         }
-        if (heading.Children.OfType<Border>().FirstOrDefault() is { } logo)
-        {
-            logo.Width = 16; logo.CornerRadius = new(4); logo.Background = ColorBrush("#005FB8"); logo.Margin = new(12, 0, 8, 0);
-            if (logo.Child is TextBlock text) { text.Text = "S"; text.FontFamily = new FontFamily("Segoe UI Symbol"); }
-        }
     }
     /// <summary>A 상세 내역 row from /api/users/usage/credit-history: 구분 is the server's USE (사용) or CHARGE (충전); 잔액 is the institution balance after the row (— without an institution).</summary>
     internal sealed record BillingRow(string Date, string Kind, string Description, string Pages, string Credits, string Balance);
