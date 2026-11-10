@@ -63,6 +63,7 @@ internal static class WindowsFocusedChecks
                 case "account":
                     await WindowsAccountChecks.RunAsync(Check);
                     WindowsLoginDesignChecks.Run(Check);
+                    await WindowsLoginLegalChecks.RunAsync(Check, directory);
                     await WindowsAccountChecks.CheckLogoutCancellationAsync(Check);
                     await WindowsAccountChecks.CheckRoleChangeAsync(Check);
                     await WindowsToolbarAccountChecks.RunAsync(Check);

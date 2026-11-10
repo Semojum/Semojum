@@ -90,6 +90,27 @@ public sealed class AccountDialog : Window
             Height = 20, Margin = new(59, 0, 59, 0), FontSize = 12, VerticalContentAlignment = VerticalAlignment.Center, Style = RememberStyle() };
         AutomationProperties.SetName(remember, "로그인 상태 유지"); Place(remember, 16, false);
         if (credentials is null) remember.ToolTip = "이 창에서는 로그인 정보를 저장하지 않습니다.";
+        var legalLinks = new Grid { Height = 20, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 8, 0, 0) };
+        Button LegalLink(string title, LegalDocumentKind kind, double left)
+        {
+            var button = new Button
+            {
+                Content = new TextBlock { Text = title, TextDecorations = TextDecorations.Underline, FontSize = 12, Foreground = Brushes.Black },
+                Height = 20, MinHeight = 0, MinWidth = 0, Padding = new(0), Margin = new(left, 0, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                Background = Brushes.Transparent, BorderBrush = Brushes.Transparent, Style = (Style)FindResource("ToolButton")
+            };
+            AutomationProperties.SetName(button, title); AutomationProperties.SetAutomationId(button, "LoginLegal" + kind);
+            button.Click += (_, _) =>
+            {
+                try { new LegalDocumentDialog(kind) { Owner = Window.GetWindow(screen) ?? this }.ShowDialog(); }
+                finally { button.Focus(); }
+            };
+            return button;
+        }
+        legalLinks.Children.Add(LegalLink("이용약관", LegalDocumentKind.Terms, 88));
+        legalLinks.Children.Add(LegalLink("개인정보 처리방침", LegalDocumentKind.Privacy, 257));
+        Place(legalLinks, 17, false);
         var links = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new(0, 40, 0, 0) };
         Button Link(string label, string icon, Action action)
         {
