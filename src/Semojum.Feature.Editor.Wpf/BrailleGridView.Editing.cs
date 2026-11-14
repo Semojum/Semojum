@@ -41,6 +41,46 @@ public sealed partial class BrailleGridView
         linkedRanges = ranges.ToArray(); LinkedBlocks = ranges.Select(r => r.Block).Distinct().ToArray();
         foreach (var block in LinkedBlocks) block.PropertyChanged += LinkedBlockChanged;
         InvalidateFaces();
+        if (ranges.Count > 0) RevealBlock(ranges[0].Block, ranges[0].Start);
+    }
+    internal bool RevealBlock(EditorBlock block, int offset)
+    {
+        if (!CoordinatesCurrent) return false;
+        (BrailleGridFace Face, int Row)? target = null;
+        foreach (var face in Items.OfType<BrailleGridFace>())
+        {
+            for (var row = 0; row < face.Rows.Length; row++)
+            {
+                if (!face.Rows[row].Any(c => c?.Block == block)) continue;
+                target = (face, row);
+                if (face.Rows[row].Any(c => c?.Block == block && c.Offset >= offset))
+                { target = (face, row); goto Found; }
+            }
+        }
+        Found:
+        if (target is not { } found)
+        {
+            // Empty new blocks have no engine coordinates until text is entered.
+            // Reveal their insertion boundary without inventing editable cells.
+            if (block.Braille.Length != 0 || !blocks.Contains(block)) return false;
+            var represented = Items.OfType<BrailleGridFace>().SelectMany(f => f.Rows).SelectMany(r => r)
+                .Where(c => c is not null).Select(c => c!.Block).ToHashSet();
+            var before = blocks.TakeWhile(b => b != block).LastOrDefault(represented.Contains);
+            if (before is not null) return RevealBlock(before, before.Braille.Length);
+            var after = blocks.SkipWhile(b => b != block).Skip(1).FirstOrDefault(represented.Contains);
+            return after is not null && RevealBlock(after, 0);
+        }
+        ScrollIntoView(found.Face); UpdateLayout();
+        if (ItemContainerGenerator.ContainerFromItem(found.Face) is not DependencyObject container || FindFace(container) is not { } visual) return false;
+        visual.RevealRow(found.Row);
+        return true;
+    }
+    private static Face? FindFace(DependencyObject root)
+    {
+        if (root is Face face) return face;
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+            if (FindFace(System.Windows.Media.VisualTreeHelper.GetChild(root, i)) is { } child) return child;
+        return null;
     }
     private void LinkedBlockChanged(object? sender, PropertyChangedEventArgs e)
     {

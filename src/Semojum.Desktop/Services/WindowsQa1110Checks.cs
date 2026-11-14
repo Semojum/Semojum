@@ -34,6 +34,10 @@ internal static class WindowsQa1110Checks
                 host.UpdateLayout();
                 var scroll = Descendants(grid).OfType<ScrollViewer>().First();
                 Verify(scroll.ScrollableHeight > 0, $"QA1110: a single 26-row face can scroll at font {size} (extent={scroll.ExtentHeight}, viewport={scroll.ViewportHeight})");
+                scroll.ScrollToTop(); host.UpdateLayout();
+                grid.SetLinkedRanges([new BlockSpan(block, 50, 1)]);
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); host.UpdateLayout();
+                Verify(scroll.VerticalOffset > 100, "QA1110: linking the final row scrolls inside a tall braille face");
                 scroll.ScrollToEnd();
                 await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
                 host.UpdateLayout();
@@ -107,6 +111,66 @@ internal static class WindowsQa1110Checks
                 "QA1110: new text document shows original, text and braille panels");
         }
         finally { window.PrepareSmokeShutdown(); window.Close(); }
+        await using var navigationEngine = EngineRuntime.Create();
+        var navigation = new MainWindow(smoke: true, testWithoutAccount: true, startEmpty: true) { ShowInTaskbar = false };
+        navigation.Show();
+        try
+        {
+            var model = navigation.Session;
+            model.Blocks.Clear(); model.ActiveBlock = null;
+            var first = new EditorBlock { Id = 1, Page = 1, Source = "첫 줄\n끝 줄", Braille = string.Join("\n", Enumerable.Repeat("⠁", 80)) };
+            var last = new EditorBlock { Id = 2, Page = 1, Source = "마지막 블록", Braille = "⠃", HasManualBraille = true };
+            first.Translation = BrailleTranslation.Plain(first.Braille) with
+            {
+                SourceText = first.Source,
+                SourceLineMap = [new(0, 3, 0, 2), new(4, 7, 158, 159)],
+                SourceMapStamp = new(first.SourceRevision, first.BrailleRevision, first.MetadataRevision)
+            };
+            model.Add(first); model.Add(last); model.ActiveBlock = first;
+            navigation.PageEditor.Editor.Focus();
+            var grid = navigation.Braille.GridView;
+            async Task Settle()
+            {
+                await Task.Delay(150);
+                for (var i = 0; !grid.CoordinatesCurrent && i < 500; i++) await Task.Delay(20);
+                await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+                navigation.UpdateLayout();
+            }
+            await Settle();
+            var scroll = Descendants(grid).OfType<ScrollViewer>().First();
+            scroll.ScrollToTop(); navigation.UpdateLayout();
+            navigation.PageEditor.Editor.CaretOffset = 4;
+            await Settle();
+            Verify(RowVisible(first, 158), "QA1110: moving source caret within one block reveals its mapped braille row");
+            scroll.ScrollToTop(); navigation.UpdateLayout();
+            navigation.PageEditor.Editor.CaretOffset = navigation.PageEditor.Editor.Text.IndexOf(last.Source, StringComparison.Ordinal);
+            await Settle();
+            Verify(model.ActiveBlock == last && RowVisible(last, 0), "QA1110: source caret selects and reveals a later block");
+            scroll.ScrollToTop(); navigation.UpdateLayout();
+            var localEngine = new Semojum.Core.Integration.LocalBrailleEngine(navigationEngine);
+            navigation.Braille.ComposeGridAsync = owner => localEngine.ComposeAsync(SmjFile.Snapshot(owner, false).Manifest);
+            await navigation.AddBlockAsync();
+            await Settle();
+            Verify(model.ActiveBlock is { } added && added != last && model.Blocks.Count == 3 && grid.CoordinatesCurrent && RowVisible(last, last.Braille.Length),
+                $"QA1110: new block is revealed after braille grid refresh (current={grid.CoordinatesCurrent}, active={model.ActiveBlock?.Id}, faces={grid.Items.Count}, ids={string.Join(",", grid.Items.OfType<BrailleGridFace>().SelectMany(f => f.Rows).SelectMany(r => r).Where(c => c is not null).Select(c => c!.Block.Id).Distinct())}, status={model.Status})");
+            Verify(navigation.PageEditor.Editor.IsKeyboardFocusWithin, "QA1110: adding a block retains source editor keyboard focus");
+            bool RowVisible(EditorBlock block, int offset)
+            {
+                foreach (var face in grid.Items.OfType<BrailleGridFace>())
+                {
+                    var row = Array.FindIndex(face.Rows, cells => cells.Any(cell => cell?.Block == block && cell.Offset == offset));
+                    if (row < 0 || grid.ItemContainerGenerator.ContainerFromItem(face) is not DependencyObject container) continue;
+                    var visual = Descendants(container).OfType<FrameworkElement>().FirstOrDefault(e => e.GetType().Name == "Face");
+                    if (visual is null) continue;
+                    var height = grid.FontSize * 28 / 22;
+                    var top = visual.TransformToAncestor(scroll).Transform(new Point(0, row * height)).Y;
+                    return top >= -.5 && top + height <= scroll.ViewportHeight + .5;
+                }
+                return false;
+            }
+        }
+        finally { navigation.PrepareSmokeShutdown(); navigation.Close(); }
+        await WindowsPanelWheelChecks.RunAsync(Verify);
         await WindowsQa1110BoardChecks.RunAsync(Verify);
         await WindowsQa1110DraftChecks.RunAsync(Verify);
         await WindowsVisualPolicyChecks.RunAsync(Verify);

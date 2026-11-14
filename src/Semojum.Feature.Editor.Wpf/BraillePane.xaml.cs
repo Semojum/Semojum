@@ -129,6 +129,7 @@ public partial class BraillePane : UserControl, IDisposable
             selectedFace = GridView.CaretCoordinates?.Face;
             RefreshFacePageBar();
             RefreshPositionLabel();
+            if (pendingReveal is { } target && GridView.RevealBlock(target, target.BrailleCaret)) pendingReveal = null;
             GridRefreshed?.Invoke();
         }
         catch (Exception ex)
@@ -146,11 +147,13 @@ public partial class BraillePane : UserControl, IDisposable
     }
     private void GridToggle_Click(object sender, RoutedEventArgs e)
     { GridView.Visibility = GridToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed; GridHeight.Height = GridToggle.IsChecked == true ? new GridLength(2, GridUnitType.Star) : new GridLength(0); }
+    private EditorBlock? pendingReveal;
     private void SwitchBlock()
     {
         chord.Reset();
         if (active is not null) active.PropertyChanged -= BlockChanged;
         active = session?.ActiveBlock;
+        if (!GridView.IsKeyboardFocusWithin) pendingReveal = active;
         if (active is not null && documents is not null)
         {
             switchingBlock = true;
@@ -164,6 +167,7 @@ public partial class BraillePane : UserControl, IDisposable
             finally { switchingBlock = false; }
         }
         RefreshIndicators();
+        if (pendingReveal is { } target && GridView.RevealBlock(target, target.BrailleCaret)) pendingReveal = null;
     }
     private void BlockChanged(object? sender, PropertyChangedEventArgs e) => RefreshIndicators();
     private void RefreshIndicators()
@@ -227,6 +231,6 @@ public partial class BraillePane : UserControl, IDisposable
         foreach (var b in gridBlocks) { b.PropertyChanged -= GridBlockChanged; b.ReviewMarks.CollectionChanged -= GridReviewsChanged; }
         gridBlocks.Clear();
         if (active is not null) active.PropertyChanged -= BlockChanged;
-        chord.Reset(); session = null; gridPending = false; gridVersion = -1; GridView.ResetSelection();
+        chord.Reset(); session = null; pendingReveal = null; gridPending = false; gridVersion = -1; GridView.ResetSelection();
     }
 }

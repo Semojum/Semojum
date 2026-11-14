@@ -57,6 +57,7 @@ public partial class MainWindow
             if (decision == ManualEditDecision.Keep) translatedRevisions[spans[0].Block] = spans[0].Block.SourceRevision;
             QueuePreview(decision != ManualEditDecision.Keep);
         };
+        PageEditor.Editor.PreviewMouseWheel += SourceEditor_MouseWheel;
         PageEditor.Editor.GotKeyboardFocus += (_, _) => SetActiveEditor(PageEditor.Editor);
         PageEditor.Editor.PreviewMouseDown += (_, _) => { ClearOriginalRegion(); RefreshLinkedSource(); };
         PageEditor.Editor.PreviewKeyDown += (_, _) => { ClearOriginalRegion(); RefreshLinkedSource(); };

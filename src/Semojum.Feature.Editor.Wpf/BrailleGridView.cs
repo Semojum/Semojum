@@ -242,6 +242,7 @@ public sealed partial class BrailleGridView : ListBox
         private double GutterEdge => NumberWidth + Math.Max(MinimumMarkerArea, (Owner is { } owner && Data is { } face ? Enumerable.Range(0, face.Rows.Length).Select(row =>
             (owner.MarkersFor(face).TryGetValue(row, out var m) ? (m.Memo ? 1 : 0) + (m.Review ? 1 : 0) : 0) + owner.ManualReviewKinds(face, row).Length).DefaultIfEmpty(0).Max() : 0) * MarkerSize + 1);
         private double TextLeft => GutterEdge + TextInset;
+        internal void RevealRow(int row) => BringIntoView(new Rect(0, row * CellHeight, 1, CellHeight));
         private double CellWidth => (Owner?.FontSize ?? 22) * 16 / 22;
         private double CellHeight => (Owner?.FontSize ?? 22) * 28 / 22;
         protected override Size MeasureOverride(Size availableSize) => new(Math.Max(120, TextLeft + (Data?.Rows[0].Length ?? 32) * CellWidth + 1), (Data?.Rows.Length ?? 26) * CellHeight + 1);
