@@ -50,7 +50,7 @@ internal static class WindowsOwnedModalChecks
                     nested = new NoticeDialog("검증", "중첩 대화상자", ["확인"]) { Owner = range }; Trace("nested-created");
                     nested.Loaded += (_, _) => nested.Dispatcher.BeginInvoke(() =>
                     {
-                        try { var childContent = (UIElement)range.Content; var childLayer = AdornerLayer.GetAdornerLayer(childContent);
+                        try { check(!nested.ShowInTaskbar && GetWindow(new WindowInteropHelper(nested).Handle, 4) == new WindowInteropHelper(range).Handle, "QA1110: nested modal retains its immediate native owner without taskbar entry"); var childContent = (UIElement)range.Content; var childLayer = AdornerLayer.GetAdornerLayer(childContent);
                             nestedSeen = childLayer?.GetAdorners(childContent)?.Any(a => AutomationProperties.GetAutomationId(a) == "FigmaModalBackdrop") == true; }
                         catch (Exception ex) { check(false, "Nested backdrop inspection: " + ex.Message); }
                         finally { Trace("nested-close"); nested.Close(); }
@@ -83,7 +83,7 @@ internal static class WindowsOwnedModalChecks
             var pickerWatchdog = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) }; pickerWatchdog.Tick += (_, _) => { Trace("picker-timeout"); pickerWatchdog.Stop(); picker.Close(); };
             Trace("picker-show"); pickerWatchdog.Start(); picker.ShowDialog(); pickerWatchdog.Stop(); Trace("picker-returned"); check(pickerUndimmed, "The separately designed form picker is not dimmed as an editor modal");
             var modeless = new ExportRangeDialog([1], null) { Owner = owner }; modeless.Show(); Trace("modeless-shown");
-            try { check(ownerLayer?.GetAdorners(content)?.Any(a => AutomationProperties.GetAutomationId(a) == "FigmaModalBackdrop") != true, "A modeless window does not add a modal backdrop"); }
+            try { check(!modeless.ShowInTaskbar && GetWindow(new WindowInteropHelper(modeless).Handle, 4) == new WindowInteropHelper(owner).Handle, "QA1110: modeless dialog retains native owner without taskbar entry"); check(ownerLayer?.GetAdorners(content)?.Any(a => AutomationProperties.GetAutomationId(a) == "FigmaModalBackdrop") != true, "A modeless window does not add a modal backdrop"); }
             finally { modeless.Close(); }
         }
         finally { Trace("owner-closing"); owner.Close(); }

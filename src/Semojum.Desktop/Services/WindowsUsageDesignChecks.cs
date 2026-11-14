@@ -17,6 +17,7 @@ internal static class WindowsUsageDesignChecks
 {
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        await WindowsRecentJobChecks.RunAsync(check);
         var fixture = new Fixture(); using var http = new HttpClient(fixture); var api = new SemojumApiClient(http);
         await api.LoginAsync("fixture", "fixture");
         var dialog = new UsageDialog(api, actions: DesktopUsageActions.Create(api, "")); dialog.Show();
