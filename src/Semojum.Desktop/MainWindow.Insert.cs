@@ -24,6 +24,14 @@ public partial class MainWindow
     private BrailleTranslation? dockTranslation;
     private bool dockApplying;
 
+    internal void ApplyVisualDescriptionPolicy(Dictionary<string, VisualDescription> policy)
+    {
+        VisualDescriptions.Validate(policy);
+        if (session.IsReadOnly) return;
+        EditStructure(() => session.Options = session.Options with { VisualDescriptions = policy
+            .ToDictionary(p => p.Key, p => p.Value with { Options = p.Value.Options.ToArray() }) });
+    }
+
     private void InitializeDraftAvailability()
     {
         DataContextChanged += (_, _) => ObserveDraftSession();
@@ -118,6 +126,7 @@ public partial class MainWindow
         for (var i = 0; i < drafts.Length; i++)
         {
             var index = i; var draft = drafts[i];
+            if (!VisualDraftSelection.IsEnabled(block.Metadata, session.Options, draft, table?.Drafts[i].RenderMode)) continue;
             var normal = DraftIconAsset("draft-dock-radio.svg", 20);
             var selected = DraftIconAsset("draft-dock-radio-selected.svg", 20);
             var dot = DraftIconAsset("draft-dock-radio-dot.svg", 8);
@@ -125,7 +134,7 @@ public partial class MainWindow
             var icon = new Grid { Width = 20, Height = 20 }; icon.Children.Add(normal); icon.Children.Add(selected); icon.Children.Add(dot);
             var label = new TextBlock { Text = $"{(i < 20 ? char.ConvertFromUtf32(0x2460 + i) : (i + 1).ToString())} {draft.Label}", FontFamily = new FontFamily("Malgun Gothic"), FontSize = 14, Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             var content = new StackPanel { Orientation = Orientation.Horizontal }; content.Children.Add(icon); content.Children.Add(label);
-            var radio = new RadioButton { GroupName = group, Content = content, MinWidth = 144, Height = 38, Margin = new(15, 0, 0, 0), ToolTip = draft.Reason,
+            var radio = new RadioButton { Tag = index, GroupName = group, Content = content, MinWidth = 144, Height = 38, Margin = new(15, 0, 0, 0), ToolTip = draft.Reason,
                 Template = new ControlTemplate(typeof(RadioButton)) { VisualTree = new FrameworkElementFactory(typeof(ContentPresenter)) } };
             System.Windows.Automation.AutomationProperties.SetName(radio, draft.Label);
             radio.Checked += async (_, _) =>
@@ -136,10 +145,13 @@ public partial class MainWindow
             radio.Unchecked += (_, _) => { normal.Visibility = Visibility.Visible; selected.Visibility = dot.Visibility = Visibility.Collapsed; label.FontWeight = FontWeights.Normal; };
             DraftChoiceGrid.Children.Add(radio);
         }
+        if (DraftChoiceGrid.Children.Count == 0)
+        { CloseDraftDock(); session.Status = "사용하도록 설정한 설명 유형의 초안이 없습니다. 설명 유형 설정을 확인해 주세요."; return; }
         DraftDock.Visibility = Visibility.Visible; UpdateDraftDivider();
         var selectedIndex = Math.Clamp(table is null ? block.Metadata.SelectedIndex ?? 0 : Array.FindIndex(table.Drafts, d => d.RenderMode == block.Metadata.RenderMode), 0, drafts.Length - 1);
         // Keep every choice on one row and reveal the saved selection after layout.
-        var chosen = (RadioButton)DraftChoiceGrid.Children[selectedIndex];
+        var chosen = DraftChoiceGrid.Children.OfType<RadioButton>().FirstOrDefault(r => Equals(r.Tag, selectedIndex))
+            ?? DraftChoiceGrid.Children.OfType<RadioButton>().First();
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => chosen.BringIntoView()));
         chosen.IsChecked = true;
     }

@@ -440,7 +440,11 @@ public partial class MainWindow : Window
                     {
                         var settings = new SettingsClient(api); var defaults = await settings.DefaultsAsync(documentLifetime.Token);
                         var visual = new VisualDescriptionDialog(new(defaults.Options.VisualDescriptions ?? VisualDescriptions.Defaults())) { Owner = this };
-                        if (visual.ShowDialog() == true) await settings.SaveDefaultsAsync(defaults with { Options = defaults.Options with { VisualDescriptions = visual.Result } }, documentLifetime.Token);
+                        if (visual.ShowDialog() == true)
+                        {
+                            await settings.SaveDefaultsAsync(defaults with { Options = defaults.Options with { VisualDescriptions = visual.Result } }, documentLifetime.Token);
+                            ApplyVisualDescriptionPolicy(visual.Result);
+                        }
                     }
                     break;
                 case "help": new HelpWindow(ActiveSearchPanel == SearchPanel.Text ? "텍스트 고치기" : "점자 직접 고치기", ExecuteAsync) { Owner = this }.Show(); break;

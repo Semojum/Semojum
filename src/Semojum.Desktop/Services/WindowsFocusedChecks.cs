@@ -54,6 +54,7 @@ internal static class WindowsFocusedChecks
                     break;
                 case "drafts":
                     await WindowsDraftDockChecks.RunAsync(Check);
+                    await WindowsVisualPolicyChecks.RunAsync(Check);
                     break;
                 case "qa1110":
                     await WindowsQa1110Checks.RunAsync(Check);
