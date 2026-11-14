@@ -24,6 +24,14 @@ internal static class WindowsUsageDesignChecks
         {
             await WaitAsync(() => Descendants(dialog).OfType<TextBlock>().Any(t => t.Text == "8,251"));
             await WaitAsync(() => fixture.JobRequests > 0);
+            check(dialog.WindowState == WindowState.Maximized, "QA1110: My page opens maximized");
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
+            WindowsDialogBoundsChecks.CheckMaximized(dialog, check);
+            check(!Descendants(dialog).OfType<MenuItem>().Any(m => m.Header?.ToString() is "보기(_V)" or "정보(_A)"),
+                "QA1110: My page omits View and Info menus");
+            var logoutIcon = Descendants(dialog).OfType<SvgViewbox>().SingleOrDefault(i => i.Source?.ToString().EndsWith("account-logout.svg", StringComparison.Ordinal) == true);
+            check(logoutIcon is { Width: 20, Height: 20, ActualWidth: > 0, ActualHeight: > 0, Drawings.Bounds.IsEmpty: false }, "QA1110: My page logout shows original Figma icon in 20px slot");
+            dialog.WindowState = WindowState.Normal;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             foreach (var asset in new[] { "account-caption-min.svg", "account-caption-max.svg", "account-caption-close.svg", "account-chevron.svg" })
             {
@@ -124,6 +132,9 @@ internal static class WindowsUsageDesignChecks
             check(!fixture.Paths.Any(p => p.StartsWith("/api/org/", StringComparison.Ordinal)), "My page does not call privileged organization APIs");
             if (Environment.GetEnvironmentVariable("USAGE_CAPTURE") is { Length: > 0 } capture) await WindowsSmoke.RenderElementAsync(dialog, capture);
             dialog.Navigation.SelectedIndex = 1; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(Descendants(dialog).OfType<TextBlock>().Any(t => t.IsVisible && t.Text == "월별 크레딧")
+                && !Descendants(dialog).OfType<TextBlock>().Any(t => t.IsVisible && t.Text is "달마다 쓴 크레딧" or "이번 달"),
+                "QA1110: billing uses monthly credits label without this-month legend");
             Grid? monthBars = null;
             await WaitAsync(() => (monthBars = Descendants(dialog).OfType<Grid>().FirstOrDefault(g => System.Windows.Automation.AutomationProperties.GetAutomationId(g) == "BillingMonthlyBars")) is { Children.Count: > 0 });
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
@@ -154,10 +165,10 @@ internal static class WindowsUsageDesignChecks
             var today = UsageDialog.TodayInKorea(); var periodEnd = shownYear < today.Year ? new DateOnly(shownYear, 12, 31) : today;
             check(fixture.CreditQueries.Count == 1 && fixture.CreditQueries[0] == $"?from={shownYear:0000}-01-01&to={periodEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&type=ALL" && billingNotice.Text.Length == 0,
                 "상세 내역 asks /api/users/usage/credit-history once for the chosen year (to today, KST) with type=ALL");
-            check(billingGrid.Columns.Select(c => c.Header as string).SequenceEqual(new[] { "날짜", "구분", "내용", "쪽수", "크레딧", "잔액" })
+            check(billingGrid.Columns.Select(c => c.Header as string).SequenceEqual(new[] { "날짜", "구분", "내용", "쪽수", "크레딧", "잔여 크레딧" })
                   && billingGrid.Columns.Take(5).Select(c => c.Width.Value).SequenceEqual(new[] { 110d, 270, 280, 100, 120 }) && billingGrid.RowHeight == 32
                   && billingGrid.Parent is DockPanel { Parent: Border { Height: 552 } },
-                "상세 내역 is the final six-column table (날짜 · 구분 · 내용 · 쪽수 · 크레딧 · 잔액) with 32px rows in the 552px Figma card");
+                "상세 내역 is the final six-column table (날짜 · 구분 · 내용 · 쪽수 · 크레딧 · 잔여 크레딧) with 32px rows in the 552px Figma card");
             var shown = Shown();
             check(shown.Select(r => (r.Date, r.Kind, r.Description, r.Pages, r.Credits, r.Balance)).SequenceEqual(new[] {
                     ("2026-08-13", "사용", "수능특강_생명Ⅱ.pdf", "14", "-11", "5,400"), ("2026-08-01", "충전", "크레딧 추가 (주문 20260801-02)", "—", "+3,000", "5,544"), ("2026-07-28", "사용", "고2_수학Ⅰ_3단원.pdf", "26", "-26", "—") }),
@@ -168,8 +179,8 @@ internal static class WindowsUsageDesignChecks
             Color? EdgeOf(Border? b) => (b?.BorderBrush as SolidColorBrush)?.Color; Color? InkOf(TextBlock? t) => (t?.Foreground as SolidColorBrush)?.Color;
             check(EdgeOf(charge) == Color.FromRgb(15, 123, 15) && InkOf(charge?.Child as TextBlock) == Color.FromRgb(15, 123, 15) && EdgeOf(use) == Color.FromRgb(234, 234, 234) && InkOf(use?.Child as TextBlock) == Color.FromRgb(95, 95, 95)
                   && chargeAmount is { FontSize: 14 } && chargeAmount.FontWeight == FontWeights.Bold && InkOf(chargeAmount) == Color.FromRgb(15, 123, 15)
-                  && useAmount is { FontSize: 14 } && useAmount.FontWeight == FontWeights.Bold && InkOf(useAmount) == Color.FromRgb(26, 26, 26),
-                "구분 chips and 14px bold credits follow Figma: 사용 grey, 충전 green");
+                  && useAmount is { FontSize: 14 } && useAmount.FontWeight == FontWeights.Bold && InkOf(useAmount) == Color.FromRgb(196, 43, 28),
+                "구분 chips and 14px bold credits follow Figma: 사용 red amount with grey chip, 충전 green");
             if (Environment.GetEnvironmentVariable("BILLING_CAPTURE") is { Length: > 0 } billCapture) await WindowsSmoke.RenderElementAsync(dialog, billCapture);
             kind!.SelectedItem = "사용"; await WaitAsync(() => fixture.CreditQueries.Last().EndsWith("&type=USE", StringComparison.Ordinal) && Shown().Length == 2); var used = Shown();
             kind.SelectedItem = "충전"; await WaitAsync(() => fixture.CreditQueries.Last().EndsWith("&type=CHARGE", StringComparison.Ordinal) && Shown().Length == 1); var charged = Shown();

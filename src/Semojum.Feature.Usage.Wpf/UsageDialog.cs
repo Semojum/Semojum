@@ -23,6 +23,7 @@ public sealed class UsageDialog : CompactDialog
     public UsageDialog(SemojumApiClient api, string workInfo = "", UsageActions? actions = null) : base("마이페이지 - 누리닷", 1440, 1000, editor: true)
     {
         Background = Brushes.White; ApplyCaptionDesign(); var tabs = Navigation;
+        Loaded += (_, _) => WindowState = WindowState.Maximized;
         tabs.Style = (Style)FindResource("UsageNavigation");
         tabs.ItemContainerStyle = NavigationTabStyle();
         var menu = new Menu { Height = 32, Padding = new(4, 0, 0, 0) };
@@ -30,9 +31,6 @@ public sealed class UsageDialog : CompactDialog
         var administrator = api.Account?.Role == "ROLE_ORG_ADMIN";
         var fileMenu = new MenuItem { Header = "파일(_F)", Width = 64 }; menu.Items.Add(fileMenu);
         var closeItem = new MenuItem { Header = administrator ? "닫기" : "편집기로 돌아가기" }; closeItem.Click += (_, _) => Close(); fileMenu.Items.Add(closeItem);
-        var viewMenu = new MenuItem { Header = "보기(_V)", Width = 64 }; menu.Items.Add(viewMenu);
-        var infoMenu = new MenuItem { Header = "정보(_A)", Width = 64 }; menu.Items.Add(infoMenu);
-        var helpItem = new MenuItem { Header = "도움말" }; helpItem.Click += (_, _) => CommonWindowServices.ShowHelp(this, "사용량과 작업 이력"); infoMenu.Items.Add(helpItem);
         DockPanel.SetDock(menu, Dock.Top); Root.Children.Add(menu);
         var statusLine = new DockPanel { Margin = new(20, 0, 16, 0) };
         var loginStatus = new TextBlock { Text = api.Account?.LoginId ?? "", Foreground = ColorBrush("#5F5F5F"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center }; statusLine.Children.Add(loginStatus);
@@ -121,10 +119,9 @@ public sealed class UsageDialog : CompactDialog
         // Figma C0-8 monthly chart: 4 equal axis steps over 164px (baseline y=220), 56px bars centred in equal month slots.
         var monthly = new Grid();
         var monthlyTitle = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(19, 15, 0, 0), VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left }; monthly.Children.Add(monthlyTitle);
-        monthlyTitle.Children.Add(new TextBlock { Text = "달마다 쓴 크레딧", FontSize = 14, FontWeight = FontWeights.SemiBold });
+        monthlyTitle.Children.Add(new TextBlock { Text = "월별 크레딧", FontSize = 14, FontWeight = FontWeights.SemiBold });
         var monthlyNotice = new TextBlock { Foreground = ColorBrush("#8A8A8A"), Margin = new(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; monthlyTitle.Children.Add(monthlyNotice);
         System.Windows.Automation.AutomationProperties.SetAutomationId(monthlyNotice, "BillingMonthlyNotice");
-        var currentLegend = new TextBlock { Text = "이번 달", Foreground = ColorBrush("#8A8A8A"), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new(0, 37, 23, 0) }; monthly.Children.Add(currentLegend);
         var axis = new TextBlock[5];
         for (var i = 0; i < axis.Length; i++)
         {
@@ -138,7 +135,7 @@ public sealed class UsageDialog : CompactDialog
         {
             var thisMonth = ThisMonthInKorea(); var step = AxisStep(credits.Select(c => c ?? 0).DefaultIfEmpty().Max());
             for (var i = 0; i < axis.Length; i++) axis[i].Text = (step * i).ToString("#,0.##", CultureInfo.InvariantCulture);
-            monthBars.Children.Clear(); monthBars.ColumnDefinitions.Clear(); currentLegend.Visibility = shownYear == thisMonth.Year ? Visibility.Visible : Visibility.Collapsed;
+            monthBars.Children.Clear(); monthBars.ColumnDefinitions.Clear();
             for (var slot = 0; slot < credits.Length; slot++)
             {
                 var month = firstMonth + slot; var value = credits[slot]; var height = value is { } v ? Math.Round((double)(v / (step * 4)) * 164) : 0;
@@ -355,7 +352,10 @@ public sealed class UsageDialog : CompactDialog
         foreach (var tab in tabs.Items.Cast<TabItem>()) { tab.Padding = new(16, 0, 0, 0); }
         var logoutHeader = new StackPanel();
         logoutHeader.Children.Add(new Border { Height = 1, Background = (Brush)FindResource("Line"), Margin = new(16, 12, 12, 11) });
-        logoutHeader.Children.Add(new TextBlock { Text = "로그아웃", Height = 32, Margin = new(16, 0, 0, 0), Foreground = ColorBrush("#C42B1C") });
+        var logoutRow = new StackPanel { Orientation = Orientation.Horizontal, Height = 32, Margin = new(16, 0, 0, 0) };
+        logoutRow.Children.Add(new SvgViewbox { Source = new Uri("pack://application:,,,/Semojum.Feature.Usage.Wpf;component/Assets/Figma/account-logout.svg"), Width = 20, Height = 20, Stretch = Stretch.None, VerticalAlignment = VerticalAlignment.Top });
+        logoutRow.Children.Add(new TextBlock { Text = "로그아웃", VerticalAlignment = VerticalAlignment.Top, Margin = new(4, 2, 0, 0), Foreground = ColorBrush("#C42B1C") });
+        logoutHeader.Children.Add(logoutRow);
         logoutTab.Header = logoutHeader; logoutTab.Height = 56; logoutTab.Padding = new(0);
         // Sections are compared by tab, not position: the administrator's 기관 관리 shifts 문의 내역 and 로그아웃.
         tabs.SelectionChanged += async (_, e) =>
@@ -443,8 +443,6 @@ public sealed class UsageDialog : CompactDialog
             jobs.ItemsSource = data.GetProperty("items").EnumerateArray().Select(ReadJobRow).ToArray();
         }
         range.SelectionChanged += async (_, _) => await RunAsync(LoadJobsAsync);
-        var jobsItem = new MenuItem { Header = "작업별 사용 내역" }; jobsItem.Click += async (_, _) => await RunAsync(async () => { tabs.SelectedItem = usageTab; await LoadJobsAsync(); historyCard.BringIntoView(); }); viewMenu.Items.Add(jobsItem);
-        var usageItem = new MenuItem { Header = "사용량" }; usageItem.Click += (_, _) => { tabs.SelectedItem = usageTab; usageScroll.ScrollToTop(); }; viewMenu.Items.Add(usageItem);
         void OpenJob(JobRow j) { if (administrator || string.IsNullOrWhiteSpace(j.JobId) || j.JobId == "—") return; JobId = j.JobId; FileName = j.FileName; DialogResult = true; }
         void Open() { if (jobs.SelectedItem is JobRow j) OpenJob(j); }
         jobs.MouseDoubleClick += (_, _) => Open();
@@ -557,8 +555,9 @@ public sealed class UsageDialog : CompactDialog
         grid.Columns.Add(new DataGridTextColumn { Header = "쪽수", Binding = new Binding(nameof(BillingRow.Pages)), Width = 100 });
         var amount = new Style(typeof(TextBlock), DataGridTextColumn.DefaultElementStyle); amount.Setters.Add(new Setter(TextBlock.FontSizeProperty, 14d)); amount.Setters.Add(new Setter(TextBlock.FontWeightProperty, FontWeights.Bold));
         var green = new DataTrigger { Binding = new Binding(nameof(BillingRow.Kind)), Value = "충전" }; green.Setters.Add(new Setter(TextBlock.ForegroundProperty, ColorBrush("#0F7B0F"))); amount.Triggers.Add(green);
+        var red = new DataTrigger { Binding = new Binding(nameof(BillingRow.Kind)), Value = "사용" }; red.Setters.Add(new Setter(TextBlock.ForegroundProperty, ColorBrush("#C42B1C"))); amount.Triggers.Add(red);
         grid.Columns.Add(new DataGridTextColumn { Header = "크레딧", Binding = new Binding(nameof(BillingRow.Credits)), Width = 120, ElementStyle = amount });
-        grid.Columns.Add(new DataGridTextColumn { Header = "잔액", Binding = new Binding(nameof(BillingRow.Balance)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = "잔여 크레딧", Binding = new Binding(nameof(BillingRow.Balance)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         System.Windows.Automation.AutomationProperties.SetAutomationId(grid, "BillingDetailGrid"); System.Windows.Automation.AutomationProperties.SetName(grid, "상세 내역"); return grid;
     }
     internal static string StatusLabel(string status, bool failed) => status switch

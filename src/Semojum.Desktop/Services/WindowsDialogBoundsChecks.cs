@@ -6,6 +6,16 @@ namespace Semojum.Desktop.Services;
 
 internal static class WindowsDialogBoundsChecks
 {
+    internal static void CheckMaximized(Window window, Action<bool, string> check)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (handle == IntPtr.Zero || !GetMonitorInfo(MonitorFromWindow(handle, 2), ref info) || !GetWindowRect(handle, out var bounds))
+            throw new InvalidOperationException("Cannot inspect maximized native bounds.");
+        check(window.WindowState == WindowState.Maximized && Math.Abs(bounds.Left - info.Work.Left) <= 3
+            && Math.Abs(bounds.Top - info.Work.Top) <= 3 && Math.Abs(bounds.Right - info.Work.Right) <= 3 && Math.Abs(bounds.Bottom - info.Work.Bottom) <= 3,
+            $"QA1110: My page fills native monitor work area (window={bounds.Right-bounds.Left}x{bounds.Bottom-bounds.Top}, area={info.Work.Right-info.Work.Left}x{info.Work.Bottom-info.Work.Top})");
+    }
     internal static void CheckFitted(Window window, double designWidth, double designHeight, string name, Action<bool, string> check)
     {
         var handle = new WindowInteropHelper(window).Handle;
