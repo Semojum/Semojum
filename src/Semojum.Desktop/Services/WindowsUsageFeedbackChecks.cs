@@ -50,6 +50,8 @@ internal static class WindowsUsageFeedbackChecks
                 "Usage heading shows the authenticated alias and exposes its full value");
             if (Environment.GetEnvironmentVariable("MYPAGE_TITLE_CAPTURE") is { Length: > 0 } titleCapture)
                 await WindowsSmoke.RenderElementAsync(dialog, titleCapture);
+            dialog.WindowState = WindowState.Normal;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             var initialWidth = dialog.Width; dialog.Width = 480; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); dialog.UpdateLayout();
             var accountBounds = accountName.TransformToAncestor(dialog).TransformBounds(new Rect(0, 0, accountName.ActualWidth, accountName.ActualHeight));
             check(accountName.IsVisible && accountName.TextTrimming == TextTrimming.CharacterEllipsis && accountBounds.Left >= 0 && accountBounds.Right <= dialog.ActualWidth + 1,
@@ -248,7 +250,7 @@ internal static class WindowsUsageFeedbackChecks
         });
         check(logoutResult == true && adminLogoutDialog.LogoutRequested, "The administrator's 로그아웃 section, now the sixth tab, still requests logout");
     }
-    private static string Section(TabItem tab) => tab.Header as string ?? ((Panel)tab.Header).Children.OfType<TextBlock>().Last().Text;
+    private static string Section(TabItem tab) => tab.Header as string ?? Descendants((Panel)tab.Header).OfType<TextBlock>().Last().Text;
     // Shows a my page modally (its sections close it through DialogResult) while the interaction runs inside the modal loop.
     private static async Task<bool?> DriveModalAsync(Window dialog, Func<Task> interaction)
     {

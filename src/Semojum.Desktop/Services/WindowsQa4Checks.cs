@@ -72,6 +72,7 @@ internal static class WindowsQa4Checks
         await WindowsDraftPendingChecks.RunAsync(check);
         await WindowsTableDraftChecks.RunAsync(directory, check);
         await WindowsTableDockChecks.RunAsync(directory, check);
+        await WindowsQa1110TableChecks.RunPreviewAsync(check);
         await WindowsMathSafetyChecks.RunAsync(check, directory);
         await WindowsMathDockChecks.RunAsync(check, directory);
         await WindowsInlineMathChecks.RunAsync(check, directory);
@@ -151,6 +152,7 @@ internal static class WindowsQa4Checks
         owner.UpdateLayout();
         check(owner.OperationErrorBanner.Visibility == Visibility.Collapsed, "QA4 operation notice clears without changing document contents");
         await WindowsImeBoundaryChecks.RunAsync(owner, check, Stage);
+        await WindowsImeFontChecks.RunAsync(check);
         using var handler = new Fixture(); using var http = new HttpClient(handler); var api = new SemojumApiClient(http);
         await api.LoginAsync("qa-ui", "fixture-only"); var settings = new SettingsClient(api);
         var forms = await settings.FormsAsync(); var defaults = await settings.DefaultsAsync();

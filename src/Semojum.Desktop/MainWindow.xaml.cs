@@ -115,6 +115,7 @@ public partial class MainWindow : Window
         SetSession(smoke && !startEmpty ? DocumentSession.Sample() : BlankDocument(), null, true, showUpload: !smoke || startEmpty);
         if (!smoke || startEmpty) { openDocument!.IsStartupPlaceholder = true; openDocument.PlaceholderVersion = session.ChangeVersion; }
         RestorePreferences(); ApplyAppearance(new());
+        SixDotToggle.IsChecked = true;
         if (!smoke && !testWithoutAccount) Loaded += async (_, _) =>
         {
             await StartAccountAsync();
@@ -439,7 +440,11 @@ public partial class MainWindow : Window
                     {
                         var settings = new SettingsClient(api); var defaults = await settings.DefaultsAsync(documentLifetime.Token);
                         var visual = new VisualDescriptionDialog(new(defaults.Options.VisualDescriptions ?? VisualDescriptions.Defaults())) { Owner = this };
-                        if (visual.ShowDialog() == true) await settings.SaveDefaultsAsync(defaults with { Options = defaults.Options with { VisualDescriptions = visual.Result } }, documentLifetime.Token);
+                        if (visual.ShowDialog() == true)
+                        {
+                            await settings.SaveDefaultsAsync(defaults with { Options = defaults.Options with { VisualDescriptions = visual.Result } }, documentLifetime.Token);
+                            ApplyVisualDescriptionPolicy(visual.Result);
+                        }
                     }
                     break;
                 case "help": new HelpWindow(ActiveSearchPanel == SearchPanel.Text ? "텍스트 고치기" : "점자 직접 고치기", ExecuteAsync) { Owner = this }.Show(); break;
@@ -531,7 +536,7 @@ public partial class MainWindow : Window
         BrailleToggle.IsChecked = true;
         CopyBrailleSettings(); ApplyAppearance(appearance);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => { if (detachedPane is not null) SpeakCaret(detachedPane.Editor); };
-        detachedWindow = new Window { Title = $"점자 — {session.Title} - 누리닷", Owner = this, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        detachedWindow = new Window { Title = $"점자 — {session.Title} - 누리닷", Owner = this, ShowInTaskbar = true, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         WindowFrame.Apply(detachedWindow, editor: true);
         detachedWindow.Closed += (_, _) =>
         {

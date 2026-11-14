@@ -34,8 +34,8 @@ internal static class WindowsDraftDockChecks
                 && Math.Abs(window.DraftTextColumn.ActualWidth - window.SourcePanel.ActualWidth) < 3,
                 "The dock spans both editor panels and its divider follows their actual widths");
             var choiceRow = (FrameworkElement)window.DraftChoiceScroll.Parent;
-            check(window.DraftDockTitle.Text == "대체 초안 · 그림 설명 4안" && Label(window, 3) == "④ 줄글" && Math.Abs(choiceRow.ActualHeight - 40) < 0.5,
-                "Four server drafts fill one 40px row of the Figma dock with the server labels");
+            check(window.DraftDockTitle.Text == "대체 초안 · 그림 설명 4안" && Label(window, 3) == "④ 줄글" && choiceRow.ActualHeight is >= 40 and <= 58,
+                "Four server drafts occupy one row with the server labels");
             await WindowsSmoke.RenderElementAsync(window.DraftDock, Path.Combine(Path.GetTempPath(), "draft-dock-verification.png"));
             ((RadioButton)window.DraftChoiceGrid.Children[3]).IsChecked = true;
             check(window.DraftTextPreview.Text == "네 지역의 기후 특성을 비교한 그림입니다." && window.DraftBraillePreview.Text == "⠃"
@@ -56,19 +56,19 @@ internal static class WindowsDraftDockChecks
             await OpenAsync(1, "짧은 제목", "줄글");
             check(window.DraftDockTitle.Text == "대체 초안 · 그림 설명 2안" && window.DraftChoiceGrid.Children.Count == 2 && Label(window, 0) == "① 짧은 제목" && Label(window, 1) == "② 줄글"
                 && ((RadioButton)window.DraftChoiceGrid.Children[1]).IsChecked == true && window.DraftTextPreview.Text == "줄글 설명" && window.DraftBraillePreview.Text == "⠁⠃"
-                && Math.Abs(choiceRow.ActualHeight - 40) < 0.5 && Math.Abs(window.DraftDock.ActualHeight - 212) < 0.5,
+                && choiceRow.ActualHeight is >= 40 and <= 58 && Math.Abs(window.DraftDock.ActualHeight - 360) < 0.5,
                 "Two server drafts show both labels in the same row and open on the server-selected draft");
             await OpenAsync(5, "생략", "짧은 제목", "개조식", "상세", "줄글", "별책 참조");
             check(window.DraftDockTitle.Text == "대체 초안 · 그림 설명 6안" && window.DraftChoiceGrid.Children.Count == 6 && Label(window, 5) == "⑥ 별책 참조"
-                && window.DraftChoiceScroll.ScrollableHeight < 0.5 && Math.Abs(window.DraftChoiceScroll.ActualHeight - 76) < 0.5
-                && Math.Abs(window.DraftDock.ActualHeight - 212) < 0.5 && window.DraftTextPreview.Text == "별책 참조 설명",
-                "Six server drafts show in two rows without scrolling while the dock keeps its Figma height");
+                && window.DraftChoiceScroll.ScrollableHeight < 0.5 && window.DraftChoiceGrid.Children.OfType<RadioButton>().All(r => Math.Abs(r.TransformToAncestor(window.DraftChoiceGrid).Transform(new Point()).Y) < 0.5)
+                && Math.Abs(window.DraftDock.ActualHeight - 360) < 0.5 && window.DraftTextPreview.Text == "별책 참조 설명",
+                "Six server drafts remain on a single horizontal row in the taller dock");
             await OpenAsync(9, Enumerable.Range(1, 10).Select(i => "안 " + i).ToArray());
             var last = (RadioButton)window.DraftChoiceGrid.Children[9];
             var bounds = last.TransformToAncestor(window.DraftChoiceScroll).TransformBounds(new Rect(0, 0, last.ActualWidth, last.ActualHeight));
             check(window.DraftDockTitle.Text == "대체 초안 · 그림 설명 10안" && Label(window, 9) == "⑩ 안 10" && last.IsChecked == true
-                && window.DraftChoiceScroll.ScrollableHeight > 0 && bounds.Top >= -0.5 && bounds.Bottom <= window.DraftChoiceScroll.ViewportHeight + 0.5
-                && Math.Abs(window.DraftDock.ActualHeight - 212) < 0.5 && window.DraftTextPreview.Text == "안 10 설명",
+                && window.DraftChoiceScroll.ScrollableWidth > 0 && bounds.Left >= -0.5 && bounds.Right <= window.DraftChoiceScroll.ViewportWidth + 0.5
+                && Math.Abs(window.DraftDock.ActualHeight - 360) < 0.5 && window.DraftTextPreview.Text == "안 10 설명",
                 "More drafts scroll inside the dock and a saved later choice opens scrolled into view");
             var radios = window.DraftChoiceGrid.Children.OfType<RadioButton>().ToArray();
             check(radios.Length == 10 && radios.Select(r => r.GroupName).Distinct().Count() == 1

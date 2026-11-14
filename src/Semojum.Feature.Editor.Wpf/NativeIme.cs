@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using ICSharpCode.AvalonEdit;
 
 namespace Semojum.Desktop.Services;
@@ -32,6 +33,7 @@ internal static class NativeIme
             // editor's context. PreviewLostKeyboardFocus alone is too late.
             if ((message is 0x001C or 0x0086 && wParam == 0)
                 || (message == 0x0006 && (wParam.ToInt64() & 0xFFFF) == 0)) Commit();
+            if (message is 0x010D or 0x010F) UpdateCompositionFont(editor);
             return 0;
         }
         void Detach()
@@ -52,6 +54,46 @@ internal static class NativeIme
             new ExecutedRoutedEventHandler((_, _) => Commit()));
     }
 
+    // AvalonEdit uses the visual line height as a positive LOGFONT cell height.
+    // Our composite font deliberately has extra line spacing, so that makes the
+    // composition glyph oversized. Negative height specifies the actual em size.
+    private static void UpdateCompositionFont(TextEditor editor)
+    {
+        if (!editor.TextArea.IsKeyboardFocused || editor.IsReadOnly || !editor.Options.EnableImeSupport
+            || PresentationSource.FromVisual(editor) is not HwndSource source) return;
+        var context = ImmGetContext(source.Handle);
+        if (context == 0) return;
+        try
+        {
+            var family = editor.FontFamily.Source;
+            if (string.IsNullOrWhiteSpace(family))
+                family = editor.FontFamily.FamilyMaps.FirstOrDefault()?.Target;
+            // WPF packaged fonts use a URI followed by #Family; IMM takes only the family name.
+            family = family?.Split(',')[0].Split('#').Last().Trim();
+            if (string.IsNullOrWhiteSpace(family)) family = "Malgun Gothic";
+            var font = new CompositionFont
+            {
+                Height = -(int)Math.Max(1, Math.Round(editor.FontSize * source.CompositionTarget.TransformToDevice.M22)),
+                Weight = editor.FontWeight.ToOpenTypeWeight(),
+                Italic = editor.FontStyle == FontStyles.Italic ? (byte)1 : (byte)0,
+                CharacterSet = 1,
+                Face = family[..Math.Min(31, family.Length)]
+            };
+            ImmSetCompositionFontW(context, ref font);
+        }
+        finally { ImmReleaseContext(source.Handle, context); }
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct CompositionFont
+    {
+        public int Height, Width, Escapement, Orientation, Weight;
+        public byte Italic, Underline, StrikeOut, CharacterSet, OutPrecision, ClipPrecision, Quality, PitchAndFamily;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Face;
+    }
+    [DllImport("imm32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ImmSetCompositionFontW(nint context, ref CompositionFont font);
     public static void Complete(TextEditor editor)
     {
         if (!editor.TextArea.IsKeyboardFocused || editor.IsReadOnly || !editor.Options.EnableImeSupport

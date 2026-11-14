@@ -54,12 +54,12 @@ public sealed class ExportRangeDialog : CompactDialog
         }
         scope.Width = 240; scope.Height = 32; scope.ItemContainerStyle = ScopeStyle();
         scope.SetAvailable(0, !brailleOnly, "미리보기에서는 점자 면을 선택합니다.");
-        scope.SetAvailable(1, brailleCount is not null && format != ".txt — 원문", "원문 파일은 원본 페이지를 선택합니다.");
+        scope.SetAvailable(1, brailleCount is not null, "점자 면을 계산할 수 없습니다.");
         AutomationProperties.SetName(scope, "범위 기준"); Field(0, "기준", scope);
         Field(1, "시작 페이지 번호", NumberField(start, "시작 페이지 번호"));
         Field(2, "끝 페이지 번호", NumberField(end, "끝 페이지 번호"));
         var formatField = new Grid { Width = 260, Height = 32, HorizontalAlignment = HorizontalAlignment.Left };
-        formatChoice.ItemsSource = allowFormatChange ? new[] { ".brf", ".txt — 원문", ".txt — 점자" } : new[] { format };
+        formatChoice.ItemsSource = new[] { format };
         formatChoice.SelectedItem = format; formatChoice.Padding = new(11, 0, 27, 0); formatChoice.VerticalContentAlignment = VerticalAlignment.Center;
         formatChoice.Background = Brush("#FBFBFB"); formatChoice.BorderBrush = Brush("#EAEAEA");
         formatChoice.ToolTip = allowFormatChange ? "변경한 형식에 맞춰 파일 확장자와 내용을 저장합니다." : "이 명령의 저장 형식입니다.";
@@ -78,14 +78,25 @@ public sealed class ExportRangeDialog : CompactDialog
         var save = Button("저장", () => { if (Apply()) DialogResult = true; return Task.CompletedTask; }, true);
         foreach (var button in new[] { cancel, save }) { button.Width = 88; button.MinWidth = 0; button.Height = 32; button.MinHeight = 0; button.Template = SurfaceTemplate(4); actions.Children.Add(button); }
         cancel.BorderBrush = Brush("#EAEAEA");
-        scope.SelectionChanged += async (_, _) => await UpdateBoundsAsync();
-        formatChoice.SelectionChanged += (_, _) =>
+        var sourceFormats = new[] { ".txt — 원문", ".md" };
+        var brailleFormats = new[] { ".brl", ".brf" };
+        void UpdateFormats()
         {
-            var canUseBraille = brailleCount is not null && SelectedFormat != ".txt — 원문";
-            scope.SetAvailable(1, canUseBraille, "원문 파일은 원본 페이지를 선택합니다.");
-            if (!canUseBraille && scope.SelectedIndex == 1 && !brailleOnly) scope.SelectedIndex = 0;
-        };
-        scope.SelectedIndex = brailleOnly ? 1 : 0;
+            var choices = scope.SelectedIndex == 0 ? sourceFormats : brailleFormats;
+            var previous = formatChoice.SelectedItem as string;
+            formatChoice.ItemsSource = allowFormatChange ? choices : new[] { choices.Contains(format) ? format : choices[0] };
+            formatChoice.SelectedItem = choices.Contains(previous) ? previous
+                : choices.Contains(format) ? format : choices[0];
+        }
+        scope.SelectionChanged += async (_, _) => { UpdateFormats(); await UpdateBoundsAsync(); };
+        var fixedBraille = !allowFormatChange && brailleCount is not null && format is not (".txt — 원문" or ".md");
+        if (!allowFormatChange)
+        {
+            scope.SetAvailable(0, !brailleOnly && !fixedBraille, "점자 파일은 점자 페이지를 선택합니다.");
+            scope.SetAvailable(1, fixedBraille || brailleOnly, "원문 파일은 원본 페이지를 선택합니다.");
+        }
+        scope.SelectedIndex = brailleOnly || fixedBraille ? 1 : 0;
+        UpdateFormats();
         _ = UpdateBoundsAsync();
     }
 

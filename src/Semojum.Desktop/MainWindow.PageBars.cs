@@ -10,6 +10,37 @@ namespace Semojum.Desktop;
 
 public partial class MainWindow
 {
+    private bool sourceWheelBusy;
+    private async void SourceEditor_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled || e.Delta == 0 || Keyboard.Modifiers != ModifierKeys.None || session?.ActiveBlock is not { } active) return;
+        if (sourceWheelBusy) { e.Handled = true; return; }
+        var view = (System.Windows.Controls.Primitives.IScrollInfo)PageEditor.Editor.TextArea.TextView;
+        var backwards = e.Delta > 0;
+        if (backwards ? view.VerticalOffset > .5 : view.VerticalOffset < view.ExtentHeight - view.ViewportHeight - .5) return;
+        var owner = session;
+        var pages = owner.Blocks.Select(b => b.Page).Concat(owner.PageStatuses.Keys).Distinct().Order().ToArray();
+        var index = Array.IndexOf(pages, active.Page) + (backwards ? -1 : 1);
+        if (index < 0 || index >= pages.Length) return;
+        var page = pages[index];
+        var target = owner.Blocks.FirstOrDefault(b => b.Page == page);
+        if (target is null || target.Metadata.IsBlocked ||
+            owner.PageStatuses.TryGetValue(page, out var status) && JobStatus.IsFailedPage(status)) return;
+        e.Handled = true;
+        sourceWheelBusy = true;
+        try
+        {
+            await NavigateAsync(NavigationTarget.OriginalPage, page.ToString(System.Globalization.CultureInfo.InvariantCulture), SearchPanel.Text, preserveSourceVisibility: true);
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (session != owner || owner.ActiveBlock?.Page != page) return;
+                PageEditor.Editor.UpdateLayout();
+                PageEditor.Editor.ScrollToVerticalOffset(backwards ? double.MaxValue : 0);
+            }, DispatcherPriority.Loaded);
+        }
+        catch (Exception ex) { if (session == owner) owner.Status = ex.Message; }
+        finally { sourceWheelBusy = false; }
+    }
     private bool originalWheelBusy;
     private (DocumentSession Owner, int Page, bool Bottom)? originalWheelDestination;
 

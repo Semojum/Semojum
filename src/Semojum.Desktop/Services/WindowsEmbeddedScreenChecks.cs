@@ -170,7 +170,7 @@ internal static class WindowsEmbeddedScreenChecks
         finally { if (!ownerClosed) { await closeOwner.ReleaseResourcesAsync(); closeOwner.PrepareSmokeShutdown(); closeOwner.Close(); } }
     }
 
-    private static string Section(TabItem tab) => tab.Header as string ?? ((Panel)tab.Header).Children.OfType<TextBlock>().Last().Text;
+    private static string Section(TabItem tab) => tab.Header as string ?? Descendants((Panel)tab.Header).OfType<TextBlock>().Last().Text;
 
     private static IEnumerable<string?> CaptionButtons(Window window) => Descendants(window).OfType<Button>()
         .Select(b => AutomationProperties.GetName(b)).Where(name => name is "최소화" or "최대화 / 복원" or "닫기");

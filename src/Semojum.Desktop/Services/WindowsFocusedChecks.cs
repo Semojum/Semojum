@@ -7,7 +7,7 @@ namespace Semojum.Desktop.Services;
 internal static class WindowsFocusedChecks
 {
     private static readonly HashSet<string> Areas = new(StringComparer.OrdinalIgnoreCase)
-        { "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
+        { "incremental", "original", "imefont", "export", "tablememo", "drafts", "qa1110", "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
 
     internal static bool IsKnownArea(string area) => Areas.Contains(area);
 
@@ -29,6 +29,39 @@ internal static class WindowsFocusedChecks
         {
             switch (area.ToLowerInvariant())
             {
+                case "incremental":
+                    await WindowsIncrementalTranslationChecks.RunAsync(Check);
+                    break;
+                case "original":
+                    await WindowsOriginalWheelChecks.RunAsync(Check);
+                    break;
+                case "imefont":
+                    await WindowsImeFontChecks.RunAsync(Check);
+                    var imeOwner = new System.Windows.Window(); imeOwner.Show();
+                    try { await WindowsImeBoundaryChecks.RunAsync(imeOwner, Check, _ => { }); }
+                    finally { imeOwner.Close(); }
+                    break;
+                case "export":
+                    await WindowsRangeDesignChecks.RunAsync(Check);
+                    var exportOwner = new System.Windows.Window(); exportOwner.Show();
+                    try { WindowsExportRangeChecks.Run(exportOwner, Check); WindowsSpacingPreviewChecks.Run(exportOwner, Check); }
+                    finally { exportOwner.Close(); }
+                    await WindowsExportFileChecks.RunAsync(directory, Check);
+
+                    break;
+                case "tablememo":
+                    await WindowsQa1110TableChecks.RunPreviewAsync(Check);
+                    await WindowsMemoDeleteChecks.RunAsync(directory, Check);
+                    await WindowsMemoRestoreChecks.RunAsync(directory, Check);
+                    await WindowsTableDockChecks.RunAsync(directory, Check);
+                    break;
+                case "drafts":
+                    await WindowsDraftDockChecks.RunAsync(Check);
+                    await WindowsVisualPolicyChecks.RunAsync(Check);
+                    break;
+                case "qa1110":
+                    await WindowsQa1110Checks.RunAsync(Check);
+                    break;
                 case "board":
                     WindowsGridIsolationChecks.Run(Check);
                     await WindowsBoardDesignChecks.RunAsync(Check);

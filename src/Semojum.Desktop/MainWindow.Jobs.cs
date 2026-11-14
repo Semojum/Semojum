@@ -79,7 +79,7 @@ public partial class MainWindow
     private async Task<bool> ShowInstitutionAsync()
     {
         var maximized = WindowState == WindowState.Maximized;
-        var institution = Institution = new InstitutionWindow(api, LogoutInstitutionAsync, OpenInstitutionMyPage) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
+        var institution = Institution = new InstitutionWindow(api, LogoutInstitutionAsync, OpenInstitutionMyPage) { ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterScreen };
         if (maximized) institution.WindowState = WindowState.Maximized;
         var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         institution.Closed += (_, _) => closed.TrySetResult();

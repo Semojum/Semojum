@@ -85,6 +85,14 @@ internal static class WindowsRuleDesignChecks
             check(hint.Visibility == Visibility.Collapsed && query.Text == "검색", "Typing hides the search hint without changing the input");
             var rows = dialog.RuleResults.Children.OfType<Expander>().ToArray();
             check(rows.Length == 2, "Rule search preserves the server's two results");
+            var clear = Descendants(dialog).OfType<Button>().SingleOrDefault(b => AutomationProperties.GetAutomationId(b) == "RuleSearchClear");
+            check(rows.All(r => !r.IsExpanded) && clear is { IsEnabled: true },
+                "QA1110: rule results initially collapsed and left icon exposes clear action");
+            clear!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(100);
+            check(query.Text == "" && dialog.RuleResults.Children.OfType<Expander>().All(r => !r.IsExpanded),
+                "QA1110: clear removes query and reloads collapsed rule results");
+            rows = dialog.RuleResults.Children.OfType<Expander>().ToArray();
             if (rows.Length > 1)
             {
                 rows[0].IsExpanded = true; dialog.UpdateLayout();

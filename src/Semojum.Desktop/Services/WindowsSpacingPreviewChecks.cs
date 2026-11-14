@@ -25,7 +25,7 @@ internal static class WindowsSpacingPreviewChecks
         {
             var texts = Descendants(dialog).OfType<TextBlock>().Where(t => t.IsVisible).Select(t => t.Text).ToArray();
             check(texts.Any(t => t.Contains("빈 줄") && t.Contains("7") && t.Contains("12")), "Composition preview identifies the blocks with unverified spacing");
-            foreach (var label in new[] { "BRF 저장", "점자 TXT 저장", "점자 인쇄…" })
+            foreach (var label in new[] { "BRF 저장", "점자 BRL 저장", "점자 인쇄…" })
             {
                 var button = Descendants(dialog).OfType<Button>().Single(b => Equals(b.Content, label));
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -43,7 +43,7 @@ internal static class WindowsSpacingPreviewChecks
         {
             var texts = Descendants(alignment).OfType<TextBlock>().Where(t => t.IsVisible).Select(t => t.Text).ToArray();
             check(texts.Any(t => t.Contains("정렬") && t.Contains("7") && t.Contains("적용하지")), "Preview identifies unverified line alignment");
-            foreach (var label in new[] { "BRF 저장", "점자 TXT 저장", "점자 인쇄…" })
+            foreach (var label in new[] { "BRF 저장", "점자 BRL 저장", "점자 인쇄…" })
                 Descendants(alignment).OfType<Button>().Single(b => Equals(b.Content, label)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(prompts.Count == 3 && prompts.All(p => p.Contains("정렬") && p.Contains("7"))
                 && labels.All(l => l == "조판 정보를 확인할 수 없는 블록이 있습니다.|출력,취소"), "Saving or printing warns about unverified alignment");

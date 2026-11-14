@@ -82,6 +82,28 @@ internal static class WindowsPublicDesignChecks
                 "The inquiry 「파일」 button is enabled with the Figma 「최대 3개 · 10MB 제한」 12px beside it");
             var attached = Descendants(inquiry).OfType<ListBox>().Single(l => AutomationProperties.GetAutomationId(l) == "PublicInquiryAttachments");
             check(!attached.IsVisible, "No attachment list shows before a file is chosen");
+            var attachmentPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "qa1110-" + Guid.NewGuid() + ".txt");
+            System.IO.File.WriteAllText(attachmentPath, "QA attachment");
+            try
+            {
+                inquiry.Attach([attachmentPath]);
+                await inquiry.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                inquiry.UpdateLayout();
+                var remove = Descendants(attached).OfType<Button>().SingleOrDefault(b => AutomationProperties.GetAutomationId(b) == "PublicInquiryRemoveAttachment");
+                check(remove is { IsVisible: true, IsEnabled: true } && Descendants(attached).OfType<TextBlock>().Any(t => t.Text == System.IO.Path.GetFileName(attachmentPath)),
+                    "QA1110: attached filename has a visible remove button");
+                remove!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                check(attached.Items.Count == 0 && !attached.IsVisible, "QA1110: attachment remove button clears the selected upload");
+            }
+            finally
+            {
+                while (attached.Items.Count > 0)
+                {
+                    attached.SelectedIndex = 0;
+                    attached.ContextMenu!.Items.OfType<MenuItem>().Single().RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                }
+                System.IO.File.Delete(attachmentPath);
+            }
             check(HasIcon(inquiry, "public-inquiry-chevron.svg") && upload is not null && HasIcon(upload, "public-inquiry-upload.svg"),
                 "Inquiry category and attachment slots use the matching Figma 16px icons");
             check(Descendants(inquiry).OfType<TextBox>().Any(b => AutomationProperties.GetName(b) == "기관명")

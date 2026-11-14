@@ -22,6 +22,15 @@ internal static class WindowsCaptionChecks
         try
         {
             await Task.Delay(200); window.UpdateLayout();
+            check(window.ShowInTaskbar, "QA1110: main editor retains its taskbar entry");
+            window.ToggleSourcePanel();
+            check(window.DetachedSourceWindow is { ShowInTaskbar: true } detachedSource && detachedSource.Owner == window,
+                "QA1110: explicitly detached source retains taskbar entry and editor lifetime ownership");
+            window.ToggleSourcePanel();
+            window.ToggleOriginalPanel();
+            check(window.DetachedOriginalWindow is { ShowInTaskbar: true } original && original.Owner == window,
+                "QA1110: explicitly detached original retains taskbar entry and editor lifetime ownership");
+            window.ToggleOriginalPanel();
             var buttons = Descendants(window).OfType<Button>().Where(WindowChrome.GetIsHitTestVisibleInChrome).ToArray();
             foreach (var (name, asset) in new[] { ("최소화", "min"), ("최대화 / 복원", "max"), ("닫기", "close") })
             {

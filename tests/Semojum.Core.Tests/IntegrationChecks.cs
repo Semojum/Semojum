@@ -19,6 +19,7 @@ internal static class IntegrationChecks
         yield return ("API errors retain lockout details and handle HTML 413", ApiErrors);
         yield return ("API network failure does not replay a save", ApiNoReplay);
         yield return ("V3.1 page maps IDs, multiline contents, metadata and memos", JobPageMapping);
+        yield return ("Recent job restores latest saved source and manual braille, excluding unsaved edits", RecentJobSavedContents);
         yield return ("Job save freezes lines and reports partial failure without replay", JobSave);
         yield return ("Multipart uploads use repeated file parts and reject mixed documents", JobUpload);
         yield return ("Encrypted PDF retries the same upload with a password form part only after JOB4018", JobPassword);
@@ -189,6 +190,39 @@ internal static class IntegrationChecks
         return Task.CompletedTask;
     }
 
+    private static async Task RecentJobSavedContents()
+    {
+        JsonElement savedText = default, savedBraille = default;
+        using var http = new HttpClient(new Handler(async request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("login", StringComparison.Ordinal)) return Tokens();
+            if (request.Method == HttpMethod.Post && path.EndsWith("/save", StringComparison.Ordinal))
+            {
+                using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+                var page = body.RootElement.GetProperty("pages")[0];
+                savedText = page.GetProperty("text").Clone(); savedBraille = page.GetProperty("braille").Clone();
+                return Ok(new { jobId = "job_saved", savedPages = 1, failedPages = Array.Empty<int>(), savedAt = "2026-11-14T12:00:00" });
+            }
+            if (request.Method == HttpMethod.Get && path.EndsWith("/pages/1", StringComparison.Ordinal))
+                return Ok(new { status = "COMPLETED", result = new { text_list = savedText, braille_text_list = savedBraille, bounding_box_list = Array.Empty<object>() } });
+            throw new InvalidOperationException("Unexpected request: " + path);
+        }));
+        var api = new SemojumApiClient(http); await api.LoginAsync("test", "pw");
+        var client = new JobClient(api);
+        var model = new DocumentSession { JobId = "job_saved", OwnerLoginId = "test", JobStatus = "COMPLETED" };
+        var block = new EditorBlock { Id = 1, ServerId = "t1", Page = 1, Source = "변환 초안", Braille = "⠁" };
+        model.Add(block); model.ServerPages[1] = [new("t1", true)];
+        True((await client.SaveAsync(SmjFile.Snapshot(model))).Complete);
+        block.Source = "수정한 원문\n둘째 줄"; block.EditBraille("⠿⠃\n⠉");
+        True((await client.SaveAsync(SmjFile.Snapshot(model))).Complete);
+        block.Source = "서버에 저장하지 않은 로컬 수정";
+        var restored = (await client.PageAsync("job_saved", 1, 10)).Blocks.Single();
+        Equal("수정한 원문\n둘째 줄", restored.Source); Equal("⠿⠃\n⠉", restored.Braille);
+        True(restored.HasManualBraille); Equal("t1", restored.ServerId);
+        var outcome = await new TranslationCoordinator(new MockTranslationEngine()).TranslateAsync(restored, ManualEditDecision.Keep, TimeSpan.FromSeconds(2));
+        Equal(TranslationOutcome.Kept, outcome); Equal("⠿⠃\n⠉", restored.Braille);
+    }
     private static async Task JobSave()
     {
         var saves = 0;
