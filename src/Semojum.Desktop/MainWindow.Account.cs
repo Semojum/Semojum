@@ -216,7 +216,7 @@ public partial class MainWindow
         var model = BlankDocument(); model.Title = title; model.ActiveBlock!.Source = text;
         await ConfigureTextJobAsync(model);
         model.IsDirty = text.Length > 0;
-        SetSession(model, null, false);
+        SetSession(model, null, true);
         session.Status = "새 텍스트 작업 · AI·크레딧 사용 없음 · Ctrl+S로 저장";
     }
     private async Task ConfigureTextJobAsync(DocumentSession model, DocumentSession? selectedSettings = null, string? formId = null)

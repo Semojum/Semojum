@@ -182,6 +182,7 @@ public sealed partial class BrailleGridView
     private void InstallEditing()
     {
         Focusable = true;
+        InputMethod.SetIsInputMethodEnabled(this, false);
         PreviewTextInput += async (_, e) =>
         { e.Handled = true; if (Keyboard.Modifiers == ModifierKeys.None) await InsertAsync(e.Text); };
         PreviewKeyDown += async (_, e) =>

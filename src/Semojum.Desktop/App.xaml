@@ -72,7 +72,7 @@
         <Grid>
           <Border x:Name="InputSurface" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
             <Border.Background><MultiBinding Converter="{StaticResource InputFocusBrush}"><Binding Path="Background" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="IsKeyboardFocusWithin" RelativeSource="{RelativeSource TemplatedParent}"/><Binding Path="(common:FigmaSystemContrast.IsHighContrast)" RelativeSource="{RelativeSource TemplatedParent}"/></MultiBinding></Border.Background>
-            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
+            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}" VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"/>
           </Border>
           <Border x:Name="Underline" Height="1" Background="#D1D1D1" Margin="1,0,1,0" VerticalAlignment="Bottom" IsHitTestVisible="False"/>
           <Border x:Name="FocusUnderline" Height="2" Background="#005FB8" Margin="1,0,1,0" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"/>

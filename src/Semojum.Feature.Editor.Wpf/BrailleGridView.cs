@@ -196,6 +196,8 @@ public sealed partial class BrailleGridView : ListBox
         SetValue(VirtualizingPanel.IsVirtualizingProperty, true);
         SetValue(VirtualizingPanel.VirtualizationModeProperty, VirtualizationMode.Recycling);
         SetValue(ScrollViewer.CanContentScrollProperty, true);
+        // A face can be taller than the viewport. Keep virtualization, but scroll within faces.
+        SetValue(VirtualizingPanel.ScrollUnitProperty, ScrollUnit.Pixel);
         SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Auto);
         var scrollBarStyle = new Style(typeof(System.Windows.Controls.Primitives.ScrollBar));
         var vertical = new Trigger { Property = System.Windows.Controls.Primitives.ScrollBar.OrientationProperty, Value = Orientation.Vertical };

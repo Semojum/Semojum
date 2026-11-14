@@ -115,6 +115,7 @@ public partial class MainWindow : Window
         SetSession(smoke && !startEmpty ? DocumentSession.Sample() : BlankDocument(), null, true, showUpload: !smoke || startEmpty);
         if (!smoke || startEmpty) { openDocument!.IsStartupPlaceholder = true; openDocument.PlaceholderVersion = session.ChangeVersion; }
         RestorePreferences(); ApplyAppearance(new());
+        SixDotToggle.IsChecked = true;
         if (!smoke && !testWithoutAccount) Loaded += async (_, _) =>
         {
             await StartAccountAsync();

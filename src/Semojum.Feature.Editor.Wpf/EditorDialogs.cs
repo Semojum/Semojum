@@ -204,7 +204,11 @@ public sealed class FindDialog : CompactDialog
             toggle.BorderBrush = EditorModalDesign.Color(on ? "#005FB8" : "#EAEAEA"); toggle.Background = EditorModalDesign.Color(on ? "#EFF6FC" : "#FBFBFB");
             toggle.ToolTip = on ? "점자 입력 켬" : "점자 입력 끔"; sixDot.Reset();
             hint.Text = on ? "점자로 바꿀 말" : "바꿀 말을 적는다"; query.FontSize = replacement.FontSize = on ? 16 : 12;
-            foreach (var box in new[] { query, replacement }) if (on) box.FontFamily = (FontFamily)FindResource("BrailleFont"); else box.ClearValue(FontFamilyProperty);
+            foreach (var box in new[] { query, replacement })
+            {
+                InputMethod.SetIsInputMethodEnabled(box, !on);
+                if (on) box.FontFamily = (FontFamily)FindResource("BrailleFont"); else box.ClearValue(FontFamilyProperty);
+            }
         }
         toggle.Checked += (_, _) => UpdateToggle(); toggle.Unchecked += (_, _) => UpdateToggle(); UpdateToggle();
         SearchPanel Target() => toggle.IsChecked == true ? SearchPanel.Braille : SearchPanel.Text;
@@ -238,8 +242,25 @@ public sealed class FindDialog : CompactDialog
                 if (toggle.IsChecked != true) return;
                 var key = Controls.SixDotKey.FromEvent(e);
                 if (key is not { } c || !sixDot.IsMapped(c)) return;
-                var cell = sixDot.Release(c); if (cell is not null) control.SelectedText = cell; e.Handled = true;
+                var cell = sixDot.Release(c);
+                if (cell is not null)
+                {
+                    var start = control.SelectionStart;
+                    control.SelectedText = cell;
+                    control.Select(start + cell.Length, 0);
+                }
+                e.Handled = true;
             };
+            control.PreviewTextInput += (_, e) =>
+            {
+                if (toggle.IsChecked == true && !DocumentSearch.IsBrailleText(e.Text)) e.Handled = true;
+            };
+            DataObject.AddPastingHandler(control, (_, e) =>
+            {
+                if (toggle.IsChecked == true && (!e.DataObject.GetDataPresent(DataFormats.UnicodeText)
+                    || e.DataObject.GetData(DataFormats.UnicodeText) is not string text || !DocumentSearch.IsBrailleText(text)))
+                    e.CancelCommand();
+            });
             control.LostKeyboardFocus += (_, _) => sixDot.Reset();
         }
         Field("찾을 내용", query, true); Field("바꿀 내용", replacement, false); UpdateToggle();
