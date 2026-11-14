@@ -77,6 +77,7 @@ internal static class BoardDesign
     internal static Style CheckStyle()
     {
         var style = new Style(typeof(CheckBox), Application.Current.FindResource(typeof(CheckBox)) as Style);
+        style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(0)));
         var panel = new FrameworkElementFactory(typeof(StackPanel)); panel.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
         var square = new FrameworkElementFactory(typeof(Border), "Square"); square.SetValue(FrameworkElement.WidthProperty, 20d); square.SetValue(FrameworkElement.HeightProperty, 20d); square.SetValue(Border.CornerRadiusProperty, new CornerRadius(4)); square.SetValue(Border.BorderThicknessProperty, new Thickness(1)); square.SetValue(Border.BorderBrushProperty, Brush("#D1D1D1")); square.SetValue(Border.BackgroundProperty, Brush("#FBFBFB"));
         var icon = new FrameworkElementFactory(typeof(SvgViewbox), "Tick"); icon.SetValue(SvgViewbox.SourceProperty, new Uri("pack://application:,,,/Semojum.Feature.Board.Wpf;component/Assets/Figma/board-check.svg")); icon.SetValue(FrameworkElement.WidthProperty, 16d); icon.SetValue(FrameworkElement.HeightProperty, 16d); icon.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed); square.AppendChild(icon); panel.AppendChild(square);

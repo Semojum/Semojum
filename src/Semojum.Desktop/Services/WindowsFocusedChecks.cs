@@ -7,7 +7,7 @@ namespace Semojum.Desktop.Services;
 internal static class WindowsFocusedChecks
 {
     private static readonly HashSet<string> Areas = new(StringComparer.OrdinalIgnoreCase)
-        { "qa1110", "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
+        { "drafts", "qa1110", "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
 
     internal static bool IsKnownArea(string area) => Areas.Contains(area);
 
@@ -29,6 +29,9 @@ internal static class WindowsFocusedChecks
         {
             switch (area.ToLowerInvariant())
             {
+                case "drafts":
+                    await WindowsDraftDockChecks.RunAsync(Check);
+                    break;
                 case "qa1110":
                     await WindowsQa1110Checks.RunAsync(Check);
                     break;

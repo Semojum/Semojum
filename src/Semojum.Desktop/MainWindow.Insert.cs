@@ -125,7 +125,7 @@ public partial class MainWindow
             var icon = new Grid { Width = 20, Height = 20 }; icon.Children.Add(normal); icon.Children.Add(selected); icon.Children.Add(dot);
             var label = new TextBlock { Text = $"{(i < 20 ? char.ConvertFromUtf32(0x2460 + i) : (i + 1).ToString())} {draft.Label}", FontFamily = new FontFamily("Malgun Gothic"), FontSize = 14, Margin = new(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
             var content = new StackPanel { Orientation = Orientation.Horizontal }; content.Children.Add(icon); content.Children.Add(label);
-            var radio = new RadioButton { GroupName = group, Content = content, Height = 38, Margin = new(15, 0, 0, 0), ToolTip = draft.Reason,
+            var radio = new RadioButton { GroupName = group, Content = content, MinWidth = 144, Height = 38, Margin = new(15, 0, 0, 0), ToolTip = draft.Reason,
                 Template = new ControlTemplate(typeof(RadioButton)) { VisualTree = new FrameworkElementFactory(typeof(ContentPresenter)) } };
             System.Windows.Automation.AutomationProperties.SetName(radio, draft.Label);
             radio.Checked += async (_, _) =>
@@ -138,12 +138,27 @@ public partial class MainWindow
         }
         DraftDock.Visibility = Visibility.Visible; UpdateDraftDivider();
         var selectedIndex = Math.Clamp(table is null ? block.Metadata.SelectedIndex ?? 0 : Array.FindIndex(table.Drafts, d => d.RenderMode == block.Metadata.RenderMode), 0, drafts.Length - 1);
-        // The server decides how many drafts there are: four per row, two rows shown, further rows scroll inside the dock.
+        // Keep every choice on one row and reveal the saved selection after layout.
         var chosen = (RadioButton)DraftChoiceGrid.Children[selectedIndex];
-        DraftChoiceScroll.ScrollToVerticalOffset(selectedIndex / DraftChoiceGrid.Columns * chosen.Height);
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() => chosen.BringIntoView()));
         chosen.IsChecked = true;
     }
 
+    private void ResizeDraftDock(double delta)
+    {
+        var available = Math.Max(1, PanelGrid.ActualHeight);
+        DraftDock.Height = Math.Clamp(DraftDock.ActualHeight + delta, Math.Min(240, available), available);
+    }
+
+    private void DraftDockResize_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+        => ResizeDraftDock(-e.VerticalChange);
+
+    private void DraftDockResize_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Up or Key.Down)) return;
+        ResizeDraftDock(e.Key == Key.Up ? 24 : -24);
+        e.Handled = true;
+    }
     private static SvgViewbox DraftIconAsset(string name, double size) => new()
     { Source = new Uri($"pack://application:,,,/Semojum.Mockup;component/Assets/Figma/{name}"), Width = size, Height = size, Stretch = Stretch.None };
 

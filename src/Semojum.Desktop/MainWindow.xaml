@@ -276,21 +276,21 @@
         <editorControls:BraillePane x:Name="Braille"/>
         <Border x:Name="DetachedPlaceholder" Visibility="Collapsed" Background="#F4F6F8"><StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"><TextBlock Text="점자 창이 분리되어 있습니다" FontSize="17"/><TextBlock Text="독립 창에서도 같은 블록을 편집합니다." Foreground="{StaticResource Muted}" Margin="0,12,0,20"/><Button Content="이 창으로 합치기" Tag="detach" Click="Action_Click" Style="{StaticResource PrimaryButton}"/></StackPanel></Border>
       </Grid></Border>
-      <Border x:Name="DraftDock" Grid.Column="2" Grid.ColumnSpan="3" Panel.ZIndex="10" VerticalAlignment="Bottom" Height="212"
+      <Border x:Name="DraftDock" Grid.Column="2" Grid.ColumnSpan="3" Panel.ZIndex="10" VerticalAlignment="Bottom" Height="360" MaxHeight="{Binding ActualHeight, ElementName=PanelGrid}"
               Visibility="Collapsed" Background="White" BorderBrush="#D1D1D1" BorderThickness="1">
         <Grid>
-          <Grid.RowDefinitions><RowDefinition Height="28"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-          <Border Background="#F3F3F3" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
+          <Grid.RowDefinitions><RowDefinition Height="6"/><RowDefinition Height="28"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <Thumb x:Name="DraftDockResize" Height="6" Cursor="SizeNS" Focusable="True" DragDelta="DraftDockResize_DragDelta" PreviewKeyDown="DraftDockResize_KeyDown" AutomationProperties.Name="대체 초안 높이 조절"/><Border Grid.Row="1" Background="#F3F3F3" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
             <DockPanel Margin="11,0,11,0">
               <Button x:Name="DraftDockClose" DockPanel.Dock="Right" Click="DraftDockClose_Click" Width="24" Height="24" MinWidth="24" MinHeight="24" Padding="0" Background="Transparent" BorderBrush="Transparent" Style="{StaticResource PanelButton}" ToolTip="선택한 초안 적용하고 닫기" AutomationProperties.Name="선택한 초안 적용하고 닫기"><svg:SvgViewbox Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/draft-dock-close.svg" Width="16" Height="16" Stretch="None" IsHitTestVisible="False"/></Button>
               <svg:SvgViewbox DockPanel.Dock="Left" Source="pack://application:,,,/Semojum.Mockup;component/Assets/Figma/draft-dock-icon.svg" Width="16" Height="16" Stretch="None" Margin="0,0,4,0"/>
               <TextBlock x:Name="DraftDockTitle" FontFamily="Malgun Gothic" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
             </DockPanel>
           </Border>
-          <Border Grid.Row="1" MinHeight="40" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
-            <ScrollViewer x:Name="DraftChoiceScroll" MaxHeight="76" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,32,0"><UniformGrid x:Name="DraftChoiceGrid" Columns="4"/></ScrollViewer>
+          <Border Grid.Row="2" MinHeight="40" BorderBrush="#EAEAEA" BorderThickness="0,0,0,1">
+            <ScrollViewer x:Name="DraftChoiceScroll" MaxHeight="56" VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Margin="0,0,32,0"><StackPanel x:Name="DraftChoiceGrid" Orientation="Horizontal"/></ScrollViewer>
           </Border>
-          <Grid Grid.Row="2">
+          <Grid Grid.Row="3">
             <Grid.ColumnDefinitions><ColumnDefinition x:Name="DraftTextColumn"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
             <Border BorderBrush="#D1D1D1" BorderThickness="0,0,1,0" Padding="15,8,8,4">
               <DockPanel><TextBlock DockPanel.Dock="Top" Text="묵자" FontFamily="Malgun Gothic" FontSize="12" Foreground="#5F5F5F"/><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><TextBlock x:Name="DraftTextPreview" FontFamily="Malgun Gothic" FontSize="12" LineHeight="20" TextWrapping="Wrap" VerticalAlignment="Top" Margin="0,2,0,0" AutomationProperties.Name="선택한 초안 묵자 미리보기"/></ScrollViewer></DockPanel>
