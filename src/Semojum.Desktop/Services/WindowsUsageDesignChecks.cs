@@ -106,6 +106,7 @@ internal static class WindowsUsageDesignChecks
             var expectedColors = new Dictionary<string, Color> { ["완료"] = Color.FromRgb(15, 123, 15), ["부분 실패 1쪽"] = Color.FromRgb(196, 43, 28), ["진행 중 2/4"] = Color.FromRgb(157, 93, 0), ["대기 중"] = Color.FromRgb(95, 95, 95) };
             check(badges.Length == 4 && badges.All(b => b.Child is TextBlock t && b.BorderBrush is SolidColorBrush edge && t.Foreground is SolidColorBrush text && edge.Color == expectedColors[t.Text] && text.Color == edge.Color), "Each real job status uses its corresponding Figma label and color");
             check(badges.Length == 4 && badges.All(b => b.Child is TextBlock t && System.Windows.Automation.AutomationProperties.GetName(b) == t.Text), "Badge accessibility names include the same actual status and counts");
+            check(Descendants(dialog).OfType<TextBlock>().Any(t => System.Windows.Automation.AutomationProperties.GetAutomationId(t) == "UsageSavedCopyHint" && t.IsVisible && t.Text.Contains("PC에만 저장한 수정본", StringComparison.Ordinal) && t.Text.Contains("수정 저장 시각", StringComparison.Ordinal)), "QA1110: work history distinguishes server save from local-only edits and conversion completion time");
             var jobGrid = Descendants(dialog).OfType<DataGrid>().Single(g => g.Items.Cast<object>().Any(x => x.ToString()!.Contains("실제 작업.pdf", StringComparison.Ordinal)));
             string Row(string filename, string property)
             {

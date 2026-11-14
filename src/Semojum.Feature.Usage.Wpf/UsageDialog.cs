@@ -373,6 +373,13 @@ public sealed class UsageDialog : CompactDialog
         rangeField.Children.Add(new SvgViewbox { Source = new Uri("pack://application:,,,/Semojum.Feature.Usage.Wpf;component/Assets/Figma/account-chevron.svg"), Width = 16, Height = 16, HorizontalAlignment = HorizontalAlignment.Right, Margin = new(0, 0, 5, 0), Stretch = Stretch.None, IsHitTestVisible = false });
         DockPanel.SetDock(rangeField, Dock.Right); jobsHeading.Children.Add(rangeField); jobsHeading.Children.Add(new TextBlock { Text = "내 작업별 크레딧", FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
         DockPanel.SetDock(jobsHeading, Dock.Top); history.Children.Add(jobsHeading);
+        var savedCopyHint = new TextBlock
+        {
+            Text = "이미 열린 작업은 현재 편집 내용을 유지하고, 닫힌 작업은 서버의 최신 저장본을 엽니다.\nPC에만 저장한 수정본은 파일 > 열기로 여세요. 완료는 변환 완료 시각이며, 수정 여부나 수정 저장 시각을 뜻하지 않습니다.",
+            TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = ColorBrush("#5F5F5F"), Margin = new(0, 8, 0, 0)
+        };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(savedCopyHint, "UsageSavedCopyHint");
+        DockPanel.SetDock(savedCopyHint, Dock.Top); history.Children.Add(savedCopyHint);
         var jobs = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, Margin = new(0, 12, 0, 0), RowHeight = 40, Style = (Style)FindResource("UsageJobsGrid") };
         foreach (var (label, property, width) in new[] { ("작업명", "FileName", 250d), ("모드", "Mode", 100d), ("쪽수", "Pages", 80d), ("크레딧", "Credits", 90d), ("완료", "Finished", 120d) })
             jobs.Columns.Add(new DataGridTextColumn { Header = label, Binding = new Binding(property), Width = width });
