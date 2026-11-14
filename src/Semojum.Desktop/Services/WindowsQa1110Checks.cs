@@ -109,6 +109,7 @@ internal static class WindowsQa1110Checks
         finally { window.PrepareSmokeShutdown(); window.Close(); }
         await WindowsQa1110BoardChecks.RunAsync(Verify);
         await WindowsQa1110DraftChecks.RunAsync(Verify);
+        await WindowsQa1110TableChecks.RunAsync(Verify);
         if (failures.Count > 0) throw new InvalidOperationException(string.Join("\n", failures));
     }
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

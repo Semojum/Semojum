@@ -59,7 +59,6 @@ internal static class MemoTextInputAppearance
         surface.SetValue(Border.BorderThicknessProperty, new Thickness(1));
         var host = new FrameworkElementFactory(typeof(ScrollViewer), "PART_ContentHost");
         host.SetValue(UIElement.FocusableProperty, false);
-        host.SetBinding(FrameworkElement.MarginProperty, new Binding(nameof(Control.Padding)) { RelativeSource = RelativeSource.TemplatedParent });
         host.SetBinding(ScrollViewer.VerticalScrollBarVisibilityProperty, new Binding { Path = new PropertyPath("(0)", ScrollViewer.VerticalScrollBarVisibilityProperty), RelativeSource = RelativeSource.TemplatedParent });
         host.SetBinding(ScrollViewer.HorizontalScrollBarVisibilityProperty, new Binding { Path = new PropertyPath("(0)", ScrollViewer.HorizontalScrollBarVisibilityProperty), RelativeSource = RelativeSource.TemplatedParent });
         surface.AppendChild(host);

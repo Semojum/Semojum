@@ -72,6 +72,7 @@ internal static class WindowsQa4Checks
         await WindowsDraftPendingChecks.RunAsync(check);
         await WindowsTableDraftChecks.RunAsync(directory, check);
         await WindowsTableDockChecks.RunAsync(directory, check);
+        await WindowsQa1110TableChecks.RunPreviewAsync(check);
         await WindowsMathSafetyChecks.RunAsync(check, directory);
         await WindowsMathDockChecks.RunAsync(check, directory);
         await WindowsInlineMathChecks.RunAsync(check, directory);
