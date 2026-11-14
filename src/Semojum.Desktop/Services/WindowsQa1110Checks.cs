@@ -154,17 +154,32 @@ internal static class WindowsQa1110Checks
             Verify(model.ActiveBlock is { } added && added != last && model.Blocks.Count == 3 && grid.CoordinatesCurrent && RowVisible(last, last.Braille.Length),
                 $"QA1110: new block is revealed after braille grid refresh (current={grid.CoordinatesCurrent}, active={model.ActiveBlock?.Id}, faces={grid.Items.Count}, ids={string.Join(",", grid.Items.OfType<BrailleGridFace>().SelectMany(f => f.Rows).SelectMany(r => r).Where(c => c is not null).Select(c => c!.Block.Id).Distinct())}, status={model.Status})");
             Verify(navigation.PageEditor.Editor.IsKeyboardFocusWithin, "QA1110: adding a block retains source editor keyboard focus");
-            bool RowVisible(EditorBlock block, int offset)
+            navigation.ToggleDetached();
+            await Settle();
+            var detachedGrid = navigation.DetachedPane!.GridView;
+            Verify(Window.GetWindow(detachedGrid)?.ShowInTaskbar == true, "QA1110: explicitly detached braille retains its taskbar entry");
+            navigation.PageEditor.Editor.Focus();
+            navigation.PageEditor.Editor.CaretOffset = 0;
+            await Settle();
+            Descendants(detachedGrid).OfType<ScrollViewer>().First().ScrollToTop();
+            navigation.PageEditor.Editor.CaretOffset = 4;
+            await Settle();
+            Verify(RowVisible(first, 158, detachedGrid), "QA1110: source caret reveals mapped row in detached braille window");
+            Verify(navigation.PageEditor.Editor.IsKeyboardFocusWithin, "QA1110: detached linked scrolling does not steal source focus");
+            navigation.ToggleDetached();
+            bool RowVisible(EditorBlock block, int offset, BrailleGridView? target = null)
             {
-                foreach (var face in grid.Items.OfType<BrailleGridFace>())
+                var targetGrid = target ?? grid;
+                var targetScroll = Descendants(targetGrid).OfType<ScrollViewer>().First();
+                foreach (var face in targetGrid.Items.OfType<BrailleGridFace>())
                 {
                     var row = Array.FindIndex(face.Rows, cells => cells.Any(cell => cell?.Block == block && cell.Offset == offset));
-                    if (row < 0 || grid.ItemContainerGenerator.ContainerFromItem(face) is not DependencyObject container) continue;
+                    if (row < 0 || targetGrid.ItemContainerGenerator.ContainerFromItem(face) is not DependencyObject container) continue;
                     var visual = Descendants(container).OfType<FrameworkElement>().FirstOrDefault(e => e.GetType().Name == "Face");
                     if (visual is null) continue;
-                    var height = grid.FontSize * 28 / 22;
-                    var top = visual.TransformToAncestor(scroll).Transform(new Point(0, row * height)).Y;
-                    return top >= -.5 && top + height <= scroll.ViewportHeight + .5;
+                    var height = targetGrid.FontSize * 28 / 22;
+                    var top = visual.TransformToAncestor(targetScroll).Transform(new Point(0, row * height)).Y;
+                    return top >= -.5 && top + height <= targetScroll.ViewportHeight + .5;
                 }
                 return false;
             }

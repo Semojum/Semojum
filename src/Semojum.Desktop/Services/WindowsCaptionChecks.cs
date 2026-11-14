@@ -22,6 +22,7 @@ internal static class WindowsCaptionChecks
         try
         {
             await Task.Delay(200); window.UpdateLayout();
+            check(window.ShowInTaskbar, "QA1110: main editor retains its taskbar entry");
             var buttons = Descendants(window).OfType<Button>().Where(WindowChrome.GetIsHitTestVisibleInChrome).ToArray();
             foreach (var (name, asset) in new[] { ("최소화", "min"), ("최대화 / 복원", "max"), ("닫기", "close") })
             {

@@ -536,7 +536,7 @@ public partial class MainWindow : Window
         BrailleToggle.IsChecked = true;
         CopyBrailleSettings(); ApplyAppearance(appearance);
         detachedPane.Editor.TextArea.Caret.PositionChanged += (_, _) => { if (detachedPane is not null) SpeakCaret(detachedPane.Editor); };
-        detachedWindow = new Window { Title = $"점자 — {session.Title} - 누리닷", Owner = this, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        detachedWindow = new Window { Title = $"점자 — {session.Title} - 누리닷", Owner = this, ShowInTaskbar = true, Width = 600, Height = 230, MinWidth = 420, MinHeight = 180, Content = detachedPane, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         WindowFrame.Apply(detachedWindow, editor: true);
         detachedWindow.Closed += (_, _) =>
         {

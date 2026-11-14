@@ -36,6 +36,7 @@ internal static class WindowsOwnedModalChecks
                 try
                 {
                     Trace("range-loaded");
+                    check(!range.ShowInTaskbar && GetWindow(new WindowInteropHelper(range).Handle, 4) == new WindowInteropHelper(owner).Handle, "QA1110: modal has native main-window owner and no separate taskbar entry");
                     var ownerContent = (UIElement)owner.Content; var layer = AdornerLayer.GetAdornerLayer(ownerContent);
                     seen = layer?.GetAdorners(ownerContent)?.Any(a => AutomationProperties.GetAutomationId(a) == "FigmaModalBackdrop") == true;
                     check(NativePlacementMatches(owner, range), "An owned modal is centered horizontally and placed 45% / 55% vertically on its owner");
@@ -90,8 +91,10 @@ internal static class WindowsOwnedModalChecks
 
     private static void Trace(string stage)
     { if (Environment.GetEnvironmentVariable("MODAL_TRACE") is { Length: > 0 } path) File.AppendAllText(path, stage + Environment.NewLine); }
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hwnd, uint command);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowEnabled(IntPtr hwnd);
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { internal int Left, Top, Right, Bottom; }
+
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
     private static bool NativePlacementMatches(Window owner, Window dialog)
     {

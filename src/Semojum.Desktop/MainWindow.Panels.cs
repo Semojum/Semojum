@@ -51,7 +51,7 @@ public partial class MainWindow
         var restore = new Button { Content = "메인 창으로 합치기", Margin = new Thickness(8), HorizontalAlignment = HorizontalAlignment.Right };
         DockPanel.SetDock(restore, Dock.Top); host.Children.Add(restore); host.Children.Add(panel);
         panel.Visibility = Visibility.Visible;
-        var window = new Window { Title = $"{label} — {session.Title}", Owner = this, Width = 680, Height = 760,
+        var window = new Window { Title = $"{label} — {session.Title}", Owner = this, ShowInTaskbar = true, Width = 680, Height = 760,
             MinWidth = 380, MinHeight = 350, Content = host, DataContext = session,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Tag = label };
         detachedPanels.Add(panel, window); BindCommonKeys(window);

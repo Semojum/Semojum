@@ -1,5 +1,5 @@
 <Window x:Class="Semojum.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit" xmlns:svg="http://sharpvectors.codeplex.com/svgc/" xmlns:editorFeature="clr-namespace:Semojum.Feature.Editor.Wpf;assembly=Semojum.Feature.Editor.Wpf" xmlns:editorControls="clr-namespace:Semojum.Desktop.Controls;assembly=Semojum.Feature.Editor.Wpf" xmlns:local="clr-namespace:Semojum.Desktop.Controls"
-        Style="{StaticResource {x:Type Window}}" Title="{Binding WindowTitle}" Width="1440" Height="1000" MinWidth="1280" MinHeight="800" WindowStartupLocation="CenterScreen" Closing="Window_Closing" UseLayoutRounding="True">
+        Style="{StaticResource {x:Type Window}}" ShowInTaskbar="True" Title="{Binding WindowTitle}" Width="1440" Height="1000" MinWidth="1280" MinHeight="800" WindowStartupLocation="CenterScreen" Closing="Window_Closing" UseLayoutRounding="True">
   <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Controls/FinalMenuStyles.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
   <DockPanel LastChildFill="True">
     <Border DockPanel.Dock="Top" Height="32" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1">
