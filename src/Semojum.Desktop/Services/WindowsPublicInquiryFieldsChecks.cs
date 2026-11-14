@@ -21,18 +21,26 @@ internal static class WindowsPublicInquiryFieldsChecks
     private sealed class Fixture : HttpMessageHandler
     {
         internal readonly List<Dictionary<string, string>> Bodies = [];
+        internal readonly List<Dictionary<string, string>> FlatFields = [];
         internal bool Accept;
         internal (HttpStatusCode Status, string Code)? Reject;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri!.AbsolutePath != "/api/public/inquiries") throw new InvalidOperationException("Unexpected fixture request");
+            var fields = new Dictionary<string, string>();
+            foreach (var part in (MultipartFormDataContent)request.Content!)
+            {
+                var name = part.Headers.ContentDisposition?.Name?.Trim('"');
+                if (name is not null and not "request" and not "files") fields[name] = await part.ReadAsStringAsync(cancellationToken);
+            }
+            FlatFields.Add(fields);
             Bodies.Add(await FormAsync(request.Content!, cancellationToken));
             if (Reject is { } reject) return new HttpResponseMessage(reject.Status) { Content = new StringContent($"{{\"isSuccess\":false,\"code\":\"{reject.Code}\",\"message\":\"fixture rejection\"}}", Encoding.UTF8, "application/json") };
             if (Accept) return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"isSuccess\":true,\"result\":{}}", Encoding.UTF8, "application/json") };
             return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{\"isSuccess\":false,\"code\":\"UNAVAILABLE\",\"message\":\"fixture error\"}", Encoding.UTF8, "application/json") };
         }
     }
-    // The app sends multipart: the fields as one JSON 「request」 part (spread here into one entry per field), and each attachment
+    // The app sends both ModelAttribute fields and a JSON request part for deployed RequestPart servers; each attachment
     // as a 「files」 part kept here as 「name:bytes」, joined by 「|」.
     internal static async Task<Dictionary<string, string>> FormAsync(HttpContent content, CancellationToken token)
     {
@@ -43,8 +51,13 @@ internal static class WindowsPublicInquiryFieldsChecks
             if (name == "request")
             {
                 if (part.Headers.ContentType?.MediaType != "application/json") throw new InvalidOperationException("The inquiry request part must be JSON");
-                foreach (var field in System.Text.Json.JsonDocument.Parse(await part.ReadAsStringAsync(token)).RootElement.EnumerateObject())
-                    form[field.Name] = field.Value.ValueKind == System.Text.Json.JsonValueKind.String ? field.Value.GetString()! : field.Value.GetRawText();
+                using var payload = System.Text.Json.JsonDocument.Parse(await part.ReadAsStringAsync(token));
+                foreach (var field in payload.RootElement.EnumerateObject())
+                {
+                    var jsonValue = field.Value.GetString()!;
+                    if (!form.TryGetValue(field.Name, out var formValue) || formValue != jsonValue)
+                        throw new InvalidOperationException("Multipart field and JSON payload disagree: " + field.Name);
+                }
                 continue;
             }
             var value = (disposition.FileNameStar ?? disposition.FileName?.Trim('"')) is { } file ? $"{file}:{(await part.ReadAsByteArrayAsync(token)).Length}" : await part.ReadAsStringAsync(token);
@@ -100,6 +113,9 @@ internal static class WindowsPublicInquiryFieldsChecks
                 if (fixture.Bodies.Count > 0)
                 {
                     var data = fixture.Bodies[0];
+                    check(fixture.FlatFields[0].GetValueOrDefault("type") == "ACCOUNT" && fixture.FlatFields[0].GetValueOrDefault("email") == "fixture@example.test"
+                        && fixture.FlatFields[0].GetValueOrDefault("message") == "본문" && fixture.FlatFields[0].GetValueOrDefault("title") == "문의 제목",
+                        "QA1110: inquiry supplies actual multipart form fields required by backend ModelAttribute binding");
                     check(data.GetValueOrDefault("type") == "ACCOUNT" && data.GetValueOrDefault("email") == "fixture@example.test" && data.GetValueOrDefault("title") == "문의 제목"
                         && data.GetValueOrDefault("orgName") == "기관 A" && data.GetValueOrDefault("message") == "본문" && data.GetValueOrDefault("website") == ""
                         && !data.ContainsKey("name") && !data.ContainsKey("files"),

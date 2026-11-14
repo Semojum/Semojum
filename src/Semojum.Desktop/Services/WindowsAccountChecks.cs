@@ -26,6 +26,11 @@ internal static class WindowsAccountChecks
     private static HttpResponseMessage Json(HttpStatusCode status, string body) => new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
     internal static async Task RunAsync(Action<bool, string> check)
     {
+        using (var freshHttp = new HttpClient(new Handler(_ => throw new InvalidOperationException("Fresh login must not contact refresh endpoint"))))
+        {
+            var fresh = await AutomaticLogin.RestoreAsync(new SemojumApiClient(freshHttp), new MemoryStore { Value = null });
+            check(fresh.Account is null && fresh.Message is null, "QA1110: first launch without credentials has no expired-session warning or refresh request");
+        }
         var store = new MemoryStore();
         using (var http = new HttpClient(new Handler(_ => Task.FromResult(Json(HttpStatusCode.OK, "{\"isSuccess\":true,\"result\":{\"accessToken\":\"fresh\",\"loginId\":\"editor\",\"role\":\"ROLE_USER\",\"alias\":\"현재 이름\"}}")))))
         {

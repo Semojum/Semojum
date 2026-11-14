@@ -73,7 +73,7 @@ public sealed class RuleDialog : CompactDialog
                 results.Children.Add(item);
             }
             if (results.Children.Count == 0) results.Children.Add(new TextBlock { Text = "검색 결과가 없습니다.", Margin = new(8) });
-            else if (results.Children[0] is Expander first) first.IsExpanded = true;
+
         }
         async Task SearchAsync()
         {
@@ -94,7 +94,7 @@ public sealed class RuleDialog : CompactDialog
             { Status.Text = $"1–{totalPages}쪽을 입력해 주세요."; return; }
             await RunAsync(async () => { page = target - 1; await SearchAsync(); });
         };
-        var search = Button("검색", () => RunAsync(async () => { page = 0; await SearchAsync(); }));
+        var search = Button("검색어 지우기", () => RunAsync(async () => { query.Clear(); page = 0; await SearchAsync(); query.Focus(); }));
         var searchHost = new Grid(); searchHost.Children.Add(query);
         var placeholder = new TextBlock { Text = "점역 규정 검색...", Foreground = FigmaDialogElements.Brush("#8A8A8A"), Margin = new(31, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
         AutomationProperties.SetAutomationId(placeholder, "RuleSearchPlaceholder");
@@ -102,7 +102,7 @@ public sealed class RuleDialog : CompactDialog
         query.TextChanged += (_, _) => UpdatePlaceholder(); UpdatePlaceholder(); searchHost.Children.Add(placeholder);
         search.MinWidth = search.Width = 24; search.Height = 24; search.MinHeight = 0; search.Margin = new(4, 0, 0, 0); search.HorizontalAlignment = HorizontalAlignment.Left;
         search.Content = FigmaDialogElements.DesignIcon("rule-browser-book.svg", 16, 16, "Semojum.Feature.Rules.Wpf"); search.Background = Brushes.Transparent; search.BorderBrush = Brushes.Transparent; search.Template = FigmaDialogElements.SurfaceTemplate(0); search.Padding = new(0);
-        AutomationProperties.SetName(search, "규정 검색"); searchHost.Children.Add(search); filters.Children.Add(searchHost);
+        AutomationProperties.SetName(search, "규정 검색어 지우기"); AutomationProperties.SetAutomationId(search, "RuleSearchClear"); search.ToolTip = "검색어 지우기"; searchHost.Children.Add(search); filters.Children.Add(searchHost);
         var chips = new StackPanel { Orientation = Orientation.Horizontal, Margin = new(0, 16, 0, 0) }; filters.Children.Add(chips);
         var labels = new[] { "전체", "한국 점자 규정", "점자 도서 제작 지침", "점자 자료 제작 지침" };
         var widths = new[] { 44d, 106, 136, 136 };
