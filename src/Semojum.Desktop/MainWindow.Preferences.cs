@@ -48,7 +48,8 @@ public partial class MainWindow
             view.CurrentLineBorder = null;
             view.NonPrintableCharacterBrush = value.HighContrast ? Brushes.Cyan : C(value.MarkerColor);
             view.ColumnRulerPen = braille ? new Pen(value.HighContrast ? Brushes.White : C(value.OutlineColor), value.OutlineWidth) : null;
-            editor.Options.ShowSpaces = editor.Options.ShowTabs = value.ShowFormattingMarks;
+            editor.Options.ShowTabs = value.ShowFormattingMarks;
+            SpaceMarkGenerator.Configure(editor, value.ShowFormattingMarks);
             EnterMarkGenerator.Configure(editor, value.ShowFormattingMarks);
             editor.ShowLineNumbers = value.ShowLineNumbers;
             ApplyLineNumberAppearance(editor, value, lineNumberColor);
