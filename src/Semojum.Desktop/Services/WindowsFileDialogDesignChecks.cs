@@ -17,8 +17,8 @@ internal static class WindowsFileDialogDesignChecks
     internal static void Run(Action<bool, string> check)
     {
         var general = new BrailleForm("builtin:GENERAL_BOOK", "일반 도서", true, null, new(), new());
-        var saved = new BrailleForm("user:sample", "내 양식", false, null, new(), new());
-        var open = new OpenDocumentDialog([general, saved], new AccountDefaults(new(), saved.FormId, "odd"));
+        var saved = new BrailleForm("user:sample", "내 양식", false, null, new(), new(KoreanGrade1: true));
+        var open = new OpenDocumentDialog([general, saved], new AccountDefaults(new(KoreanGrade1: true, EnglishGrade1: true), saved.FormId, "odd"));
         check(!open.FileNames.Text.Contains("DOCX", StringComparison.OrdinalIgnoreCase), "The upload picker does not advertise DOCX");
         try { open.SetPaths(["document.docx"]); check(false, "The upload picker rejects DOCX"); }
         catch (ArgumentException) { check(true, "The upload picker rejects DOCX"); }
@@ -47,6 +47,15 @@ internal static class WindowsFileDialogDesignChecks
         {
             open.UpdateLayout();
             Capture(open, "open-document.png");
+            var korean = Descendants(open).OfType<ComboBox>().Single(c => AutomationProperties.GetName(c) == "한글");
+            check(Equals(korean.SelectedItem, "약자(2급)") && !open.Settings.Options.KoreanGrade1
+                && open.Settings.Options.EnglishGrade1 && Equals(JobClient.OptionsBody(open.Settings.Options)["hangulGrade"], "grade2"),
+                "QA1110: upload initially selects and submits Korean contracted braille despite legacy grade1 defaults");
+            korean.SelectedIndex = 0;
+            check(open.Settings.Options.KoreanGrade1 && Equals(JobClient.OptionsBody(open.Settings.Options)["hangulGrade"], "grade1"),
+                "QA1110: an explicit grade1 selection is still submitted");
+            open.Forms.SelectedItem = general; open.Forms.SelectedItem = saved;
+            check(open.Settings.Options.KoreanGrade1, "QA1110: explicitly selecting a custom form applies its Korean grade");
             check(open.Width == 560 && open.Height == 392 && Descendants(open).OfType<TextBlock>().Any(t => t.Text == "점역 설정" && t.IsVisible),
                 "File options use the final Figma size and show the settings section");
             check(open.FileNames.Text == missingName && open.Forms.IsEnabled,

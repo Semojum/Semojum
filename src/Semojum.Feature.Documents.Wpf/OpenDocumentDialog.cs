@@ -64,7 +64,7 @@ public sealed class OpenDocumentDialog : CompactDialog
         Forms.ItemsSource = forms; FormPickerDialog.Attach(Forms, this); Field(0, "점역 양식", Forms); Field(1, "한글", korean); Field(2, "점역 규정", rule); Field(3, "한영 혼용 규정", mixed);
         void SetOptions(BrailleOptions options) { current = options; korean.SelectedIndex = options.KoreanGrade1 ? 0 : 1; rule.SelectedIndex = options.EnglishDocument ? 1 : 0; mixed.SelectedIndex = options.MixedRule == "english" ? 1 : 0; }
         Forms.SelectionChanged += (_, _) => { if (Forms.SelectedItem is BrailleForm form) { SetOptions(form.Options); layout = form.Layout; } };
-        Forms.SelectedItem = forms.FirstOrDefault(f => f.FormId == defaults.FormId) ?? forms.FirstOrDefault(f => f.FormId == "builtin:GENERAL_BOOK") ?? forms.FirstOrDefault(); SetOptions(defaults.Options);
+        Forms.SelectedItem = forms.FirstOrDefault(f => f.FormId == defaults.FormId) ?? forms.FirstOrDefault(f => f.FormId == "builtin:GENERAL_BOOK") ?? forms.FirstOrDefault(); SetOptions(defaults.Options with { KoreanGrade1 = false });
         var footer = new Grid { Margin = new(24, 16, 24, 16) }; Grid.SetRow(footer, 2); layoutRoot.Children.Add(footer);
         Status.Margin = new(0); Status.MaxWidth = 285; Status.HorizontalAlignment = HorizontalAlignment.Left; Status.ToolTip = Status.Text; footer.Children.Add(Status);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; footer.Children.Add(actions);

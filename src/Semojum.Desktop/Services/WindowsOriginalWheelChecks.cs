@@ -137,6 +137,23 @@ internal static class WindowsOriginalWheelChecks
             check(window.OriginalImage.Source is not null && window.OriginalText.Visibility == Visibility.Collapsed &&
                 window.OriginalText.Text.Length == 0 && Math.Abs(imageBounds.Width - window.OriginalScroll.ViewportWidth) < 2,
                 "PDF fills the original viewport width without a redundant page caption or caption margin");
+            window.OriginalZoomIn.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            await SettleAsync(window);
+            check(window.OriginalImageView.ActualWidth > window.OriginalScroll.ViewportWidth * 1.2 && window.OriginalScroll.ScrollableWidth > 0,
+                "QA1110: original zoom button enlarges the PDF and exposes horizontal scrolling");
+            window.SetOriginalZoom(2); await SettleAsync(window);
+            window.OriginalScroll.ScrollToHorizontalOffset(0); window.OriginalScroll.ScrollToVerticalOffset(0); window.UpdateLayout();
+            window.BeginOriginalDrag(new Point(160, 160)); window.MoveOriginalDrag(new Point(100, 80)); window.UpdateLayout();
+            check(Math.Abs(window.OriginalScroll.HorizontalOffset - 60) < 2 && Math.Abs(window.OriginalScroll.VerticalOffset - 80) < 2,
+                "QA1110: dragging enlarged original pans both axes by the pointer distance");
+            await WindowsSmoke.RenderElementAsync(window.OriginalEmpty, System.IO.Path.Combine(System.IO.Path.GetTempPath(), "qa1110-original-zoom.png"));
+            window.OriginalZoomFit.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await SettleAsync(window);
+            check(Math.Abs(window.OriginalImageView.ActualWidth - window.OriginalScroll.ViewportWidth) < 2 && window.OriginalScroll.HorizontalOffset < 1,
+                "QA1110: fit restores viewport width after zooming and panning");
+            window.OriginalZoomOut.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await SettleAsync(window);
+            check(window.OriginalImageView.ActualWidth < window.OriginalScroll.ViewportWidth * .9,
+                "QA1110: original zoom-out button reduces the PDF");
+            window.OriginalZoomFit.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent)); await SettleAsync(window);
             Show(2); await SettleAsync(window);
             check(window.OriginalText.IsVisible && window.OriginalText.Text.StartsWith("둘째 쪽 원본", StringComparison.Ordinal) &&
                 window.OriginalImageGrid.Visibility == Visibility.Collapsed,

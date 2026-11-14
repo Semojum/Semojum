@@ -58,7 +58,7 @@ public partial class MainWindow
         QueuePreview(false);
     }
 
-    private async void OriginalImage_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private async void SelectOriginalImageRegion(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         var point = e.GetPosition(OriginalImageGrid);
         var selected = session.Blocks.Where(b => b.Page == session.ActiveBlock?.Page && b.Metadata.BoundingBox is { Length: 4 } r

@@ -239,10 +239,10 @@
         </DockPanel></Border>
         <editorControls:OriginalPreview x:Name="Original" Grid.Row="1" PreviewMouseWheel="OriginalPreview_MouseWheel"/>
         <Border Grid.Row="1" x:Name="OriginalEmpty" Visibility="Collapsed" Background="#F4F6F8">
-          <ScrollViewer x:Name="OriginalScroll" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" PreviewMouseWheel="OriginalScroll_MouseWheel">
+          <Grid><ScrollViewer x:Name="OriginalScroll" HorizontalScrollBarVisibility="Auto" HorizontalContentAlignment="Stretch" PreviewMouseWheel="OriginalScroll_MouseWheel" ScrollChanged="OriginalScroll_ScrollChanged">
             <Grid MinHeight="{Binding ViewportHeight, ElementName=OriginalScroll}">
-              <Viewbox Stretch="Uniform" VerticalAlignment="Top">
-                <Grid x:Name="OriginalImageGrid" MouseLeftButtonDown="OriginalImage_MouseDown">
+              <Viewbox x:Name="OriginalImageView" Stretch="Uniform" VerticalAlignment="Top" HorizontalAlignment="Left">
+                <Grid x:Name="OriginalImageGrid" MouseLeftButtonDown="OriginalImage_MouseDown" MouseMove="OriginalImage_MouseMove" MouseLeftButtonUp="OriginalImage_MouseUp" LostMouseCapture="OriginalImage_LostCapture" Cursor="Hand">
                   <Image x:Name="OriginalImage" Stretch="Fill"/>
                   <Canvas><Rectangle x:Name="OriginalSelection" Stroke="#D5AC00" Fill="#60FFF5A3" StrokeThickness="3" Visibility="Collapsed"/></Canvas>
                 </Grid>
@@ -250,6 +250,13 @@
               <TextBlock x:Name="OriginalText" Text="원본 미리보기 없음" TextWrapping="Wrap" Margin="16" VerticalAlignment="Top"/>
             </Grid>
           </ScrollViewer>
+          <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Padding="4" Background="#F9FFFFFF" CornerRadius="4" Visibility="{Binding Visibility, ElementName=OriginalImageGrid}">
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="OriginalZoomOut" Content="−" Width="30" Padding="0" Click="OriginalZoomOut_Click" AutomationProperties.Name="원본 축소"/>
+              <Button x:Name="OriginalZoomFit" Content="맞춤" Margin="4,0" Padding="8,0" Click="OriginalZoomFit_Click" AutomationProperties.Name="원본 너비 맞춤"/>
+              <Button x:Name="OriginalZoomIn" Content="+" Width="30" Padding="0" Click="OriginalZoomIn_Click" AutomationProperties.Name="원본 확대"/>
+            </StackPanel>
+          </Border></Grid>
         </Border>
         <editorFeature:PanelPageBar x:Name="OriginalPageBar" Grid.Row="2" Loaded="OriginalPageBar_Loaded"/>
       </Grid></Border>
