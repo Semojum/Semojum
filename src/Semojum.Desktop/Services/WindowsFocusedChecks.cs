@@ -7,7 +7,7 @@ namespace Semojum.Desktop.Services;
 internal static class WindowsFocusedChecks
 {
     private static readonly HashSet<string> Areas = new(StringComparer.OrdinalIgnoreCase)
-        { "tablememo", "drafts", "qa1110", "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
+        { "export", "tablememo", "drafts", "qa1110", "board", "institution", "editor", "appearance", "usage", "rules", "dialogs", "windows", "account" };
 
     internal static bool IsKnownArea(string area) => Areas.Contains(area);
 
@@ -29,6 +29,14 @@ internal static class WindowsFocusedChecks
         {
             switch (area.ToLowerInvariant())
             {
+                case "export":
+                    await WindowsRangeDesignChecks.RunAsync(Check);
+                    var exportOwner = new System.Windows.Window(); exportOwner.Show();
+                    try { WindowsExportRangeChecks.Run(exportOwner, Check); WindowsSpacingPreviewChecks.Run(exportOwner, Check); }
+                    finally { exportOwner.Close(); }
+                    await WindowsExportFileChecks.RunAsync(directory, Check);
+
+                    break;
                 case "tablememo":
                     await WindowsQa1110TableChecks.RunPreviewAsync(Check);
                     await WindowsMemoDeleteChecks.RunAsync(directory, Check);

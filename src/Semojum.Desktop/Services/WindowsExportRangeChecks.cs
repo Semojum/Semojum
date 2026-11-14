@@ -21,12 +21,12 @@ internal static class WindowsExportRangeChecks
                 check(scope.Items.Count == 2 && scope.SelectedIndex == 0 && scope.Items.Cast<ListBoxItem>().All(x => !Equals(x.Content, "전체 문서")),
                     "Range save offers only source-page and braille-face scopes");
                 var format = Descendants(first).OfType<ComboBox>().Single(x => AutomationProperties.GetName(x) == "형식");
-                scope.SelectedIndex = 1; format.SelectedItem = ".txt — 원문";
-                check(scope.SelectedIndex == 0 && !((ListBoxItem)scope.Items[1]).IsEnabled,
-                    "Switching to source text selects a source-page range and disables braille faces");
-                format.SelectedItem = ".brf";
-                check(((ListBoxItem)scope.Items[1]).IsEnabled && first.SelectedFormat == ".brf",
-                    "Switching back to BRF restores face selection and records the format");
+                scope.SelectedIndex = 1;
+                check(format.Items.Cast<string>().SequenceEqual([".brl", ".brf"]), "Braille range limits formats to BRL and BRF");
+                scope.SelectedIndex = 0;
+                check(format.Items.Cast<string>().SequenceEqual([".txt — 원문", ".md"]), "Original range limits formats to TXT and MD");
+                format.SelectedItem = ".md";
+                check(first.SelectedFormat == ".md", "Original range records Markdown selection");
                 var start = Descendants(first).OfType<TextBox>().Single(x => AutomationProperties.GetName(x) == "시작 페이지 번호");
                 var end = Descendants(first).OfType<TextBox>().Single(x => AutomationProperties.GetName(x) == "끝 페이지 번호");
                 check(start.Text == "3" && end.Text == "6", "Source-page bounds initialize from the document");
@@ -63,16 +63,16 @@ internal static class WindowsExportRangeChecks
             {
                 var scope = Descendants(third).OfType<SegmentedChoice>().Single(x => AutomationProperties.GetName(x) == "범위 기준");
                 var format = Descendants(third).OfType<ComboBox>().Single(x => AutomationProperties.GetName(x) == "형식");
-                check(scope.SelectedIndex == 0 && !((ListBoxItem)scope.Items[1]).IsEnabled, "Source TXT initially uses source-page scope");
-                format.SelectedItem = ".brf";
-                check(scope.SelectedIndex == 0 && ((ListBoxItem)scope.Items[1]).IsEnabled, "Changing source TXT to BRF retains source-page selection");
+                check(scope.SelectedIndex == 0 && ((ListBoxItem)scope.Items[1]).IsEnabled, "Source TXT initially uses source-page scope and allows switching scope");
+                format.SelectedItem = ".md";
+                check(scope.SelectedIndex == 0 && ((ListBoxItem)scope.Items[1]).IsEnabled, "Changing source TXT to Markdown retains source-page selection");
                 Descendants(third).OfType<TextBox>().Single(x => AutomationProperties.GetName(x) == "끝 페이지 번호").Text = "1";
                 Descendants(third).OfType<Button>().Single(x => Equals(x.Content, "저장")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             }
             catch { third.Close(); throw; }
         };
         check(third.ShowDialog() == true && third.Result == new ExportRange(ExportScope.OriginalPages, 1, 1),
-            "Source TXT changed to BRF confirms a valid source-page subset");
+            "Source TXT changed to Markdown confirms a valid source-page subset");
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

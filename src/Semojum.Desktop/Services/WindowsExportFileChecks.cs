@@ -42,9 +42,18 @@ internal static class WindowsExportFileChecks
             async Task Export(string proposed, int format, string chosen, bool rejectOverwrite = false)
             {
                 rejectExisting = rejectOverwrite;
-                window.ExportRangeSelection = range =>
+                window.ExportRangeSelection = async range =>
                 {
                     var type = typeof(ExportRangeDialog);
+                    var scope = (Semojum.Desktop.Controls.SegmentedChoice)type.GetField("scope", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(range)!;
+                    scope.SelectedIndex = chosen is ".brl" or ".brf" ? 1 : 0;
+                    for (var i = 0; !scope.IsEnabled && i < 300; i++) await Task.Delay(50);
+                    if (!scope.IsEnabled) throw new TimeoutException("Export page count did not complete");
+                    if (scope.SelectedIndex == 1 && type.GetField("pageCount", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(range) is null)
+                    {
+                        var status = (TextBlock)typeof(CompactDialog).GetField("Status", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(range)!;
+                        throw new InvalidOperationException("Braille range count failed: " + status.Text);
+                    }
                     ((ComboBox)type.GetField("formatChoice", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(range)!).SelectedItem = chosen;
                     ((TextBox)type.GetField("end", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(range)!).Text = "1";
                     return (bool)type.GetMethod("Apply", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(range, null)!;
@@ -60,6 +69,30 @@ internal static class WindowsExportFileChecks
             check(File.Exists(sourcePath) && !File.Exists(proposedBrf) && await File.ReadAllTextAsync(sourcePath) == "가나다",
                 "Changing BRF to source TXT writes matching extension and source text");
 
+            var proposedMd = Path.Combine(folder, "source-md.brf");
+            await Export(proposedMd, 1, ".md");
+            check(await File.ReadAllTextAsync(Path.ChangeExtension(proposedMd, ".md")) == "가나다" && !File.Exists(proposedMd),
+                "Source Markdown saves only the selected original page with .md extension");
+            var proposedBrl = Path.Combine(folder, "braille-unicode.txt");
+            await Export(proposedBrl, 2, ".brl");
+            var unicode = await File.ReadAllTextAsync(Path.ChangeExtension(proposedBrl, ".brl"));
+            check(unicode.Contains("⠫⠉⠊") && !unicode.Contains("가나다") && !File.Exists(proposedBrl),
+                "Braille BRL saves Unicode braille with matching .brl extension");
+            foreach (var (index, extension) in new[] { (1, ".brf"), (2, ".txt"), (3, ".txt") })
+            {
+                var fullPath = Path.Combine(folder, "full-" + index + extension);
+                await (Task)method.Invoke(window, [fullPath, index, false])!;
+                var saved = await File.ReadAllTextAsync(fullPath);
+                string decoded = "";
+                if (index == 1)
+                {
+                    await using var reader = EngineRuntime.Create();
+                    decoded = DocumentExport.BrailleText(await new Semojum.Core.Integration.LocalBrailleEngine(reader).ReadBrfAsync(saved, CancellationToken.None));
+                }
+                check(index == 1 ? decoded.Contains("⠫⠉⠊") && decoded.Contains("⠙")
+                    : index == 2 ? saved.Contains("가나다") && saved.Contains("다른 쪽") : saved.Contains("⠫⠉⠊") && saved.Contains("⠙"),
+                    "Save As without a range retains whole-document format " + index);
+            }
             var proposedTxt = Path.Combine(folder, "braille.txt");
             await Export(proposedTxt, 2, ".brf");
             var braillePath = Path.ChangeExtension(proposedTxt, ".brf");

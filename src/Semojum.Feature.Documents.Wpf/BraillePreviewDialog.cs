@@ -66,17 +66,17 @@ public sealed class BraillePreviewDialog : CompactDialog
         async Task Save(bool txt)
         {
             if (!ConfirmSpacing()) return;
-            var range = new ExportRangeDialog([], () => Task.FromResult(pages.Length), brailleOnly: true, format: txt ? ".txt — 점자" : ".brf") { Owner = this };
+            var range = new ExportRangeDialog([], () => Task.FromResult(pages.Length), brailleOnly: true, format: txt ? ".brl" : ".brf") { Owner = this };
             if (range.ShowDialog() != true) return;
             var selected = DocumentExport.SelectBraille(brf, range.Result);
-            var dialog = new SaveFileDialog { FileName = Path.GetFileNameWithoutExtension(title), Filter = txt ? "점자 텍스트|*.txt" : "BRF|*.brf" };
+            var dialog = new SaveFileDialog { FileName = Path.GetFileNameWithoutExtension(title), Filter = txt ? "BRL 점자문서|*.brl" : "BRF|*.brf" };
             if (dialog.ShowDialog(this) != true) return;
             var output = txt ? DocumentExport.BrailleText(range.Result.Scope == ExportScope.All ? pages : pages.Skip(range.Result.Start - 1).Take(range.Result.End - range.Result.Start + 1)) : selected;
             var temp = dialog.FileName + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try { await File.WriteAllTextAsync(temp, output, new UTF8Encoding(false)); File.Move(temp, dialog.FileName, true); }
             finally { if (File.Exists(temp)) File.Delete(temp); }
         }
-        Action("BRF 저장", () => Save(false)); Action("점자 TXT 저장", () => Save(true));
+        Action("BRF 저장", () => Save(false)); Action("점자 BRL 저장", () => Save(true));
         Action("점자 인쇄…", async () =>
         {
             if (!ConfirmSpacing()) return;

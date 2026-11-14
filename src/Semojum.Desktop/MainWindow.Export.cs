@@ -12,7 +12,7 @@ public partial class MainWindow
 {
     /// <summary>Checks receive the unshown notice and return the chosen action index instead of showing it.</summary>
     internal Func<NoticeDialog, int>? ExportConfirmation { get; set; }
-    internal Func<ExportRangeDialog, bool>? ExportRangeSelection { get; set; }
+    internal Func<ExportRangeDialog, Task<bool>>? ExportRangeSelection { get; set; }
     // 메시지창 19종의 틀(노란 상태 띠, 실제 동작 단추 + 「취소」)로 묻습니다. 첫 단추만 내보내기를 이어 갑니다.
     private bool ConfirmExport(string message, string detail, string action = "내보내기", double height = 196)
     {
@@ -61,19 +61,20 @@ public partial class MainWindow
                 fullBrf ??= await BuildAsync(snapshot);
                 return DocumentExport.BrfPages(fullBrf).Length;
             }
-            var ranges = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), CountAsync, format: initialFormat, allowFormatChange: true);
+            var ranges = new ExportRangeDialog(DocumentExport.OriginalNumbers(snapshot), chooseRange ? CountAsync : null, format: initialFormat, allowFormatChange: true);
             if (ExportRangeSelection is null) ranges.Owner = this;
-            if (chooseRange && !(ExportRangeSelection?.Invoke(ranges) ?? ranges.ShowDialog() == true)) return;
-            var selectedFormat = ranges.SelectedFormat;
-            var plainText = selectedFormat == ".txt — 원문";
+            if (chooseRange && !(ExportRangeSelection is { } selectRange ? await selectRange(ranges) : ranges.ShowDialog() == true)) return;
+            var selectedFormat = chooseRange ? ranges.SelectedFormat : initialFormat;
+            var plainText = selectedFormat is ".txt — 원문" or ".md";
             var brailleBrf = selectedFormat == ".brf";
+            var extension = selectedFormat == ".md" ? ".md" : selectedFormat == ".brl" ? ".brl" : brailleBrf ? ".brf" : ".txt";
             // 범위 창에서 「저장」을 누른 뒤에 저장 위치를 고릅니다.
             if (path is null)
             {
-                dialog.FilterIndex = brailleBrf ? 1 : plainText ? 2 : 3; dialog.DefaultExt = brailleBrf ? ".brf" : ".txt";
+                dialog.Filter = $"{selectedFormat} 문서|*{extension}"; dialog.FilterIndex = 1; dialog.DefaultExt = extension;
                 if (dialog.ShowDialog(this) != true) return;
             }
-            var targetPath = Path.ChangeExtension(dialog.FileName, brailleBrf ? ".brf" : ".txt");
+            var targetPath = Path.ChangeExtension(dialog.FileName, extension);
             if (!string.Equals(targetPath, dialog.FileName, StringComparison.OrdinalIgnoreCase) && File.Exists(targetPath)
                 && !ConfirmExport("형식 변경으로 선택한 파일이 이미 있습니다.", targetPath + "\n덮어쓰시겠습니까?", "덮어쓰기", 226)) return;
             var range = ranges.Result;

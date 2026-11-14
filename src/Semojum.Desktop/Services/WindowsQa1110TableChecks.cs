@@ -85,7 +85,7 @@ internal static class WindowsQa1110TableChecks
             Click("열 추가"); Click("행 추가");
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             view[2][2] = "추가한 칸";
-            var expected = TaggedTable.Write(view.Table!.Rows.Cast<DataRow>().Select(row => row.ItemArray.Select(v => v.ToString() ?? "")));
+            var expected = TaggedTable.Write(view.Table!.Rows.Cast<DataRow>().Select(row => row.ItemArray.Select(v => v?.ToString() ?? "")));
             Click("점자 미리보기");
             for (var i = 0; dialog.Translation is null && i < 300; i++) await Task.Delay(50);
             check(dialog.SourceText == expected && dialog.Translation is { Cells.Length: > 0 } && dialog.Translation.SourceText == expected,

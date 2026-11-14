@@ -34,17 +34,20 @@ internal static class WindowsRangeDesignChecks
             scope.SelectedIndex = 1; await WaitAsync(() => end.Text == "7");
             check(start.Text == "1" && countCalls == 1, "Braille range counts real pages and starts at the first physical page");
             if (Environment.GetEnvironmentVariable("RANGE_BRAILLE_CAPTURE") is { Length: > 0 } brailleCapture) await WindowsSmoke.RenderElementAsync(dialog, brailleCapture);
-            format.SelectedItem = ".txt — 원문"; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(scope.SelectedIndex == 0 && !((ListBoxItem)scope.Items[1]).IsEnabled && start.Text == "3" && end.Text == "6", "Source TXT returns to original pages and disables braille scope");
-            if (Environment.GetEnvironmentVariable("RANGE_TEXT_CAPTURE") is { Length: > 0 } textCapture) await WindowsSmoke.RenderElementAsync(dialog, textCapture);
-            format.SelectedItem = ".txt — 점자"; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            check(((ListBoxItem)scope.Items[1]).IsEnabled, "Braille TXT permits selecting braille pages again");
+            check(format.Items.Cast<string>().SequenceEqual([".brl", ".brf"]), "Braille scope offers only BRL and BRF");
+            format.SelectedItem = ".brl";
+            check(dialog.SelectedFormat == ".brl" && scope.SelectedIndex == 1, "BRL retains braille scope");
+            scope.SelectedIndex = 0; await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            check(format.Items.Cast<string>().SequenceEqual([".txt — 원문", ".md"]) && start.Text == "3" && end.Text == "6",
+                "Original scope offers only TXT and MD and restores original bounds");
+            format.SelectedItem = ".md";
+            check(dialog.SelectedFormat == ".md", "Markdown is selectable for original pages");
             scope.SelectedIndex = 1; await WaitAsync(() => end.Text == "7");
             check(countCalls == 1, "Switching formats preserves the computed braille page count");
         }
         finally { dialog.Close(); }
 
-        var only = new ExportRangeDialog([], () => Task.FromResult(4), brailleOnly: true, format: ".txt — 점자"); only.Show();
+        var only = new ExportRangeDialog([], () => Task.FromResult(4), brailleOnly: true, format: ".brl"); only.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -54,7 +57,7 @@ internal static class WindowsRangeDesignChecks
         }
         finally { only.Close(); }
 
-        var failed = new ExportRangeDialog([1, 2], () => Task.FromException<int>(new InvalidOperationException("면 계산 실패"))); failed.Show();
+        var failed = new ExportRangeDialog([1, 2], () => Task.FromException<int>(new InvalidOperationException("면 계산 실패")), allowFormatChange: true); failed.Show();
         try
         {
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle); var scope = Descendants(failed).OfType<SegmentedChoice>().Single(); scope.SelectedIndex = 1;
