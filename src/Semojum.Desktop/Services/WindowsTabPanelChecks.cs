@@ -60,11 +60,11 @@ internal static class WindowsTabPanelChecks
             finally { timer.Stop(); }
             check(dropSelected, "Dropping a supported file opens settings for that file");
             await window.ExecuteAsync("new");
-            check(!window.OriginalToggle.IsChecked && window.SourceToggle.IsChecked && window.BrailleToggle.IsChecked,
-                "A new blank document starts with only the text and braille panels");
+            check(window.OriginalToggle.IsChecked && window.SourceToggle.IsChecked && window.BrailleToggle.IsChecked,
+                "QA1110: a new blank document starts with original, text and braille panels");
             check(!window.OriginalUpload.IsVisible, "A new blank document does not display the original upload area");
-            check(window.LineStrip.Visibility == Visibility.Collapsed && !window.LinePreviewToggle.IsChecked,
-                "A two-panel document has no line-translation strip, as in Figma 263:7061");
+            check(window.LineStrip.Visibility == Visibility.Visible && window.LinePreviewToggle.IsChecked,
+                "The new three-panel document retains the line-translation strip");
             var typed = window.Session;
             typed.ActiveBlock!.Source = "새 문서에서 저장하지 않은 원문";
             await Dispatcher.Yield(DispatcherPriority.DataBind);
@@ -82,8 +82,8 @@ internal static class WindowsTabPanelChecks
             check(!window.OriginalUpload.IsVisible, "A TXT document does not display the original upload area");
             var txtIndex = window.DocumentTabs.SelectedIndex;
             window.DocumentTabs.SelectedIndex = txtIndex - 1;
-            check(ReferenceEquals(window.Session, typed) && typed.IsDirty && typed.ActiveBlock!.Source == "새 문서에서 저장하지 않은 원문" && !window.OriginalToggle.IsChecked,
-                "Switching back to an unsaved new document restores its two panels and edits");
+            check(ReferenceEquals(window.Session, typed) && typed.IsDirty && typed.ActiveBlock!.Source == "새 문서에서 저장하지 않은 원문" && window.OriginalToggle.IsChecked,
+                "Switching back to an unsaved new document restores its three panels and edits");
             window.DocumentTabs.SelectedIndex = txtIndex;
             check(!window.OriginalToggle.IsChecked, "Switching back to a TXT document restores its two panels");
             check(typed.IsDirty && typedLabel.Text == typed.Title && (typedTab.ToolTip as string)?.Contains("저장되지 않음", StringComparison.Ordinal) == true,
